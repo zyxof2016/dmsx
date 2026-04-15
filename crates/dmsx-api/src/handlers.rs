@@ -11,34 +11,11 @@ use uuid::Uuid;
 
 use crate::db;
 use crate::dto::*;
+use crate::error::map_db_error;
+use crate::helpers::{command_status_from_exit_code, compute_shadow_delta};
 use crate::state::AppState;
 
 pub type ApiResult<T> = Result<T, DmsxError>;
-
-// ---------------------------------------------------------------------------
-// Error mapping (refined: no internal detail leaks)
-// ---------------------------------------------------------------------------
-
-fn db_err(e: sqlx::Error) -> DmsxError {
-    match &e {
-        sqlx::Error::Database(dbe) => {
-            let code = dbe.code().unwrap_or_default();
-            match code.as_ref() {
-                "23505" => DmsxError::Conflict("resource already exists".into()),
-                "23503" => DmsxError::Validation("referenced resource does not exist".into()),
-                "23514" => DmsxError::Validation("check constraint violated".into()),
-                _ => {
-                    tracing::error!(pg_code = %code, "unhandled database error: {e}");
-                    DmsxError::Internal("database error".into())
-                }
-            }
-        }
-        _ => {
-            tracing::error!("database error: {e}");
-            DmsxError::Internal("database error".into())
-        }
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Auth middleware (stub)
@@ -64,7 +41,7 @@ pub async fn stats(
     State(st): State<AppState>,
     Path(tenant_id): Path<Uuid>,
 ) -> ApiResult<Json<DashboardStats>> {
-    let s = db::get_stats(&st.db, tenant_id).await.map_err(db_err)?;
+    let s = db::get_stats(&st.db, tenant_id).await.map_err(map_db_error)?;
     Ok(Json(s))
 }
 
@@ -79,7 +56,7 @@ pub async fn devices_list(
 ) -> ApiResult<Json<ListResponse<Device>>> {
     let lim = params.limit();
     let off = params.offset();
-    let (items, total) = db::list_devices(&st.db, tid, &params).await.map_err(db_err)?;
+    let (items, total) = db::list_devices(&st.db, tid, &params).await.map_err(map_db_error)?;
     Ok(Json(ListResponse {
         items,
         total,
@@ -94,7 +71,7 @@ pub async fn devices_create(
     Json(body): Json<CreateDeviceReq>,
 ) -> ApiResult<Response> {
     body.validate()?;
-    let d = db::create_device(&st.db, tid, &body).await.map_err(db_err)?;
+    let d = db::create_device(&st.db, tid, &body).await.map_err(map_db_error)?;
     db::write_audit(
         &st.db,
         tid,
@@ -114,7 +91,7 @@ pub async fn devices_get(
 ) -> ApiResult<Json<Device>> {
     db::get_device(&st.db, tid, did)
         .await
-        .map_err(db_err)?
+        .map_err(map_db_error)?
         .map(Json)
         .ok_or_else(|| DmsxError::NotFound(format!("device {did}")))
 }
@@ -127,7 +104,7 @@ pub async fn devices_patch(
     body.validate()?;
     let d = db::update_device(&st.db, tid, did, &body)
         .await
-        .map_err(db_err)?
+        .map_err(map_db_error)?
         .ok_or_else(|| DmsxError::NotFound(format!("device {did}")))?;
     db::write_audit(&st.db, tid, "update", "device", &did.to_string(), json!({}))
         .await
@@ -139,7 +116,7 @@ pub async fn devices_delete(
     State(st): State<AppState>,
     Path((tid, did)): Path<(Uuid, Uuid)>,
 ) -> ApiResult<StatusCode> {
-    if db::delete_device(&st.db, tid, did).await.map_err(db_err)? {
+    if db::delete_device(&st.db, tid, did).await.map_err(map_db_error)? {
         db::write_audit(&st.db, tid, "delete", "device", &did.to_string(), json!({}))
             .await
             .ok();
@@ -160,7 +137,7 @@ pub async fn policies_list(
 ) -> ApiResult<Json<ListResponse<Policy>>> {
     let lim = params.limit();
     let off = params.offset();
-    let (items, total) = db::list_policies(&st.db, tid, &params).await.map_err(db_err)?;
+    let (items, total) = db::list_policies(&st.db, tid, &params).await.map_err(map_db_error)?;
     Ok(Json(ListResponse {
         items,
         total,
@@ -175,7 +152,7 @@ pub async fn policies_create(
     Json(body): Json<CreatePolicyReq>,
 ) -> ApiResult<Response> {
     body.validate()?;
-    let p = db::create_policy(&st.db, tid, &body).await.map_err(db_err)?;
+    let p = db::create_policy(&st.db, tid, &body).await.map_err(map_db_error)?;
     db::write_audit(
         &st.db,
         tid,
@@ -195,7 +172,7 @@ pub async fn policies_get(
 ) -> ApiResult<Json<Policy>> {
     db::get_policy(&st.db, tid, pid)
         .await
-        .map_err(db_err)?
+        .map_err(map_db_error)?
         .map(Json)
         .ok_or_else(|| DmsxError::NotFound(format!("policy {pid}")))
 }
@@ -208,7 +185,7 @@ pub async fn policies_patch(
     body.validate()?;
     let p = db::update_policy(&st.db, tid, pid, &body)
         .await
-        .map_err(db_err)?
+        .map_err(map_db_error)?
         .ok_or_else(|| DmsxError::NotFound(format!("policy {pid}")))?;
     db::write_audit(&st.db, tid, "update", "policy", &pid.to_string(), json!({}))
         .await
@@ -220,7 +197,7 @@ pub async fn policies_delete(
     State(st): State<AppState>,
     Path((tid, pid)): Path<(Uuid, Uuid)>,
 ) -> ApiResult<StatusCode> {
-    if db::delete_policy(&st.db, tid, pid).await.map_err(db_err)? {
+    if db::delete_policy(&st.db, tid, pid).await.map_err(map_db_error)? {
         db::write_audit(&st.db, tid, "delete", "policy", &pid.to_string(), json!({}))
             .await
             .ok();
@@ -237,7 +214,7 @@ pub async fn policy_publish(
 ) -> ApiResult<Response> {
     let rev = db::publish_policy(&st.db, tid, pid, body.spec)
         .await
-        .map_err(db_err)?;
+        .map_err(map_db_error)?;
     db::write_audit(
         &st.db,
         tid,
@@ -262,7 +239,7 @@ pub async fn commands_list(
 ) -> ApiResult<Json<ListResponse<Command>>> {
     let lim = params.limit();
     let off = params.offset();
-    let (items, total) = db::list_commands(&st.db, tid, &params).await.map_err(db_err)?;
+    let (items, total) = db::list_commands(&st.db, tid, &params).await.map_err(map_db_error)?;
     Ok(Json(ListResponse {
         items,
         total,
@@ -279,7 +256,7 @@ pub async fn commands_create(
     body.validate()?;
     let c = db::create_command(&st.db, tid, &body)
         .await
-        .map_err(db_err)?;
+        .map_err(map_db_error)?;
     db::write_audit(
         &st.db,
         tid,
@@ -299,7 +276,7 @@ pub async fn commands_get(
 ) -> ApiResult<Json<Command>> {
     db::get_command(&st.db, tid, cid)
         .await
-        .map_err(db_err)?
+        .map_err(map_db_error)?
         .map(Json)
         .ok_or_else(|| DmsxError::NotFound(format!("command {cid}")))
 }
@@ -308,31 +285,14 @@ pub async fn commands_get(
 // Device Shadow
 // ---------------------------------------------------------------------------
 
-fn compute_delta(
-    desired: &serde_json::Value,
-    reported: &serde_json::Value,
-) -> serde_json::Value {
-    let mut delta = serde_json::Map::new();
-    if let Some(d_obj) = desired.as_object() {
-        let r_obj = reported.as_object();
-        for (k, v) in d_obj {
-            let differs = r_obj.map_or(true, |r| r.get(k) != Some(v));
-            if differs {
-                delta.insert(k.clone(), v.clone());
-            }
-        }
-    }
-    serde_json::Value::Object(delta)
-}
-
 pub async fn shadow_get(
     State(st): State<AppState>,
     Path((tid, did)): Path<(Uuid, Uuid)>,
 ) -> ApiResult<Json<ShadowResponse>> {
     let s = db::get_or_create_shadow(&st.db, tid, did)
         .await
-        .map_err(db_err)?;
-    let delta = compute_delta(&s.desired, &s.reported);
+        .map_err(map_db_error)?;
+    let delta = compute_shadow_delta(&s.desired, &s.reported);
     Ok(Json(ShadowResponse {
         device_id: did,
         reported: s.reported,
@@ -352,11 +312,11 @@ pub async fn shadow_update_desired(
     body.validate()?;
     let s = db::update_shadow_desired(&st.db, tid, did, &body.desired)
         .await
-        .map_err(db_err)?;
+        .map_err(map_db_error)?;
     db::write_audit(&st.db, tid, "update_desired", "device_shadow", &did.to_string(), json!({}))
         .await
         .ok();
-    let delta = compute_delta(&s.desired, &s.reported);
+    let delta = compute_shadow_delta(&s.desired, &s.reported);
     Ok(Json(ShadowResponse {
         device_id: did,
         reported: s.reported,
@@ -376,8 +336,8 @@ pub async fn shadow_update_reported(
     body.validate()?;
     let s = db::update_shadow_reported(&st.db, tid, did, &body.reported)
         .await
-        .map_err(db_err)?;
-    let delta = compute_delta(&s.desired, &s.reported);
+        .map_err(map_db_error)?;
+    let delta = compute_shadow_delta(&s.desired, &s.reported);
     Ok(Json(ShadowResponse {
         device_id: did,
         reported: s.reported,
@@ -410,7 +370,7 @@ pub async fn device_action(
     cmd_req.validate()?;
     let c = db::create_command(&st.db, tid, &cmd_req)
         .await
-        .map_err(db_err)?;
+        .map_err(map_db_error)?;
     db::write_audit(
         &st.db,
         tid,
@@ -437,7 +397,7 @@ pub async fn device_commands_list(
     let off = params.offset();
     let (items, total) = db::list_device_commands(&st.db, tid, did, lim, off)
         .await
-        .map_err(db_err)?;
+        .map_err(map_db_error)?;
     Ok(Json(ListResponse {
         items,
         total,
@@ -456,7 +416,7 @@ pub async fn command_result_get(
 ) -> ApiResult<Json<dmsx_core::CommandResult>> {
     db::get_command_result(&st.db, tid, cid)
         .await
-        .map_err(db_err)?
+        .map_err(map_db_error)?
         .map(Json)
         .ok_or_else(|| DmsxError::NotFound(format!("result for command {cid}")))
 }
@@ -472,7 +432,7 @@ pub async fn command_status_update(
 ) -> ApiResult<Json<Command>> {
     let c = db::update_command_status(&st.db, tid, cid, body.status)
         .await
-        .map_err(db_err)?
+        .map_err(map_db_error)?
         .ok_or_else(|| DmsxError::NotFound(format!("command {cid}")))?;
     db::write_audit(
         &st.db,
@@ -502,15 +462,11 @@ pub async fn command_result_submit(
         body.evidence_key.as_deref(),
     )
     .await
-    .map_err(db_err)?;
-    let new_status = if body.exit_code.unwrap_or(-1) == 0 {
-        CommandStatus::Succeeded
-    } else {
-        CommandStatus::Failed
-    };
+    .map_err(map_db_error)?;
+    let new_status = command_status_from_exit_code(body.exit_code);
     db::update_command_status(&st.db, tid, cid, new_status)
         .await
-        .map_err(db_err)
+        .map_err(map_db_error)
         .ok();
     db::write_audit(
         &st.db,
@@ -536,7 +492,7 @@ pub async fn artifacts_list(
 ) -> ApiResult<Json<ListResponse<Artifact>>> {
     let lim = params.limit();
     let off = params.offset();
-    let (items, total) = db::list_artifacts(&st.db, tid, &params).await.map_err(db_err)?;
+    let (items, total) = db::list_artifacts(&st.db, tid, &params).await.map_err(map_db_error)?;
     Ok(Json(ListResponse {
         items,
         total,
@@ -553,7 +509,7 @@ pub async fn artifacts_create(
     body.validate()?;
     let a = db::create_artifact(&st.db, tid, &body)
         .await
-        .map_err(db_err)?;
+        .map_err(map_db_error)?;
     db::write_audit(
         &st.db,
         tid,
@@ -578,7 +534,7 @@ pub async fn compliance_list(
 ) -> ApiResult<Json<ListResponse<ComplianceFinding>>> {
     let lim = params.limit();
     let off = params.offset();
-    let (items, total) = db::list_findings(&st.db, tid, &params).await.map_err(db_err)?;
+    let (items, total) = db::list_findings(&st.db, tid, &params).await.map_err(map_db_error)?;
     Ok(Json(ListResponse {
         items,
         total,

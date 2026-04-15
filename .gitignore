@@ -1,7 +1,28 @@
-/target
+/target/
+/.cargo-home/
+
+# Rust / editor temp
 **/*.rs.bk
+**/*.tmp
+
+# Environment files
 .env
 .env.*
 !.env.example
-web/node_modules/
-web/dist/
+
+# Frontend build artifacts
+/web/node_modules/
+/web/dist/
+/web/tsconfig.tsbuildinfo
+/web/src/**/*.js
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS / editor noise
+.DS_Store
+Thumbs.db

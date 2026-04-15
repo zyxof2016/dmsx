@@ -21,12 +21,13 @@ import {
   PoweroffOutlined,
   LoadingOutlined,
 } from "@ant-design/icons";
+import { ConnectionState, Room, RoomEvent, Track } from "livekit-client";
 import {
   useShadow,
   useCreateDesktopSession,
   useDeleteDesktopSession,
 } from "../api/hooks";
-import { TENANT_ID } from "../api/client";
+import type { DesktopSessionResponse } from "../api/types";
 
 const { Text, Paragraph } = Typography;
 
@@ -39,7 +40,14 @@ interface Props {
   deviceOnlineState?: string;
 }
 
-type SessionState = "idle" | "connecting" | "connected" | "error";
+type SessionState =
+  | "idle"
+  | "creating"
+  | "waiting_agent"
+  | "connected"
+  | "reconnecting"
+  | "disconnected"
+  | "error";
 
 export const RemoteDesktopPanel: React.FC<Props> = ({
   deviceId,
@@ -54,11 +62,14 @@ export const RemoteDesktopPanel: React.FC<Props> = ({
   const [sessionState, setSessionState] = useState<SessionState>("idle");
   const [errorMsg, setErrorMsg] = useState("");
   const [remoteSize, setRemoteSize] = useState({ width: 0, height: 0 });
+  const [hasFocus, setHasFocus] = useState(false);
 
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const wsRef = useRef<WebSocket | null>(null);
-  const imgRef = useRef<HTMLImageElement | null>(null);
+  const roomRef = useRef<Room | null>(null);
+  const sessionRef = useRef<DesktopSessionResponse | null>(null);
+  const manualDisconnectRef = useRef(false);
 
   const rustdesk = shadow?.reported?.rustdesk as
     | { installed?: boolean; id?: string; has_permanent_password?: boolean }
@@ -68,92 +79,137 @@ export const RemoteDesktopPanel: React.FC<Props> = ({
   const hasPwd = rustdesk?.has_permanent_password;
   const isOnline = deviceOnlineState === "online";
 
-  const cleanup = useCallback(() => {
-    if (wsRef.current) {
-      wsRef.current.close();
-      wsRef.current = null;
+  const detachVideo = useCallback(() => {
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
     }
   }, []);
 
+  const disconnectRoom = useCallback(async () => {
+    const room = roomRef.current;
+    roomRef.current = null;
+    if (room) {
+      room.removeAllListeners();
+      await room.disconnect();
+    }
+    detachVideo();
+  }, [detachVideo]);
+
+  const destroySession = useCallback(async () => {
+    const session = sessionRef.current;
+    sessionRef.current = null;
+    if (!session) return;
+    try {
+      await deleteSession.mutateAsync({
+        deviceId,
+        sessionId: session.session_id,
+      });
+    } catch {
+      /* best effort */
+    }
+  }, [deleteSession, deviceId]);
+
+  const fullCleanup = useCallback(
+    async (destroyRemote: boolean) => {
+      await disconnectRoom();
+      if (destroyRemote) {
+        await destroySession();
+      }
+      setRemoteSize({ width: 0, height: 0 });
+      setHasFocus(false);
+    },
+    [destroySession, disconnectRoom],
+  );
+
   useEffect(() => {
     return () => {
-      cleanup();
+      void fullCleanup(true);
     };
-  }, [cleanup]);
+  }, [fullCleanup]);
+
+  const attachTrack = useCallback((room: Room) => {
+    let attached = false;
+    room.remoteParticipants.forEach((participant) => {
+      participant.trackPublications.forEach((publication) => {
+        const subscribedTrack = publication.track;
+        if (
+          subscribedTrack &&
+          subscribedTrack.kind === Track.Kind.Video &&
+          videoRef.current
+        ) {
+          subscribedTrack.attach(videoRef.current);
+          attached = true;
+        }
+      });
+    });
+
+    if (attached) {
+      setSessionState("connected");
+      requestAnimationFrame(() => stageRef.current?.focus());
+    }
+  }, []);
+
+  const wireRoom = useCallback(
+    (room: Room) => {
+      room
+        .on(RoomEvent.ConnectionStateChanged, (state: ConnectionState) => {
+          if (state === ConnectionState.Reconnecting) {
+            setSessionState("reconnecting");
+          } else if (state === ConnectionState.Connected) {
+            setSessionState("waiting_agent");
+            attachTrack(room);
+          }
+        })
+        .on(RoomEvent.TrackSubscribed, (track) => {
+          if (track.kind === Track.Kind.Video && videoRef.current) {
+            track.attach(videoRef.current);
+            setSessionState("connected");
+            requestAnimationFrame(() => stageRef.current?.focus());
+          }
+        })
+        .on(RoomEvent.TrackUnsubscribed, (track) => {
+          if (videoRef.current) {
+            track.detach(videoRef.current);
+          }
+          detachVideo();
+          setSessionState("waiting_agent");
+        })
+        .on(RoomEvent.Disconnected, () => {
+          detachVideo();
+          setHasFocus(false);
+          setSessionState(
+            manualDisconnectRef.current ? "disconnected" : "reconnecting",
+          );
+        });
+    },
+    [attachTrack, detachVideo],
+  );
+
+  const connectToRoom = useCallback(
+    async (session: DesktopSessionResponse) => {
+      const room = new Room({
+        adaptiveStream: true,
+        dynacast: true,
+      });
+      wireRoom(room);
+      roomRef.current = room;
+      await room.connect(session.livekit_url, session.token);
+      attachTrack(room);
+    },
+    [attachTrack, wireRoom],
+  );
 
   const handleConnect = async () => {
-    setSessionState("connecting");
+    manualDisconnectRef.current = false;
+    setSessionState("creating");
     setErrorMsg("");
 
     try {
-      await createSession.mutateAsync({ deviceId, body: {} });
-
-      const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const host = window.location.host;
-      const wsUrl = `${proto}//${host}/v1/tenants/${TENANT_ID}/devices/${deviceId}/desktop/ws/viewer`;
-
-      await new Promise<void>((resolve) => setTimeout(resolve, 2000));
-
-      const ws = new WebSocket(wsUrl);
-      wsRef.current = ws;
-
-      ws.binaryType = "arraybuffer";
-
-      ws.onopen = () => {
-        setSessionState("connected");
-      };
-
-      ws.onmessage = (ev) => {
-        if (typeof ev.data === "string") {
-          try {
-            const msg = JSON.parse(ev.data);
-            if (msg.type === "meta") {
-              setRemoteSize({ width: msg.width, height: msg.height });
-            }
-            if (msg.error) {
-              setErrorMsg(msg.error);
-              setSessionState("error");
-            }
-          } catch {
-            /* ignore non-json text */
-          }
-          return;
-        }
-
-        const blob = new Blob([ev.data], { type: "image/jpeg" });
-        const url = URL.createObjectURL(blob);
-
-        if (!imgRef.current) {
-          imgRef.current = new Image();
-        }
-        const img = imgRef.current;
-
-        img.onload = () => {
-          const canvas = canvasRef.current;
-          if (!canvas) return;
-          const ctx = canvas.getContext("2d");
-          if (!ctx) return;
-
-          if (canvas.width !== img.width || canvas.height !== img.height) {
-            canvas.width = img.width;
-            canvas.height = img.height;
-          }
-          ctx.drawImage(img, 0, 0);
-          URL.revokeObjectURL(url);
-        };
-        img.src = url;
-      };
-
-      ws.onerror = () => {
-        setErrorMsg("WebSocket connection error");
-        setSessionState("error");
-      };
-
-      ws.onclose = () => {
-        if (sessionState !== "error") {
-          setSessionState("idle");
-        }
-      };
+      await fullCleanup(true);
+      const session = await createSession.mutateAsync({ deviceId, body: {} });
+      sessionRef.current = session;
+      setSessionState("waiting_agent");
+      await connectToRoom(session);
     } catch (e) {
       setErrorMsg(String(e));
       setSessionState("error");
@@ -161,21 +217,17 @@ export const RemoteDesktopPanel: React.FC<Props> = ({
   };
 
   const handleDisconnect = async () => {
-    cleanup();
-    try {
-      await deleteSession.mutateAsync(deviceId);
-    } catch {
-      /* best effort */
-    }
+    manualDisconnectRef.current = true;
+    await fullCleanup(true);
     setSessionState("idle");
   };
 
   const mapCoords = (
-    e: React.MouseEvent<HTMLCanvasElement>,
+    e: React.MouseEvent<HTMLDivElement>,
   ): { x: number; y: number } => {
-    const canvas = canvasRef.current;
-    if (!canvas || !remoteSize.width) return { x: 0, y: 0 };
-    const rect = canvas.getBoundingClientRect();
+    const surface = stageRef.current;
+    if (!surface || !remoteSize.width) return { x: 0, y: 0 };
+    const rect = surface.getBoundingClientRect();
     const scaleX = remoteSize.width / rect.width;
     const scaleY = remoteSize.height / rect.height;
     return {
@@ -184,46 +236,60 @@ export const RemoteDesktopPanel: React.FC<Props> = ({
     };
   };
 
-  const sendInput = (data: Record<string, unknown>) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify(data));
-    }
-  };
+  const sendInput = useCallback(
+    async (data: Record<string, unknown>, reliable = false) => {
+      const room = roomRef.current;
+      if (!room || room.state !== ConnectionState.Connected) return;
+      const payload = new TextEncoder().encode(JSON.stringify(data));
+      await room.localParticipant.publishData(payload, {
+        reliable,
+        topic: "desktop-input",
+      });
+    },
+    [],
+  );
 
-  const onMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+  const onMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     if (sessionState !== "connected") return;
     const { x, y } = mapCoords(e);
-    sendInput({ type: "mousemove", x, y });
+    void sendInput({ type: "mousemove", x, y });
   };
 
-  const onMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+  const onMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (sessionState !== "connected") return;
+    e.preventDefault();
+    stageRef.current?.focus();
+    setHasFocus(true);
+    const { x, y } = mapCoords(e);
+    const button =
+      e.button === 2 ? "right" : e.button === 1 ? "middle" : "left";
+    void sendInput({ type: "mousedown", button, x, y }, true);
+  };
+
+  const onMouseUp = (e: React.MouseEvent<HTMLDivElement>) => {
     if (sessionState !== "connected") return;
     e.preventDefault();
     const { x, y } = mapCoords(e);
     const button =
       e.button === 2 ? "right" : e.button === 1 ? "middle" : "left";
-    sendInput({ type: "mousedown", button, x, y });
+    void sendInput({ type: "mouseup", button, x, y }, true);
   };
 
-  const onMouseUp = (e: React.MouseEvent<HTMLCanvasElement>) => {
+  const onWheel = (e: React.WheelEvent<HTMLDivElement>) => {
     if (sessionState !== "connected") return;
     e.preventDefault();
-    const { x, y } = mapCoords(e);
-    const button =
-      e.button === 2 ? "right" : e.button === 1 ? "middle" : "left";
-    sendInput({ type: "mouseup", button, x, y });
+    const { x, y } = mapCoords(e as unknown as React.MouseEvent<HTMLDivElement>);
+    void sendInput(
+      { type: "scroll", x, y, deltaX: e.deltaX, deltaY: e.deltaY },
+      false,
+    );
   };
 
-  const onWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
-    if (sessionState !== "connected") return;
-    const { x, y } = mapCoords(e as unknown as React.MouseEvent<HTMLCanvasElement>);
-    sendInput({ type: "scroll", x, y, deltaX: e.deltaX, deltaY: e.deltaY });
-  };
-
-  const onKeyDown = (e: React.KeyboardEvent<HTMLCanvasElement>) => {
+  const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (sessionState !== "connected") return;
     e.preventDefault();
-    sendInput({
+    void sendInput(
+      {
       type: "keydown",
       key: e.key,
       code: e.code,
@@ -233,24 +299,50 @@ export const RemoteDesktopPanel: React.FC<Props> = ({
         e.altKey && "alt",
         e.metaKey && "meta",
       ].filter(Boolean),
-    });
+      },
+      true,
+    );
   };
 
-  const onKeyUp = (e: React.KeyboardEvent<HTMLCanvasElement>) => {
+  const onKeyUp = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (sessionState !== "connected") return;
     e.preventDefault();
-    sendInput({ type: "keyup", key: e.key, code: e.code });
+    void sendInput(
+      {
+        type: "keyup",
+        key: e.key,
+        code: e.code,
+        modifiers: [
+          e.ctrlKey && "ctrl",
+          e.shiftKey && "shift",
+          e.altKey && "alt",
+          e.metaKey && "meta",
+        ].filter(Boolean),
+      },
+      true,
+    );
   };
 
   const onCtrlAltDel = () => {
-    sendInput({
-      type: "keydown",
-      key: "Delete",
-      code: "Delete",
-      modifiers: ["ctrl", "alt"],
-    });
+    void sendInput(
+      {
+        type: "keydown",
+        key: "Delete",
+        code: "Delete",
+        modifiers: ["ctrl", "alt"],
+      },
+      true,
+    );
     setTimeout(() => {
-      sendInput({ type: "keyup", key: "Delete", code: "Delete" });
+      void sendInput(
+        {
+          type: "keyup",
+          key: "Delete",
+          code: "Delete",
+          modifiers: ["ctrl", "alt"],
+        },
+        true,
+      );
     }, 100);
   };
 
@@ -286,7 +378,7 @@ export const RemoteDesktopPanel: React.FC<Props> = ({
     <Space direction="vertical" style={{ width: "100%" }} size="middle">
       {/* --- WebRTC / WebSocket Remote Desktop --- */}
       <Card
-        title="远程桌面 (WebRTC)"
+        title="远程桌面 (LiveKit WebRTC)"
         size="small"
         extra={
           sessionState === "connected" ? (
@@ -295,10 +387,17 @@ export const RemoteDesktopPanel: React.FC<Props> = ({
               {remoteSize.width > 0 && (
                 <Tag>{remoteSize.width}x{remoteSize.height}</Tag>
               )}
+              {hasFocus ? <Tag color="blue">键盘已接管</Tag> : null}
             </Space>
-          ) : sessionState === "connecting" ? (
+          ) : ["creating", "waiting_agent", "reconnecting"].includes(
+              sessionState,
+            ) ? (
             <Tag icon={<LoadingOutlined />} color="processing">
-              连接中...
+              {sessionState === "creating"
+                ? "创建会话中..."
+                : sessionState === "reconnecting"
+                  ? "重连中..."
+                  : "等待设备接入..."}
             </Tag>
           ) : null
         }
@@ -325,7 +424,7 @@ export const RemoteDesktopPanel: React.FC<Props> = ({
               type="info"
               showIcon
               message="连接说明"
-              description="点击后系统将向设备 Agent 下发屏幕采集指令，Agent 采集屏幕画面并实时回传。您可以直接在浏览器内查看远端画面并进行键鼠控制。"
+              description="点击后系统会创建 LiveKit 房间并向设备 Agent 下发入会指令。Agent 发布屏幕轨后，浏览器会直接订阅视频，并通过 Data Channel 下发键鼠事件。"
             />
           </Space>
         )}
@@ -333,13 +432,35 @@ export const RemoteDesktopPanel: React.FC<Props> = ({
         {sessionState === "error" && (
           <Space direction="vertical" style={{ width: "100%" }}>
             <Alert type="error" message="连接失败" description={errorMsg} showIcon />
-            <Button onClick={() => setSessionState("idle")}>重试</Button>
+            <Button
+              onClick={() => {
+                setErrorMsg("");
+                setSessionState("idle");
+              }}
+            >
+              重试
+            </Button>
           </Space>
         )}
 
-        {(sessionState === "connecting" || sessionState === "connected") && (
+        {sessionState === "disconnected" && (
+          <Space direction="vertical" style={{ width: "100%" }}>
+            <Alert
+              type="info"
+              showIcon
+              message="会话已断开"
+              description="远程桌面已显式关闭，重新连接会创建新的桌面会话。"
+            />
+            <Button type="primary" onClick={handleConnect}>
+              重新连接
+            </Button>
+          </Space>
+        )}
+
+        {["creating", "waiting_agent", "connected", "reconnecting"].includes(
+          sessionState,
+        ) && (
           <div ref={containerRef} style={{ position: "relative" }}>
-            {/* Toolbar */}
             <Space
               style={{
                 marginBottom: 8,
@@ -372,7 +493,7 @@ export const RemoteDesktopPanel: React.FC<Props> = ({
               </Tooltip>
             </Space>
 
-            {sessionState === "connecting" && (
+            {sessionState !== "connected" && (
               <div
                 style={{
                   textAlign: "center",
@@ -383,7 +504,13 @@ export const RemoteDesktopPanel: React.FC<Props> = ({
               >
                 <Spin
                   size="large"
-                  tip="等待 Agent 开始屏幕采集..."
+                  tip={
+                    sessionState === "creating"
+                      ? "正在创建桌面会话..."
+                      : sessionState === "reconnecting"
+                        ? "网络恢复中，正在重连房间..."
+                        : "已进房，等待设备发布屏幕轨..."
+                  }
                   style={{ color: "#fff" }}
                 >
                   <div style={{ height: 80 }} />
@@ -391,16 +518,27 @@ export const RemoteDesktopPanel: React.FC<Props> = ({
               </div>
             )}
 
-            <canvas
-              ref={canvasRef}
+            {sessionState === "connected" && !hasFocus && (
+              <Alert
+                type="info"
+                showIcon
+                style={{ marginBottom: 8 }}
+                message="已连接，点击画面接管键盘"
+              />
+            )}
+
+            <div
+              ref={stageRef}
               tabIndex={0}
               style={{
                 display: sessionState === "connected" ? "block" : "none",
                 width: "100%",
+                minHeight: 360,
                 background: "#000",
                 borderRadius: 4,
                 cursor: "default",
                 outline: "none",
+                overflow: "hidden",
               }}
               onMouseMove={onMouseMove}
               onMouseDown={onMouseDown}
@@ -409,7 +547,24 @@ export const RemoteDesktopPanel: React.FC<Props> = ({
               onKeyDown={onKeyDown}
               onKeyUp={onKeyUp}
               onContextMenu={onContextMenu}
-            />
+              onFocus={() => setHasFocus(true)}
+              onBlur={() => setHasFocus(false)}
+            >
+              <video
+                ref={videoRef}
+                autoPlay
+                playsInline
+                muted
+                style={{ display: "block", width: "100%" }}
+                onLoadedMetadata={(e) => {
+                  const video = e.currentTarget;
+                  setRemoteSize({
+                    width: video.videoWidth,
+                    height: video.videoHeight,
+                  });
+                }}
+              />
+            </div>
           </div>
         )}
       </Card>

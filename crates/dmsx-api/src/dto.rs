@@ -452,3 +452,88 @@ pub struct SubmitCommandResultReq {
 fn default_json_obj() -> serde_json::Value {
     serde_json::json!({})
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn device_list_params_clamp_limit_and_offset() {
+        let params = DeviceListParams {
+            limit: Some(999),
+            offset: Some(-5),
+            search: None,
+            platform: None,
+            enroll_status: None,
+            online_state: None,
+        };
+
+        assert_eq!(params.limit(), 200);
+        assert_eq!(params.offset(), 0);
+    }
+
+    #[test]
+    fn create_command_req_rejects_invalid_ttl() {
+        let req = CreateCommandReq {
+            target_device_id: Uuid::new_v4(),
+            payload: serde_json::json!({}),
+            priority: Some(0),
+            ttl_seconds: Some(10),
+            idempotency_key: None,
+        };
+
+        let err = req.validate().unwrap_err();
+        assert!(matches!(err, DmsxError::Validation(_)));
+    }
+
+    #[test]
+    fn create_artifact_req_rejects_invalid_sha256() {
+        let req = CreateArtifactReq {
+            name: "agent".into(),
+            version: "1.0.0".into(),
+            sha256: "abc".into(),
+            channel: None,
+            object_key: "artifacts/agent".into(),
+            metadata: None,
+        };
+
+        let err = req.validate().unwrap_err();
+        assert!(matches!(err, DmsxError::Validation(_)));
+    }
+
+    #[test]
+    fn device_action_req_requires_script_for_run_script() {
+        let req = DeviceActionReq {
+            action: "run_script".into(),
+            params: serde_json::json!({}),
+            priority: None,
+            ttl_seconds: None,
+        };
+
+        let err = req.validate().unwrap_err();
+        assert!(matches!(err, DmsxError::Validation(_)));
+    }
+
+    #[test]
+    fn device_action_req_requires_confirm_for_wipe() {
+        let req = DeviceActionReq {
+            action: "wipe".into(),
+            params: serde_json::json!({}),
+            priority: None,
+            ttl_seconds: None,
+        };
+
+        let err = req.validate().unwrap_err();
+        assert!(matches!(err, DmsxError::Validation(_)));
+    }
+
+    #[test]
+    fn update_shadow_desired_requires_object() {
+        let req = UpdateShadowDesiredReq {
+            desired: serde_json::json!(["not-object"]),
+        };
+
+        let err = req.validate().unwrap_err();
+        assert!(matches!(err, DmsxError::Validation(_)));
+    }
+}

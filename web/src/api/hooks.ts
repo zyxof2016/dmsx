@@ -147,6 +147,13 @@ export function useCommand(id: string | undefined) {
     queryKey: ["command", id],
     queryFn: () => api.get<Command>(tenantPath(`/commands/${id}`)),
     enabled: !!id,
+    refetchInterval: (query) => {
+      const command = query.state.data as Command | undefined;
+      if (!command) return false;
+      return ["queued", "delivered", "acked", "running"].includes(command.status)
+        ? 3_000
+        : false;
+    },
   });
 }
 
@@ -240,6 +247,8 @@ export function useCommandResult(commandId: string | undefined) {
       api.get<CommandResult>(tenantPath(`/commands/${commandId}/result`)),
     enabled: !!commandId,
     retry: false,
+    refetchInterval: (query) =>
+      commandId && !query.state.data ? 3_000 : false,
   });
 }
 
@@ -346,8 +355,18 @@ export function useCreateDesktopSession() {
 
 export function useDeleteDesktopSession() {
   return useMutation({
-    mutationFn: (deviceId: string) =>
-      api.del(tenantPath(`/devices/${deviceId}/desktop/session`)),
+    mutationFn: ({
+      deviceId,
+      sessionId,
+    }: {
+      deviceId: string;
+      sessionId: string;
+    }) =>
+      api.del(
+        tenantPath(
+          `/devices/${deviceId}/desktop/session${buildQuery({ session_id: sessionId })}`,
+        ),
+      ),
   });
 }
 

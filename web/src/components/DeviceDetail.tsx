@@ -11,7 +11,7 @@ import {
   Tabs,
 } from "antd";
 import { CopyOutlined } from "@ant-design/icons";
-import { useNavigate, useParams } from "@tanstack/react-router";
+import { useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import dayjs from "dayjs";
 import { useDevice } from "../api/hooks";
 import { ShadowPanel } from "./ShadowPanel";
@@ -52,8 +52,10 @@ const enrollTag = (s: string) => {
 
 export const DeviceDetailDrawer: React.FC = () => {
   const { deviceId } = useParams({ strict: false });
+  const search = useSearch({ from: "/devices/$deviceId" });
   const navigate = useNavigate();
   const { data: device, isLoading, error } = useDevice(deviceId);
+  const activeTab = search.tab ?? "info";
 
   return (
     <Drawer
@@ -82,7 +84,15 @@ export const DeviceDetailDrawer: React.FC = () => {
       <Spin spinning={isLoading}>
         {device && (
           <Tabs
-            defaultActiveKey="info"
+            activeKey={activeTab}
+            onChange={(tab) => {
+              navigate({
+                to: "/devices/$deviceId",
+                params: { deviceId: device.id },
+                search: { tab },
+                replace: true,
+              });
+            }}
             items={[
               {
                 key: "info",

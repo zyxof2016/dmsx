@@ -118,15 +118,20 @@ export const RemoteControlPanel: React.FC<{
   deviceHostname?: string;
 }> = ({ deviceId, deviceHostname }) => {
   const sendAction = useDeviceAction();
-  const { data: cmds, isLoading } = useDeviceCommands(deviceId, { limit: 20 });
   const { message, modal } = App.useApp();
 
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const [scriptOpen, setScriptOpen] = useState(false);
   const [script, setScript] = useState("");
   const [interpreter, setInterpreter] = useState("bash");
   const [timeout, setScriptTimeout] = useState(60);
   const [resultCmdId, setResultCmdId] = useState<string | null>(null);
   const wipeHostnameRef = React.useRef("");
+  const { data: cmds, isLoading } = useDeviceCommands(deviceId, {
+    limit: pageSize,
+    offset: (page - 1) * pageSize,
+  });
 
   const doAction = (action: DeviceActionType, params: Record<string, unknown> = {}) => {
     sendAction.mutate(
@@ -270,7 +275,17 @@ export const RemoteControlPanel: React.FC<{
           columns={columns}
           loading={isLoading}
           size="small"
-          pagination={{ pageSize: 10, total: cmds?.total ?? 0, size: "small" }}
+          pagination={{
+            current: page,
+            pageSize,
+            total: cmds?.total ?? 0,
+            size: "small",
+            showSizeChanger: true,
+            onChange: (nextPage, nextPageSize) => {
+              setPage(nextPage);
+              setPageSize(nextPageSize);
+            },
+          }}
         />
       </Card>
 

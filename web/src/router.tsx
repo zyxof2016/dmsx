@@ -37,6 +37,9 @@ const devicesIndexRoute = createRoute({
 const deviceDetailRoute = createRoute({
   getParentRoute: () => devicesRoute,
   path: "$deviceId",
+  validateSearch: (search: Record<string, unknown>) => ({
+    tab: typeof search.tab === "string" ? search.tab : undefined,
+  }),
   component: DeviceDetailDrawer,
 });
 

@@ -1,22 +1,17 @@
 use axum::{
-    extract::{
-        ws::{Message, WebSocket},
-        Path, State, WebSocketUpgrade,
-    },
+    extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
     Json,
 };
-use futures_util::{SinkExt, StreamExt};
 use livekit_api::access_token::{AccessToken, VideoGrants};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use tokio::sync::broadcast;
 use uuid::Uuid;
 
 use crate::db;
 use crate::dto::CreateCommandReq;
-use crate::state::{AppState, DesktopRelay};
+use crate::state::{AppState, DesktopSession};
 
 // ---------------------------------------------------------------------------
 // DTOs
@@ -51,13 +46,18 @@ fn default_resolution_h() -> u32 {
     1080
 }
 
+#[derive(Deserialize)]
+pub struct SessionDeleteQuery {
+    pub session_id: String,
+}
+
 // ---------------------------------------------------------------------------
 // GET /v1/config/livekit
 // ---------------------------------------------------------------------------
 
 pub async fn livekit_config(State(st): State<AppState>) -> impl IntoResponse {
     Json(LivekitConfigResponse {
-        enabled: !st.livekit_api_key.is_empty(),
+        enabled: !st.livekit_url.is_empty() && !st.livekit_api_key.is_empty(),
         url: st.livekit_url.clone(),
     })
 }
@@ -73,6 +73,12 @@ pub async fn session_create(
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     let room_name = format!("desktop-{did}-{}", chrono::Utc::now().timestamp());
     let session_id = Uuid::new_v4().to_string();
+    let stale_session_id = st.device_sessions.write().await.insert(did, session_id.clone());
+
+    if let Some(old_session_id) = &stale_session_id {
+        st.desktop_sessions.write().await.remove(old_session_id);
+        enqueue_stop_command(&st, tid, did, old_session_id.clone(), Some(5)).await?;
+    }
 
     let viewer_token = generate_token(
         &st.livekit_api_key,
@@ -80,6 +86,7 @@ pub async fn session_create(
         &room_name,
         &format!("admin-{session_id}"),
         false,
+        true,
         true,
     )
     .map_err(|e| {
@@ -95,6 +102,7 @@ pub async fn session_create(
         &room_name,
         &format!("agent-{did}"),
         true,
+        true,
         false,
     )
     .map_err(|e| {
@@ -104,40 +112,28 @@ pub async fn session_create(
         )
     })?;
 
-    let relay = DesktopRelay {
-        frames_tx: broadcast::channel(8).0,
-        input_tx: broadcast::channel(64).0,
-    };
     st.desktop_sessions
         .write()
         .await
-        .insert(did.to_string(), relay);
+        .insert(
+            session_id.clone(),
+            DesktopSession {
+                tenant_id: tid,
+                device_id: did,
+            },
+        );
 
-    let cmd = CreateCommandReq {
-        target_device_id: did,
-        payload: json!({
-            "action": "start_desktop",
-            "params": {
-                "room": room_name,
-                "token": agent_token,
-                "livekit_url": st.livekit_url,
-                "session_id": session_id,
-                "width": req.width,
-                "height": req.height,
-                "api_ws_url": format!("/v1/tenants/{tid}/devices/{did}/desktop/ws/agent"),
-            }
-        }),
-        priority: Some(10),
-        ttl_seconds: Some(120),
-        idempotency_key: Some(format!("desktop-{session_id}")),
-    };
-
-    let _ = db::create_command(&st.db, tid, &cmd).await.map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({"detail": format!("command creation failed: {e}")})),
-        )
-    })?;
+    enqueue_start_command(
+        &st,
+        tid,
+        did,
+        &session_id,
+        &room_name,
+        &agent_token,
+        req.width,
+        req.height,
+    )
+    .await?;
 
     Ok((
         StatusCode::CREATED,
@@ -157,146 +153,26 @@ pub async fn session_create(
 pub async fn session_delete(
     State(st): State<AppState>,
     Path((tid, did)): Path<(Uuid, Uuid)>,
+    Query(query): Query<SessionDeleteQuery>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
-    st.desktop_sessions.write().await.remove(&did.to_string());
+    let removed = st.desktop_sessions.write().await.remove(&query.session_id);
+    if let Some(session) = removed {
+        if session.tenant_id != tid || session.device_id != did {
+            return Err((
+                StatusCode::NOT_FOUND,
+                Json(json!({"detail": "desktop session not found"})),
+            ));
+        }
 
-    let cmd = CreateCommandReq {
-        target_device_id: did,
-        payload: json!({
-            "action": "stop_desktop",
-            "params": {}
-        }),
-        priority: Some(10),
-        ttl_seconds: Some(60),
-        idempotency_key: None,
-    };
+        let mut device_sessions = st.device_sessions.write().await;
+        if device_sessions.get(&did) == Some(&query.session_id) {
+            device_sessions.remove(&did);
+        }
 
-    let _ = db::create_command(&st.db, tid, &cmd).await.map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({"detail": format!("command creation failed: {e}")})),
-        )
-    })?;
+        enqueue_stop_command(&st, tid, did, query.session_id, Some(10)).await?;
+    }
 
     Ok(StatusCode::NO_CONTENT)
-}
-
-// ---------------------------------------------------------------------------
-// WebSocket: Viewer (browser admin)
-// ---------------------------------------------------------------------------
-
-pub async fn ws_viewer(
-    ws: WebSocketUpgrade,
-    State(st): State<AppState>,
-    Path((_tid, did)): Path<(Uuid, Uuid)>,
-) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| handle_viewer_ws(socket, st, did.to_string()))
-}
-
-async fn handle_viewer_ws(socket: WebSocket, st: AppState, device_id: String) {
-    let (mut ws_tx, mut ws_rx) = socket.split();
-
-    let relay = {
-        let sessions = st.desktop_sessions.read().await;
-        sessions.get(&device_id).cloned()
-    };
-
-    let Some(relay) = relay else {
-        let _ = ws_tx.send(Message::Text(
-            json!({"error": "no active desktop session"}).to_string().into(),
-        )).await;
-        return;
-    };
-
-    let mut frames_rx = relay.frames_tx.subscribe();
-    let input_tx = relay.input_tx.clone();
-
-    let send_task = tokio::spawn(async move {
-        while let Ok(frame) = frames_rx.recv().await {
-            if ws_tx.send(Message::Binary(frame.into())).await.is_err() {
-                break;
-            }
-        }
-    });
-
-    let recv_task = tokio::spawn(async move {
-        while let Some(Ok(msg)) = ws_rx.next().await {
-            match msg {
-                Message::Text(text) => {
-                    let _ = input_tx.send(text.as_bytes().to_vec());
-                }
-                Message::Close(_) => break,
-                _ => {}
-            }
-        }
-    });
-
-    tokio::select! {
-        _ = send_task => {},
-        _ = recv_task => {},
-    }
-}
-
-// ---------------------------------------------------------------------------
-// WebSocket: Agent (device agent streams frames + receives input)
-// ---------------------------------------------------------------------------
-
-pub async fn ws_agent(
-    ws: WebSocketUpgrade,
-    State(st): State<AppState>,
-    Path((_tid, did)): Path<(Uuid, Uuid)>,
-) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| handle_agent_ws(socket, st, did.to_string()))
-}
-
-async fn handle_agent_ws(socket: WebSocket, st: AppState, device_id: String) {
-    let (mut ws_tx, mut ws_rx) = socket.split();
-
-    let relay = {
-        let sessions = st.desktop_sessions.read().await;
-        sessions.get(&device_id).cloned()
-    };
-
-    let Some(relay) = relay else {
-        let _ = ws_tx.send(Message::Text(
-            json!({"error": "no active desktop session"}).to_string().into(),
-        )).await;
-        return;
-    };
-
-    let frames_tx = relay.frames_tx.clone();
-    let mut input_rx = relay.input_tx.subscribe();
-
-    let send_task = tokio::spawn(async move {
-        while let Ok(input) = input_rx.recv().await {
-            if ws_tx
-                .send(Message::Text(String::from_utf8_lossy(&input).into_owned().into()))
-                .await
-                .is_err()
-            {
-                break;
-            }
-        }
-    });
-
-    let recv_task = tokio::spawn(async move {
-        while let Some(Ok(msg)) = ws_rx.next().await {
-            match msg {
-                Message::Binary(data) => {
-                    let _ = frames_tx.send(data.to_vec());
-                }
-                Message::Close(_) => break,
-                _ => {}
-            }
-        }
-    });
-
-    tokio::select! {
-        _ = send_task => {},
-        _ = recv_task => {},
-    }
-
-    st.desktop_sessions.write().await.remove(&device_id);
 }
 
 // ---------------------------------------------------------------------------
@@ -310,12 +186,14 @@ fn generate_token(
     identity: &str,
     can_publish: bool,
     can_subscribe: bool,
+    can_publish_data: bool,
 ) -> Result<String, String> {
     let grants = VideoGrants {
         room_join: true,
         room: room.to_string(),
         can_publish,
         can_subscribe,
+        can_publish_data,
         ..Default::default()
     };
 
@@ -326,4 +204,74 @@ fn generate_token(
         .map_err(|e| e.to_string())?;
 
     Ok(token)
+}
+
+async fn enqueue_start_command(
+    st: &AppState,
+    tenant_id: Uuid,
+    device_id: Uuid,
+    session_id: &str,
+    room_name: &str,
+    agent_token: &str,
+    width: u32,
+    height: u32,
+) -> Result<(), (StatusCode, Json<serde_json::Value>)> {
+    let cmd = CreateCommandReq {
+        target_device_id: device_id,
+        payload: json!({
+            "action": "start_desktop",
+            "params": {
+                "room": room_name,
+                "token": agent_token,
+                "livekit_url": st.livekit_url,
+                "session_id": session_id,
+                "width": width,
+                "height": height,
+            }
+        }),
+        priority: Some(10),
+        ttl_seconds: Some(120),
+        idempotency_key: Some(format!("desktop-{session_id}")),
+    };
+
+    db::create_command(&st.db, tenant_id, &cmd)
+        .await
+        .map(|_| ())
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"detail": format!("command creation failed: {e}")})),
+            )
+        })
+}
+
+async fn enqueue_stop_command(
+    st: &AppState,
+    tenant_id: Uuid,
+    device_id: Uuid,
+    session_id: String,
+    priority: Option<i16>,
+) -> Result<(), (StatusCode, Json<serde_json::Value>)> {
+    let cmd = CreateCommandReq {
+        target_device_id: device_id,
+        payload: json!({
+            "action": "stop_desktop",
+            "params": {
+                "session_id": session_id,
+            }
+        }),
+        priority,
+        ttl_seconds: Some(60),
+        idempotency_key: None,
+    };
+
+    db::create_command(&st.db, tenant_id, &cmd)
+        .await
+        .map(|_| ())
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"detail": format!("command creation failed: {e}")})),
+            )
+        })
 }

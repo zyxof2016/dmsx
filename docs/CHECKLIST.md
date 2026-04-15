@@ -18,7 +18,15 @@
 - [x] `.gitignore` 配置
 - [x] CI 流水线（`.github/workflows/ci.yml`：fmt / clippy / build / test / Docker）
 - [x] `cargo check` / `cargo clippy` 零错误零警告
-- [ ] 集成测试框架（`cargo test` 有实际用例）
+- [x] 工程规范与开发约定文档（`docs/ENGINEERING_STANDARDS.md`）
+- [x] PR / Code Review 检查清单（`docs/PR_REVIEW_CHECKLIST.md`）
+- [x] `dmsx-agent` 首轮模块化拆分（`config` / `api` / `telemetry` / `rustdesk` / `command_runner` / `desktop`）
+- [x] `dmsx-agent` 第二轮模块化拆分（`app` / `device` / `platform`，`main.rs` 仅保留入口）
+- [x] `dmsx-agent` 第三轮模块化拆分（`desktop` 细分为 `capture` / `input` / `session`，停止逻辑收口为方法）
+- [x] `dmsx-agent` 首批测试用例已补充（`device` 注册/心跳 + `script` 参数分支，`cargo test -p dmsx-agent --lib` 已通过）
+- [x] `dmsx-api` 轻量测试入口已建立（`lib.rs` / `app.rs` / `error.rs`，`cargo test -p dmsx-api --lib` 已通过）
+- [x] `dmsx-api` handlers 纯逻辑已下沉到 `helpers` 并补测试（影子 delta / 命令结果状态，`cargo test -p dmsx-api --lib` 已通过 10 项）
+- [~] 集成测试框架（`dmsx-agent --lib` 已有实际用例，workspace / 全量二进制链路待继续扩展）
 - [ ] `cargo bench` 性能基准
 
 ---

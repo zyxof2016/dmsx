@@ -16,7 +16,6 @@ import {
   AppstoreOutlined,
   CloudServerOutlined,
   AuditOutlined,
-  SettingOutlined,
   RobotOutlined,
   BellOutlined,
   UserOutlined,
@@ -39,7 +38,6 @@ const menuItems = [
   { key: "compliance", icon: <AuditOutlined />, label: "安全合规" },
   { key: "network", icon: <GlobalOutlined />, label: "网络管控" },
   { key: "ai", icon: <RobotOutlined />, label: "AI 智慧中心" },
-  { key: "settings", icon: <SettingOutlined />, label: "系统设置" },
 ];
 
 const keyToPath: Record<string, string> = {
@@ -51,7 +49,6 @@ const keyToPath: Record<string, string> = {
   compliance: "/compliance",
   network: "/network",
   ai: "/ai",
-  settings: "/settings",
 };
 
 const pathToLabel: Record<string, string> = {
@@ -63,7 +60,6 @@ const pathToLabel: Record<string, string> = {
   "/compliance": "安全合规",
   "/network": "网络管控",
   "/ai": "AI 智慧中心",
-  "/settings": "系统设置",
 };
 
 export const AppLayout: React.FC = () => {

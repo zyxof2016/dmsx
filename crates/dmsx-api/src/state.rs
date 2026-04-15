@@ -1,12 +1,13 @@
 use sqlx::PgPool;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::{broadcast, RwLock};
+use tokio::sync::RwLock;
+use uuid::Uuid;
 
 #[derive(Clone)]
-pub struct DesktopRelay {
-    pub frames_tx: broadcast::Sender<Vec<u8>>,
-    pub input_tx: broadcast::Sender<Vec<u8>>,
+pub struct DesktopSession {
+    pub tenant_id: Uuid,
+    pub device_id: Uuid,
 }
 
 #[derive(Clone)]
@@ -15,5 +16,6 @@ pub struct AppState {
     pub livekit_url: String,
     pub livekit_api_key: String,
     pub livekit_api_secret: String,
-    pub desktop_sessions: Arc<RwLock<HashMap<String, DesktopRelay>>>,
+    pub desktop_sessions: Arc<RwLock<HashMap<String, DesktopSession>>>,
+    pub device_sessions: Arc<RwLock<HashMap<Uuid, String>>>,
 }

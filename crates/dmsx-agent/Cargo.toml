@@ -20,7 +20,10 @@ tracing-subscriber.workspace = true
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
 sysinfo = "0.33"
 futures-util = "0.3"
-tokio-tungstenite = { version = "0.26", features = ["rustls-tls-webpki-roots"] }
+livekit = { version = "0.7", features = ["rustls-tls-webpki-roots"] }
+libwebrtc = "0.3"
 scrap = "0.5"
 enigo = { version = "0.2", features = ["serde"] }
-image = { version = "0.25", default-features = false, features = ["jpeg"] }
+
+[dev-dependencies]
+wiremock = "0.6.5"

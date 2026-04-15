@@ -241,6 +241,7 @@ export const DevicesPage: React.FC = () => {
                     navigate({
                       to: "/devices/$deviceId",
                       params: { deviceId: id },
+                      search: { tab: "info" },
                     })
                   }
                 >
@@ -321,6 +322,7 @@ export const DevicesPage: React.FC = () => {
                       navigate({
                         to: "/devices/$deviceId",
                         params: { deviceId: record.id },
+                        search: { tab: "info" },
                       })
                     }
                   >
