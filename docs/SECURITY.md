@@ -1,0 +1,46 @@
+# 安全设计
+
+## 设备身份与接入
+
+| 阶段 | 机制 | 说明 |
+|------|------|------|
+| 注册 | **Enrollment token**（短生命周期、一次性或限量） | 可扫码、批量 CSV、IT 工单系统集成 |
+| 常态 | **mTLS** | 每设备独立客户端证书；私钥存 TPM/Secure Enclave（平台相关） |
+| 轮换 | **证书 TTL + 自动续期** | Agent 在过期前调用 `Enroll` 子协议或专用 `RotateCertificate`（可后续扩展） |
+| 吊销 | **吊销列表 + 连接拒止** | 网关校验 `device_id` + 证书序列号；PG `enroll_status = revoked/blocked` |
+
+## 控制面身份与权限
+
+- **AuthN**：OIDC（Keycloak/Entra ID/Okta 等）；服务账号用 **JWT + mTLS**（双向约束）。
+- **AuthZ**：**RBAC** 角色示例：`PlatformAdmin`, `TenantAdmin`, `SiteAdmin`, `Operator`, `Auditor`, `ReadOnly`。
+- **范围**：权限绑定在 `tenant_id` + 可选 `site_id` / `group_id`；API 层强制 **URL/JWT tenant 一致性**。
+- **ABAC**：`devices.labels` + 策略 `scope_expr`；评估引擎在 PolicyService（后续实现）。
+
+## 通信安全
+
+- 公网：**TLS 1.3**，仅现代套件；**HSTS**。
+- 东西向：服务网格 **mTLS**（Istio/Linkerd）或自签 SPIFFE/SVID。
+- gRPC：禁止明文；设备网关独立 LB，**按租户速率限制**。
+
+## 审计与不可篡改
+
+- 所有管理 API 写操作产生 **AuditLog**（Postgres 权威）。
+- 异步写入 **ClickHouse** 流水表；定期 **对象存储归档**（S3 Object Lock / WORM 桶策略）。
+- 可选：**哈希链**（每条审计记录含 `prev_hash`）或 **签名批次**（每日 Merkle root 上链/离线签）。
+
+## 制品与供应链
+
+- **SHA-256** 必填；**签名**（Sigstore/cosign 或自建 KMS 签名）存 `signature_b64`。
+- 下载：**预签名 URL + 短 TTL**；Agent 校验哈希与签名后再执行。
+- 进阶：**SBOM**（CycloneDX）存 `artifacts.metadata`。
+
+## 密钥管理
+
+- 运行态：**Kubernetes Secrets + External Secrets Operator** 同步 Vault/KMS。
+- 数据加密：**PG TDE/磁盘加密**（云厂商）；敏感字段 **应用层信封加密**（KMS 数据密钥）。
+
+## 威胁建模要点（摘要）
+
+- 被盗设备证书 → 吊销 + 设备隔离命令 + 会话失效。
+- 内部滥用 → 审计 + 双人审批（高危命令，后续工作流）。
+- 供应链投毒 → 签名 + 渠道 + 灰度 + 自动回滚（策略 spec 驱动）。

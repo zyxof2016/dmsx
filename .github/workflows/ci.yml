@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  check:
+    name: Check & Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
+      - name: Format
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets
+
+      - name: Build
+        run: cargo build --workspace
+
+      - name: Test
+        run: cargo test --workspace
+
+  docker:
+    name: Docker Build
+    runs-on: ubuntu-latest
+    needs: check
+    strategy:
+      matrix:
+        target:
+          - { file: deploy/Dockerfile.api, tag: dmsx-api }
+          - { file: deploy/Dockerfile.device-gw, tag: dmsx-device-gw }
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -f ${{ matrix.target.file }} -t ${{ matrix.target.tag }}:ci .

@@ -1,0 +1,7 @@
+/target
+**/*.rs.bk
+.env
+.env.*
+!.env.example
+web/node_modules/
+web/dist/

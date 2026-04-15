@@ -1,0 +1,124 @@
+syntax = "proto3";
+
+package dmsx.agent.v1;
+
+// 数据面 Agent 契约（与 docs/API.md 数据面章节一致）。
+//
+// **多租户隔离约定**：消息体不含 tenant_id。
+// 设备身份通过 mTLS 客户端证书绑定到唯一 device_id，
+// 而 device_id → tenant_id 的映射在服务端 enrollment 时建立，
+// 网关根据证书自动填充 tenant_id——不信任客户端传入。
+
+message Empty {}
+
+// --- Enums (与 dmsx-core 枚举一一对应) ---
+
+enum CommandStatusProto {
+  COMMAND_STATUS_UNSPECIFIED = 0;
+  COMMAND_STATUS_QUEUED      = 1;
+  COMMAND_STATUS_DELIVERED   = 2;
+  COMMAND_STATUS_ACKED       = 3;
+  COMMAND_STATUS_RUNNING     = 4;
+  COMMAND_STATUS_SUCCEEDED   = 5;
+  COMMAND_STATUS_FAILED      = 6;
+  COMMAND_STATUS_EXPIRED     = 7;
+  COMMAND_STATUS_CANCELLED   = 8;
+}
+
+enum DevicePlatformProto {
+  DEVICE_PLATFORM_UNSPECIFIED = 0;
+  DEVICE_PLATFORM_WINDOWS     = 1;
+  DEVICE_PLATFORM_LINUX       = 2;
+  DEVICE_PLATFORM_MACOS       = 3;
+  DEVICE_PLATFORM_IOS         = 4;
+  DEVICE_PLATFORM_ANDROID     = 5;
+  DEVICE_PLATFORM_EDGE        = 6;
+  DEVICE_PLATFORM_OTHER       = 7;
+}
+
+// --- Messages ---
+
+message EnrollRequest {
+  string enrollment_token = 1;
+  string public_key_pem   = 2;
+  DevicePlatformProto platform = 3;
+  map<string, string> attributes = 4;
+}
+
+message EnrollResponse {
+  string device_id        = 1;
+  string issued_cert_pem  = 2;
+  string ca_cert_pem      = 3;
+  int64 cert_expires_unix = 4;
+}
+
+message HeartbeatRequest {
+  string device_id     = 1;
+  string agent_version = 2;
+  map<string, string> telemetry = 3;
+}
+
+message HeartbeatResponse {
+  int64 server_time_unix = 1;
+}
+
+message FetchDesiredStateRequest {
+  string device_id                = 1;
+  string last_policy_revision_id  = 2;
+}
+
+message FetchDesiredStateResponse {
+  string policy_revision_id = 1;
+  uint64 spec_version       = 2;
+  string spec_json          = 3;
+}
+
+message CommandEnvelope {
+  string command_id        = 1;
+  string idempotency_key   = 2;
+  string payload_json      = 3;
+  int32 ttl_seconds        = 4;
+  int32 priority           = 5;
+}
+
+message ReportResultRequest {
+  string device_id            = 1;
+  string command_id           = 2;
+  CommandStatusProto status   = 3;
+  int32 exit_code             = 4;
+  string stdout_snippet       = 5;
+  string stderr_snippet       = 6;
+  string evidence_object_key  = 7;
+}
+
+message ReportResultResponse {
+  bool accepted = 1;
+}
+
+message UploadEvidenceRequest {
+  string device_id    = 1;
+  string content_type = 2;
+  bytes chunk         = 3;
+  bool last_chunk     = 4;
+  string upload_token = 5;
+}
+
+message UploadEvidenceResponse {
+  string object_key = 1;
+}
+
+message StreamCommandsRequest {
+  string device_id = 1;
+  string cursor    = 2;
+}
+
+// --- Service ---
+
+service AgentService {
+  rpc Enroll(EnrollRequest) returns (EnrollResponse);
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+  rpc FetchDesiredState(FetchDesiredStateRequest) returns (FetchDesiredStateResponse);
+  rpc StreamCommands(StreamCommandsRequest) returns (stream CommandEnvelope);
+  rpc ReportResult(ReportResultRequest) returns (ReportResultResponse);
+  rpc UploadEvidence(stream UploadEvidenceRequest) returns (UploadEvidenceResponse);
+}

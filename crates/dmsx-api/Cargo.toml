@@ -1,0 +1,26 @@
+[package]
+name = "dmsx-api"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "dmsx-api"
+path = "src/main.rs"
+
+[dependencies]
+dmsx-core = { path = "../dmsx-core", features = ["axum", "sqlx"] }
+dmsx-ai = { path = "../dmsx-ai" }
+axum.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+uuid.workspace = true
+sqlx.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+tower-http.workspace = true
+livekit-api = "0.4"
+futures-util = "0.3"
+tokio-tungstenite = "0.26"

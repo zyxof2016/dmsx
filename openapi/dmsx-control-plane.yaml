@@ -1,0 +1,474 @@
+openapi: 3.1.0
+info:
+  title: DMSX Control Plane API
+  version: 0.1.0
+  description: 集控 DMS 控制面 REST（与 crates/dmsx-api 路由对齐的骨架契约）
+servers:
+  - url: https://api.example.com
+paths:
+  /health:
+    get:
+      summary: Health check
+      operationId: healthCheck
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  service:
+                    type: string
+                    example: dmsx-api
+  /v1/tenants:
+    post:
+      summary: Create tenant
+      operationId: createTenant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StubEntity"
+  /v1/tenants/{tenant_id}/orgs:
+    post:
+      summary: Create org
+      operationId: createOrg
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StubEntity"
+  /v1/tenants/{tenant_id}/orgs/{org_id}/sites:
+    post:
+      summary: Create site
+      operationId: createSite
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+        - $ref: "#/components/parameters/OrgId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StubEntity"
+  /v1/tenants/{tenant_id}/sites/{site_id}/groups:
+    post:
+      summary: Create device group
+      operationId: createGroup
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+        - $ref: "#/components/parameters/SiteId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StubEntity"
+  /v1/tenants/{tenant_id}/devices:
+    get:
+      summary: List devices
+      operationId: listDevices
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceList"
+    post:
+      summary: Create / provision device (admin)
+      operationId: createDevice
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StubEntity"
+  /v1/tenants/{tenant_id}/devices/{device_id}:
+    get:
+      summary: Get device
+      operationId: getDevice
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+        - $ref: "#/components/parameters/DeviceId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+    patch:
+      summary: Update device (labels, groups, etc.)
+      operationId: patchDevice
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+        - $ref: "#/components/parameters/DeviceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+    delete:
+      summary: Delete or revoke device
+      operationId: deleteDevice
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+        - $ref: "#/components/parameters/DeviceId"
+      responses:
+        "204":
+          description: No Content
+  /v1/tenants/{tenant_id}/policies:
+    get:
+      summary: List policies
+      operationId: listPolicies
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+    post:
+      summary: Create policy
+      operationId: createPolicy
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StubEntity"
+  /v1/tenants/{tenant_id}/policies/{policy_id}:
+    get:
+      summary: Get single policy
+      operationId: getPolicy
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+        - $ref: "#/components/parameters/PolicyId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+        "404":
+          description: Not Found
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+    patch:
+      summary: Update policy
+      operationId: patchPolicy
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+        - $ref: "#/components/parameters/PolicyId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+    delete:
+      summary: Delete policy
+      operationId: deletePolicy
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+        - $ref: "#/components/parameters/PolicyId"
+      responses:
+        "204":
+          description: No Content
+  /v1/tenants/{tenant_id}/policies/{policy_id}/revisions:
+    post:
+      summary: Publish policy revision
+      operationId: publishPolicyRevision
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+        - $ref: "#/components/parameters/PolicyId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                spec:
+                  type: object
+                rollout:
+                  type: object
+      responses:
+        "201":
+          description: Published
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  policy_id:
+                    type: string
+                    format: uuid
+                  revision_id:
+                    type: string
+                    format: uuid
+                  version:
+                    type: integer
+  /v1/tenants/{tenant_id}/commands:
+    post:
+      summary: Enqueue command
+      operationId: createCommand
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+        - name: Idempotency-Key
+          in: header
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandCreate"
+      responses:
+        "202":
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  tenant_id:
+                    type: string
+                    format: uuid
+                  status:
+                    type: string
+                    example: queued
+  /v1/tenants/{tenant_id}/commands/{command_id}:
+    get:
+      summary: Get command status
+      operationId: getCommand
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+        - $ref: "#/components/parameters/CommandId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+  /v1/tenants/{tenant_id}/artifacts:
+    post:
+      summary: Register artifact and get upload URL
+      operationId: createArtifact
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  tenant_id:
+                    type: string
+                    format: uuid
+                  upload_url:
+                    type: string
+                    format: uri
+  /v1/tenants/{tenant_id}/compliance/findings:
+    get:
+      summary: List compliance findings
+      operationId: listComplianceFindings
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+components:
+  parameters:
+    TenantId:
+      name: tenant_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    OrgId:
+      name: org_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    SiteId:
+      name: site_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    DeviceId:
+      name: device_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    PolicyId:
+      name: policy_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    CommandId:
+      name: command_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  schemas:
+    StubEntity:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        entity:
+          type: string
+        note:
+          type: string
+    DeviceList:
+      type: object
+      properties:
+        tenant_id:
+          type: string
+          format: uuid
+        items:
+          type: array
+          items:
+            type: object
+    ProblemDetails:
+      type: object
+      description: RFC 7807 Problem Details
+      properties:
+        type:
+          type: string
+          example: "about:blank"
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+    CommandCreate:
+      type: object
+      required:
+        - target_device_id
+        - payload
+      properties:
+        target_device_id:
+          type: string
+          format: uuid
+        payload:
+          type: object
+        priority:
+          type: integer
+          default: 0
+        ttl_seconds:
+          type: integer
+          default: 3600
+        idempotency_key:
+          type: string

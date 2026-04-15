@@ -1,0 +1,97 @@
+# 本地开发全栈（应用进程仍建议 cargo run）
+# 仅 postgres/redis/nats 为最小集；clickhouse/minio 可按需启用。
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: dmsx
+      POSTGRES_PASSWORD: dmsx
+      POSTGRES_DB: dmsx
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ../migrations:/docker-entrypoint-initdb.d:ro
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  nats:
+    image: nats:2-alpine
+    command: ["-js", "-m", "8222"]
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24-alpine
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    volumes:
+      - chdata:/var/lib/clickhouse
+      - ../migrations/ch:/docker-entrypoint-initdb.d:ro
+
+  minio:
+    image: quay.io/minio/minio:latest
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: dmsx
+      MINIO_ROOT_PASSWORD: dmsxdmsx
+    ports:
+      - "9100:9000"
+      - "9001:9001"
+    volumes:
+      - miniodata:/data
+
+  # RustDesk 远程桌面 — ID/Rendezvous 服务
+  rustdesk-hbbs:
+    image: rustdesk/rustdesk-server:latest
+    command: hbbs
+    ports:
+      - "21115:21115"
+      - "21116:21116"
+      - "21116:21116/udp"
+      - "21118:21118"
+    volumes:
+      - rustdesk-data:/root
+    depends_on: []
+
+  # RustDesk 远程桌面 — Relay 服务
+  rustdesk-hbbr:
+    image: rustdesk/rustdesk-server:latest
+    command: hbbr
+    ports:
+      - "21117:21117"
+      - "21119:21119"
+    volumes:
+      - rustdesk-data:/root
+    depends_on:
+      - rustdesk-hbbs
+
+  # LiveKit WebRTC — 远程桌面信令 + 媒体中继
+  livekit:
+    image: livekit/livekit-server:latest
+    command: --config /etc/livekit.yaml --dev
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "7882:7882/udp"
+    volumes:
+      - ./livekit.yaml:/etc/livekit.yaml:ro
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.96.0
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
+    ports:
+      - "4317:4317"
+
+volumes:
+  pgdata: {}
+  chdata: {}
+  miniodata: {}
+  rustdesk-data: {}

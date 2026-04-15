@@ -1,0 +1,26 @@
+[package]
+name = "dmsx-agent"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "DMSX 集控平台设备代理 — 采集遥测、接收命令、执行远控"
+
+[[bin]]
+name = "dmsx-agent"
+path = "src/main.rs"
+
+[dependencies]
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+sysinfo = "0.33"
+futures-util = "0.3"
+tokio-tungstenite = { version = "0.26", features = ["rustls-tls-webpki-roots"] }
+scrap = "0.5"
+enigo = { version = "0.2", features = ["serde"] }
+image = { version = "0.25", default-features = false, features = ["jpeg"] }

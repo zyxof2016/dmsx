@@ -1,0 +1,59 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: dmsx-api
+spec:
+  selector:
+    app: dmsx-api
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dmsx-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: dmsx-api
+  template:
+    metadata:
+      labels:
+        app: dmsx-api
+    spec:
+      containers:
+        - name: dmsx-api
+          image: ghcr.io/example/dmsx-api:0.1.0
+          ports:
+            - containerPort: 8080
+          env:
+            - name: RUST_LOG
+              value: dmsx_api=info,tower_http=info
+            - name: DMSX_API_BIND
+              value: "0.0.0.0:8080"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          securityContext:
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65534

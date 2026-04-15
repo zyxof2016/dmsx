@@ -1,0 +1,59 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: dmsx-device-gw
+spec:
+  selector:
+    app: dmsx-device-gw
+  ports:
+    - name: grpc
+      port: 50051
+      targetPort: 50051
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dmsx-device-gw
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: dmsx-device-gw
+  template:
+    metadata:
+      labels:
+        app: dmsx-device-gw
+    spec:
+      containers:
+        - name: dmsx-device-gw
+          image: ghcr.io/example/dmsx-device-gw:0.1.0
+          ports:
+            - containerPort: 50051
+          env:
+            - name: RUST_LOG
+              value: dmsx_device_gw=info
+            - name: DMSX_GW_BIND
+              value: "0.0.0.0:50051"
+          readinessProbe:
+            grpc:
+              port: 50051
+              service: ""
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            grpc:
+              port: 50051
+              service: ""
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          securityContext:
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65534

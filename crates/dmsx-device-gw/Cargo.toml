@@ -1,0 +1,20 @@
+[package]
+name = "dmsx-device-gw"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "dmsx-device-gw"
+path = "src/main.rs"
+
+[dependencies]
+tokio.workspace = true
+tokio-stream = "0.1"
+tonic.workspace = true
+prost.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[build-dependencies]
+tonic-build.workspace = true
