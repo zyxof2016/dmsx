@@ -91,7 +91,7 @@
 - [x] `.gitignore` 配置
 - [x] CI 流水线（`.github/workflows/ci.yml`：fmt / clippy / build / test / Docker）
 - [x] `cargo check` / `cargo clippy` 零错误零警告
-- [x] 工程规范与开发约定文档（`docs/ENGINEERING_STANDARDS.md`：已对齐 **同 package lib+bin 可见性**、**sqlx 嵌入迁移 / Postgres DDL 单一来源 / advisory lock 注意点**、**§13.4 本地脚本基线**；合并前可对照该文档与 `README.md` 验证命令）
+- [x] 工程规范与开发约定文档（`docs/ENGINEERING_STANDARDS.md`：已对齐 **同 package lib+bin 可见性**、**sqlx 嵌入迁移 / Postgres DDL 单一来源 / advisory lock 注意点**、**§13.4 本地脚本基线**、**§8.3 国际化与本地化（语言/时间/单位）**；合并前可对照该文档与 `README.md` 验证命令）
 - [x] PR / Code Review 检查清单（`docs/PR_REVIEW_CHECKLIST.md`）
 - [x] `dmsx-agent` 首轮模块化拆分（`config` / `api` / `telemetry` / `rustdesk` / `command_runner` / `desktop`）
 - [x] `dmsx-agent` 第二轮模块化拆分（`app` / `device` / `platform`，`main.rs` 仅保留入口）
@@ -310,8 +310,8 @@
 - [x] 批量操作（设备/策略多选批量删除）
 - [x] 空状态引导组件（Empty + 操作提示）
 - [x] 列表轮询（设备 10s / 命令 10s / 统计 15s）
-- [ ] 暗色模式
-- [ ] 国际化（i18n）
+- [x] 暗色模式（AntD theme darkAlgorithm + 顶部切换；主题偏好落盘 `localStorage`；先覆盖 AppLayout 顶栏/内容容器/侧栏品牌与菜单外观）
+- [x] 国际化（i18n）（简版：提供 `AppProviders` + `t()`；顶部语言切换影响导航/面包屑/用户菜单与 Dashboard 主标题；未覆盖的文案默认回退到中文 key）
 
 ### 页面
 
