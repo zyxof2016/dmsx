@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
@@ -48,3 +49,64 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build image
         run: docker build -f ${{ matrix.target.file }} -t ${{ matrix.target.tag }}:ci .
+
+  internal_beta_smoke:
+    name: Internal Beta Smoke (HTTP)
+    runs-on: ubuntu-latest
+    # 主链路冒烟依赖 docker + postgres + 起服务，容易抖动；默认仅手动触发，避免阻塞 PR。
+    if: github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Start Postgres (docker compose)
+        run: docker compose -f deploy/docker-compose.yml up -d postgres
+
+      - name: Wait for Postgres ready
+        run: |
+          for i in $(seq 1 60); do
+            if docker exec deploy-postgres-1 pg_isready -U dmsx -d dmsx >/dev/null 2>&1; then
+              docker exec deploy-postgres-1 pg_isready -U dmsx -d dmsx
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "postgres not ready" >&2
+          docker logs deploy-postgres-1 || true
+          exit 1
+
+      - name: Start dmsx-api (background)
+        env:
+          DATABASE_URL: postgres://dmsx:dmsx@127.0.0.1:5432/dmsx
+          DMSX_API_AUTH_MODE: disabled
+          DMSX_API_BIND: 127.0.0.1:8080
+        run: |
+          cargo run -p dmsx-api 2>&1 | tee /tmp/dmsx-api.log &
+          echo $! > /tmp/dmsx-api.pid
+
+      - name: Wait for /health
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sfS http://127.0.0.1:8080/health >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "dmsx-api not ready" >&2
+          tail -n 200 /tmp/dmsx-api.log || true
+          exit 1
+
+      - name: Run HTTP smoke script
+        env:
+          DMSX_SMOKE_API: http://127.0.0.1:8080
+          DMSX_SMOKE_TENANT: 00000000-0000-0000-0000-000000000001
+        run: bash scripts/internal-beta-smoke-http.sh
+
+      - name: Stop dmsx-api
+        if: always()
+        run: |
+          if [[ -f /tmp/dmsx-api.pid ]]; then
+            kill -TERM "$(cat /tmp/dmsx-api.pid)" || true
+          fi
+          tail -n 200 /tmp/dmsx-api.log || true

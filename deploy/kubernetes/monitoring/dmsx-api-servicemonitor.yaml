@@ -1,0 +1,19 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: dmsx-api
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: dmsx-api
+    app.kubernetes.io/part-of: dmsx
+spec:
+  # 通过 label 选择 dmsx 命名空间内的 dmsx-api Service
+  namespaceSelector:
+    matchNames: ["dmsx"]
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: dmsx-api
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s

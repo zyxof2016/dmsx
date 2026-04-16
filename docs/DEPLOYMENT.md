@@ -58,6 +58,10 @@ flowchart TB
 - `deploy/kubernetes/dmsx-api-secrets.example.yaml`：Secret 模板（示例值需要替换；生产建议由 External Secrets/Vault/KMS 生成）。
 - `deploy/kubernetes/dmsx-api-networkpolicy.yaml`：NetworkPolicy 示例（限制入站，仅允许 Ingress Controller 与 Prometheus 抓取；需按集群命名空间/标签调整）。
 - `deploy/kubernetes/namespace-dmsx.yaml`：Namespace（`dmsx`）示例（含推荐 labels）。
+- `deploy/kubernetes/monitoring/`：可观测性配套模板（Prometheus Operator / Grafana 场景）：
+  - `dmsx-api-servicemonitor.yaml`：抓取 `dmsx-api` 的 `/metrics`
+  - `dmsx-api-prometheusrule.yaml`：告警规则示例
+  - `dmsx-api-grafana-dashboard.yaml`：Grafana Dashboard（ConfigMap）示例
 
 约定（示例默认）：
 

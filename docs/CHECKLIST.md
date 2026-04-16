@@ -391,9 +391,9 @@
 
 - [x] OTel Collector 配置（`deploy/otel-collector-config.yaml`）
 - [ ] 应用侧 OpenTelemetry SDK 集成
-- [ ] Prometheus ServiceMonitor
-- [ ] Grafana 仪表盘模板
-- [ ] 告警规则（PrometheusRule）
+- [x] Prometheus ServiceMonitor（模板：`deploy/kubernetes/monitoring/dmsx-api-servicemonitor.yaml`）
+- [x] Grafana 仪表盘模板（模板：`deploy/kubernetes/monitoring/dmsx-api-grafana-dashboard.yaml`）
+- [x] 告警规则（PrometheusRule，模板：`deploy/kubernetes/monitoring/dmsx-api-prometheusrule.yaml`）
 
 ---
 
