@@ -13,7 +13,7 @@ use tower::limit::ConcurrencyLimitLayer;
 use tower_http::{
     cors::{Any, CorsLayer},
     request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
-    trace::TraceLayer,
+    trace::{DefaultOnResponse, TraceLayer},
 };
 
 use crate::{
@@ -154,10 +154,27 @@ pub fn build_router(st: AppState) -> Router {
     let set_request_id = SetRequestIdLayer::x_request_id(MakeRequestUuid);
     let propagate_request_id = PropagateRequestIdLayer::x_request_id();
 
+    let trace_layer = TraceLayer::new_for_http()
+        .make_span_with(|req: &axum::http::Request<_>| {
+            let request_id = req
+                .headers()
+                .get("x-request-id")
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("-");
+            tracing::info_span!(
+                "http.request",
+                request_id = %request_id,
+                method = %req.method(),
+                uri = %req.uri(),
+                version = ?req.version()
+            )
+        })
+        .on_response(DefaultOnResponse::new().level(tracing::Level::INFO));
+
     let base_xcut = ServiceBuilder::new()
         .layer(set_request_id)
         .layer(propagate_request_id)
-        .layer(TraceLayer::new_for_http());
+        .layer(trace_layer);
 
     let concurrency_limit = concurrency_limit_from_env();
 
