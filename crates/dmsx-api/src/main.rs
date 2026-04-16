@@ -2,12 +2,7 @@ use dmsx_api::app::{build_router, build_state_from_env};
 
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "dmsx_api=info,tower_http=info,sqlx=warn".into()),
-        )
-        .init();
+    let _telemetry = dmsx_api::telemetry::init_tracing("dmsx-api");
 
     let st = build_state_from_env().await;
     let app = build_router(st);

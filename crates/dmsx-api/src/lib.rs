@@ -5,6 +5,7 @@ mod desktop;
 mod handlers;
 mod limits;
 mod metrics;
+pub mod telemetry;
 mod migrate_embedded;
 mod query_types;
 mod repo;

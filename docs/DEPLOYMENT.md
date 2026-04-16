@@ -272,8 +272,8 @@ OTLP 导出使用 OpenTelemetry Rust 标准环境变量（若未来引入 SDK，
 本地验证（使用 compose 自带 `otel-collector` 的 debug exporter 打印到 stdout）：
 
 ```bash
-OTEL_SERVICE_NAME=dmsx-api \
 OTEL_EXPORTER_OTLP_ENDPOINT="http://127.0.0.1:4317" \
+OTEL_SERVICE_NAME=dmsx-api \
 OTEL_EXPORTER_OTLP_PROTOCOL=grpc \
 RUST_LOG="dmsx_api=info,tower_http=info,sqlx=warn" \
 cargo run -p dmsx-api

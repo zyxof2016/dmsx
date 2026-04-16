@@ -390,7 +390,7 @@
 ### 可观测性
 
 - [x] OTel Collector 配置（`deploy/otel-collector-config.yaml`）
-- [ ] 应用侧 OpenTelemetry SDK 集成
+- [x] 应用侧 OpenTelemetry SDK 集成（`dmsx-api`：设置 `OTEL_EXPORTER_OTLP_ENDPOINT` 即导出 traces；未设置则仅本地日志）
 - [x] Prometheus ServiceMonitor（模板：`deploy/kubernetes/monitoring/dmsx-api-servicemonitor.yaml`）
 - [x] Grafana 仪表盘模板（模板：`deploy/kubernetes/monitoring/dmsx-api-grafana-dashboard.yaml`）
 - [x] 告警规则（PrometheusRule，模板：`deploy/kubernetes/monitoring/dmsx-api-prometheusrule.yaml`）
