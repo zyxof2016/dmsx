@@ -34,13 +34,14 @@
 | 2026-04-16 | `./scripts/internal-beta-smoke-http.sh` **第 2 轮**（同上 `DMSX_SMOKE_API` / `DMSX_API_AUTH_MODE=disabled`） | **通过** |
 | 2026-04-16 | `./scripts/internal-beta-verify.sh`（复跑：`dmsx-api` 48 passed、`dmsx-agent` 6 passed） | **通过** |
 | 2026-04-16 | `./scripts/reproduce-dev-env.sh`（`REPRODUCE_MINIMAL=1`；本机 5432 占用时回退校验 `dmsx-postgres`） | **通过**；随后 `dmsx-api` + `internal-beta-smoke-http.sh` **通过** |
+| 2026-04-16 | `REPRODUCE_MINIMAL=1 ./scripts/reproduce-dev-env.sh` + `DATABASE_URL=... DMSX_API_AUTH_MODE=disabled DMSX_API_BIND=127.0.0.1:8080 cargo run -p dmsx-api` + `./scripts/internal-beta-dod.sh` | **通过**（DoD 一键：库级基线 + 主链路 HTTP 冒烟） |
 
 ### 网内测试建议（内测环境）
 
 > 面向「先内测」：**控制面与数据默认只在团队内网 / VPN 可达范围验证**，避免与公网生产要求混淆。
 
 - [ ] **网络边界**：`dmsx-api`、Postgres、管理台等仅绑定内网地址或经 VPN；若必须经公网演示，须单独评审（TLS、**`jwt` 模式**、防火墙白名单），且不把生产密钥写入仓库（**本轮**未验收远程桌面时，**LiveKit 可不作为必起/必通依赖**）
-- [ ] **节奏**：每次合并至内测分支或打内测标签前，至少执行 DoD 中的 **`cargo test -p dmsx-api --lib`**、**`cargo test -p dmsx-agent --lib`**，并跑通 **一条**主路径冒烟（可用 **[`scripts/internal-beta-smoke-http.sh`](../scripts/internal-beta-smoke-http.sh)** 代替手工 curl，仍需真实 Agent 的场景另测）
+- [ ] **节奏**：每次合并至内测分支或打内测标签前，至少执行 DoD 中的 **`cargo test -p dmsx-api --lib`**、**`cargo test -p dmsx-agent --lib`**，并跑通 **一条**主路径冒烟（可用 **[`scripts/internal-beta-smoke-http.sh`](../scripts/internal-beta-smoke-http.sh)** 代替手工 curl，仍需真实 Agent 的场景另测）。**推荐一键脚本**：[`scripts/internal-beta-dod.sh`](../scripts/internal-beta-dod.sh)
 - [ ] **数据与凭据**：内测库、JWT 密钥及（若启用桌面或 LiveKit 时的）LiveKit Secret 视为敏感；截图/录屏中含 token 时须打码；不向网外渠道粘贴完整环境变量
 
 ### 内测阶段明确延后（不纳入内测门禁）

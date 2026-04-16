@@ -62,6 +62,13 @@ REPRODUCE_TAKE_PORT_5432=1 REPRODUCE_MINIMAL=1 ./scripts/reproduce-dev-env.sh
 
 ### 内测基线（可选）
 
+**合并/打标签前 DoD 一键校验**（推荐；需本机已起 `dmsx-api` + Postgres 才能跑主链路冒烟）：
+
+```bash
+chmod +x scripts/internal-beta-dod.sh   # 首次
+./scripts/internal-beta-dod.sh
+```
+
 **库级回归**（无需起 Docker，仅需 Rust 工具链）：
 
 ```bash
