@@ -194,6 +194,33 @@ pub async fn load_auth_config_from_env() -> Result<AuthConfig, DmsxError> {
         apply_oidc_discovery(&mut config, discovery);
     }
 
+    // If we validate tokens via JWKS, require issuer + audience pinning.
+    // OIDC discovery can fill `jwt_issuer`, but `jwt_audience` must be configured explicitly.
+    if config.jwks_url.is_some() {
+        if config
+            .jwt_issuer
+            .as_deref()
+            .unwrap_or_default()
+            .trim()
+            .is_empty()
+        {
+            return Err(DmsxError::Internal(
+                "JWKS auth enabled but DMSX_API_JWT_ISSUER is missing".into(),
+            ));
+        }
+        if config
+            .jwt_audience
+            .as_deref()
+            .unwrap_or_default()
+            .trim()
+            .is_empty()
+        {
+            return Err(DmsxError::Internal(
+                "JWKS auth enabled but DMSX_API_JWT_AUDIENCE is missing".into(),
+            ));
+        }
+    }
+
     initialize_jwks_cache(&mut config).await?;
 
     Ok(config)

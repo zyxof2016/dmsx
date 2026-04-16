@@ -93,7 +93,7 @@ DMSX_E2E_API="http://127.0.0.1:8080" ./scripts/agent-dev-e2e.sh
 
 ### 多租户公测门禁（`jwt` + 双租户，可选）
 
-面向 **`DMSX_API_AUTH_MODE=jwt`**：数据库须已应用 **`migrations/004_second_tenant_seed.sql`**（由 `dmsx-api` 启动时 `sqlx::migrate!` 执行；**新增/改过迁移文件后请重新 `cargo build -p dmsx-api` 再启动**，否则新 SQL 不会进库）。
+面向 **`DMSX_API_AUTH_MODE=jwt`**：数据库须已应用迁移至含 **`004_second_tenant_seed.sql`**（及之后的 **`006_commands_hash_partition.sql`** 等，由 `dmsx-api` 启动时 `sqlx::migrate!` 执行；**新增/改过 `migrations/*.sql` 后请重新 `cargo build -p dmsx-api` 再启动**，否则新 SQL 不会进库）。
 
 ```bash
 chmod +x scripts/public-beta-multi-tenant-smoke.sh   # 首次
@@ -111,6 +111,18 @@ DMSX_SMOKE_API="http://127.0.0.1:8080" \
 ```
 
 验收口径与记录见 [`docs/CHECKLIST.md`](docs/CHECKLIST.md)「多租户公测」专节。
+
+### Kubernetes（可选，模板清单）
+
+仓库内提供 `deploy/kubernetes/` 的示例清单（用于参考/快速试跑；生产建议迁移到你的 GitOps 仓库，并用 External Secrets 管理敏感配置）：
+
+```bash
+kubectl apply -f deploy/kubernetes/namespace-dmsx.yaml
+kubectl -n dmsx apply -f deploy/kubernetes/dmsx-api-secrets.example.yaml   # 先替换内容
+kubectl apply -f deploy/kubernetes/dmsx-api.yaml
+kubectl apply -f deploy/kubernetes/dmsx-api-networkpolicy.yaml            # 可选
+kubectl apply -f deploy/kubernetes/dmsx-api-ingress.yaml                  # 可选：替换域名与证书 Secret
+```
 
 ### 后端
 

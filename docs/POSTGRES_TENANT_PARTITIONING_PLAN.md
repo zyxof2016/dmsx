@@ -42,3 +42,11 @@
 - 任何“切换”步骤必须可逆：保留旧表只读副本一段时间；必要时可回切。
 - 迁移脚本要支持幂等（`IF EXISTS` / `IF NOT EXISTS`）并写明危险步骤。
 
+### 6) 已落地（仓库状态）
+
+| 迁移 | 表 | 说明 |
+|------|-----|------|
+| [`migrations/006_commands_hash_partition.sql`](../migrations/006_commands_hash_partition.sql) | `commands` | `PARTITION BY HASH (tenant_id)`，`MODULUS 8`；主键 `(tenant_id, id)`（分区表要求）；`command_results` 外键改为复合引用 `commands(tenant_id, id)`；迁移后重建 `rls_commands_tenant`。与 RLS 并存。 |
+
+后续表（`devices`、`audit_logs` 等）仍按 §1 顺序单独开迁移，避免单次停机面过大。
+

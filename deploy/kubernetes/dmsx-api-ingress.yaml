@@ -1,0 +1,35 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: dmsx-api
+  namespace: dmsx
+  labels:
+    app.kubernetes.io/name: dmsx-api
+    app.kubernetes.io/part-of: dmsx
+  annotations:
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/hsts: "true"
+    nginx.ingress.kubernetes.io/hsts-max-age: "31536000"
+    nginx.ingress.kubernetes.io/hsts-include-subdomains: "true"
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      add_header X-Content-Type-Options "nosniff" always;
+      add_header Referrer-Policy "no-referrer" always;
+      if ($request_uri !~ "^/(health|ready)$") {
+        if ($http_authorization = "") { return 401; }
+      }
+spec:
+  tls:
+    - hosts: ["api.example.com"]
+      secretName: dmsx-api-tls
+  rules:
+    - host: api.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: dmsx-api
+                port:
+                  number: 8080
+

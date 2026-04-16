@@ -3,12 +3,16 @@ use axum::{
     routing::{get, patch, post},
     Router,
 };
+use axum::response::IntoResponse;
 use sqlx::postgres::PgPoolOptions;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use tower::ServiceBuilder;
+use tower::limit::ConcurrencyLimitLayer;
 use tower_http::{
     cors::{Any, CorsLayer},
+    request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
     trace::TraceLayer,
 };
 
@@ -16,9 +20,85 @@ use crate::{
     auth::{load_auth_config_from_env, spawn_jwks_refresh_task},
     desktop, handlers, migrate_embedded,
     limits,
+    metrics,
     services::bootstrap,
     state::AppState,
 };
+
+fn truthy_env(name: &str) -> bool {
+    std::env::var(name)
+        .ok()
+        .map(|v| matches!(v.to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
+        .unwrap_or(false)
+}
+
+fn dmsx_api_env() -> String {
+    std::env::var("DMSX_API_ENV")
+        .unwrap_or_else(|_| "dev".to_string())
+        .to_ascii_lowercase()
+}
+
+fn enforce_prod_guardrails(auth: &crate::auth::AuthConfig) {
+    let env = dmsx_api_env();
+    if env == "dev" {
+        return;
+    }
+
+    let allow_insecure = truthy_env("DMSX_API_ALLOW_INSECURE_AUTH");
+    if auth.mode == crate::auth::AuthMode::Disabled && !allow_insecure {
+        panic!(
+            "DMSX_API_AUTH_MODE=disabled is not allowed when DMSX_API_ENV='{env}'. \
+             Set DMSX_API_AUTH_MODE=jwt (OIDC/JWKS) or explicitly opt in with DMSX_API_ALLOW_INSECURE_AUTH=1."
+        );
+    }
+}
+
+fn request_timeout_from_env() -> std::time::Duration {
+    let secs = std::env::var("DMSX_API_REQUEST_TIMEOUT_SECONDS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(30);
+    std::time::Duration::from_secs(secs.max(1))
+}
+
+fn concurrency_limit_from_env() -> Option<usize> {
+    let enabled = truthy_env("DMSX_API_CONCURRENCY_LIMIT_ENABLED");
+    if !enabled {
+        return None;
+    }
+    let limit = std::env::var("DMSX_API_CONCURRENCY_LIMIT")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(1024);
+    Some(limit.max(1))
+}
+
+async fn timeout_middleware(
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    let timeout = request_timeout_from_env();
+    match tokio::time::timeout(timeout, next.run(req)).await {
+        Ok(resp) => resp,
+        Err(_) => {
+            let pd = dmsx_core::error::ProblemDetails {
+                r#type: "about:blank",
+                title: "Gateway Timeout",
+                status: 504,
+                detail: format!("request exceeded timeout of {}s", timeout.as_secs()),
+            };
+            (
+                axum::http::StatusCode::GATEWAY_TIMEOUT,
+                [(
+                    axum::http::header::CONTENT_TYPE,
+                    axum::http::HeaderValue::from_static("application/problem+json"),
+                )],
+                axum::Json(pd),
+            )
+                .into_response()
+        }
+    }
+}
 
 pub async fn build_state_from_env() -> AppState {
     let database_url = std::env::var("DATABASE_URL")
@@ -56,6 +136,8 @@ pub async fn build_state_from_env() -> AppState {
             .expect("failed to initialize auth config"),
     };
 
+    enforce_prod_guardrails(&state.auth);
+
     spawn_jwks_refresh_task(state.auth.clone());
     bootstrap::ensure_default_tenant(&state, dev_tenant, "默认租户").await;
 
@@ -69,10 +151,20 @@ pub fn build_router(st: AppState) -> Router {
         .allow_headers(Any);
 
     let rate_limit_layer = limits::tenant_rate_limit_layer_from_env();
+    let set_request_id = SetRequestIdLayer::x_request_id(MakeRequestUuid);
+    let propagate_request_id = PropagateRequestIdLayer::x_request_id();
+
+    let base_xcut = ServiceBuilder::new()
+        .layer(set_request_id)
+        .layer(propagate_request_id)
+        .layer(TraceLayer::new_for_http());
+
+    let concurrency_limit = concurrency_limit_from_env();
 
     let public = Router::new()
         .route("/health", get(handlers::health))
         .route("/ready", get(handlers::ready))
+        .route("/metrics", get(metrics::metrics_handler))
         .with_state(st.clone());
 
     let mut api = Router::new()
@@ -178,12 +270,21 @@ pub fn build_router(st: AppState) -> Router {
             crate::auth::auth_middleware,
         ))
         .layer(middleware::from_fn(limits::request_body_limit_middleware))
+        .layer(middleware::from_fn(metrics::metrics_middleware))
+        .layer(middleware::from_fn(timeout_middleware))
         .layer(cors)
-        .layer(TraceLayer::new_for_http())
         .with_state(st);
 
     if let Some(layer) = rate_limit_layer {
         api = api.layer(layer);
+    }
+
+    let mut public = public.layer(base_xcut.clone());
+    let mut api = api.layer(base_xcut);
+
+    if let Some(limit) = concurrency_limit {
+        public = public.layer(ConcurrencyLimitLayer::new(limit));
+        api = api.layer(ConcurrencyLimitLayer::new(limit));
     }
 
     public.merge(api)
@@ -198,12 +299,16 @@ mod tests {
     };
     use chrono::{Duration, Utc};
     use jsonwebtoken::{encode, EncodingKey, Header};
+    use once_cell::sync::Lazy;
     use serde_json::Value;
     use sqlx::postgres::PgPoolOptions;
+    use std::sync::Mutex;
     use tower::ServiceExt;
     use uuid::Uuid;
 
     use crate::auth::{AuthConfig, AuthMode, JwtClaims, JwksCache};
+
+    static ENV_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
     fn test_state(mode: AuthMode) -> AppState {
         test_state_with_auth(AuthConfig {
@@ -391,6 +496,57 @@ mod tests {
         std::env::remove_var("DMSX_API_RATE_LIMIT_ENABLED");
         std::env::remove_var("DMSX_API_RATE_LIMIT_PER_SECOND");
         std::env::remove_var("DMSX_API_RATE_LIMIT_BURST");
+    }
+
+    #[tokio::test]
+    async fn metrics_can_be_disabled_via_env() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        std::env::set_var("DMSX_API_METRICS_ENABLED", "false");
+
+        let router = build_router(test_state(AuthMode::Disabled));
+        let request = Request::builder()
+            .uri("/metrics")
+            .body(Body::empty())
+            .expect("request");
+        let response = router.oneshot(request).await.expect("response");
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+        std::env::remove_var("DMSX_API_METRICS_ENABLED");
+    }
+
+    #[tokio::test]
+    async fn metrics_bearer_rejects_missing_or_mismatched_token() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        std::env::set_var("DMSX_API_METRICS_ENABLED", "true");
+        std::env::set_var("DMSX_API_METRICS_BEARER", "secret-token");
+
+        let router = build_router(test_state(AuthMode::Disabled));
+
+        let req1 = Request::builder()
+            .uri("/metrics")
+            .body(Body::empty())
+            .expect("req1");
+        let resp1 = router.clone().oneshot(req1).await.expect("resp1");
+        assert_eq!(resp1.status(), StatusCode::UNAUTHORIZED);
+
+        let req2 = Request::builder()
+            .uri("/metrics")
+            .header(AUTHORIZATION, "Bearer wrong")
+            .body(Body::empty())
+            .expect("req2");
+        let resp2 = router.clone().oneshot(req2).await.expect("resp2");
+        assert_eq!(resp2.status(), StatusCode::UNAUTHORIZED);
+
+        let req3 = Request::builder()
+            .uri("/metrics")
+            .header(AUTHORIZATION, "Bearer secret-token")
+            .body(Body::empty())
+            .expect("req3");
+        let resp3 = router.oneshot(req3).await.expect("resp3");
+        assert_eq!(resp3.status(), StatusCode::OK);
+
+        std::env::remove_var("DMSX_API_METRICS_ENABLED");
+        std::env::remove_var("DMSX_API_METRICS_BEARER");
     }
 
     #[tokio::test]

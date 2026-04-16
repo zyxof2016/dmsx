@@ -8,10 +8,17 @@
 
 **认证**：除 `/health`、`/ready` 外，管理接口需 `Authorization: Bearer <JWT>`（路径 `{tenant_id}` 须被该 JWT 允许；`GET /v1/config/livekit` 需 **PlatformAdmin**）。OpenAPI 根级 **`security: [bearerAuth]`**，并在各操作中声明 **`401` / `403`**；资源类接口另声明 **`404`**；各操作另声明 **`500`**（内部错误）。上述错误均复用 `components.responses` 与 **`ProblemDetails`**（见 `openapi/dmsx-control-plane.yaml`）。
 
+**请求关联**：服务端会为每个请求生成或透传 `X-Request-Id`，并在响应中返回同名 header，便于排障时将客户端错误与服务端日志关联。
+
 **横切限制（可选）**：控制面可启用 **请求体大小限制** 与 **速率限制**（per-tenant）。当启用时：
 
 - 请求体超限返回 **413**（`Payload Too Large`，ProblemDetails）
 - 触发速率限制返回 **429**（`Too Many Requests`，ProblemDetails；并附 `retry-after`/`x-ratelimit-after` 等头）
+
+排障建议：
+
+- **413**：优先检查 `Content-Length` 与 `DMSX_API_REQUEST_BODY_LIMIT_BYTES`；对于无 `Content-Length`（chunked）请求，建议在 Ingress/LB 层也配置 body size 限制以尽早拒绝。
+- **429**：按租户维度限流（key 为路径 `{tenant_id}`；无路径租户时回退到 `AuthContext.tenant_id`，否则为 `global`）。建议在客户端实现指数退避；服务端可通过 `DMSX_API_RATE_LIMIT_PER_SECOND` / `DMSX_API_RATE_LIMIT_BURST` 调整。
 
 **多租户 JWT（单用户多租户）**：JWT 声明中含 **`tenant_id`**（UUID，默认/主租户，无 `allowed_tenant_ids` 时即唯一允许租户）与可选数组 **`allowed_tenant_ids`**（UUID）。有效租户集合为 **`tenant_id` ∪ `allowed_tenant_ids`**。对 `/v1/tenants/{tenant_id}/...` 的请求，路径中的 `{tenant_id}` 必须属于该集合，否则 **403**。`AuthContext` 中的活动租户与路径一致，便于前端**切换租户**：更换 URL 中的 `{tenant_id}` 即可；签发方应在成员关系变化时更新 **`allowed_tenant_ids`**。
 
@@ -38,6 +45,7 @@
 |------|------|------|
 | GET | `/health` | 健康检查 |
 | GET | `/ready` | 就绪检查（含认证 / JWKS 状态） |
+| GET | `/metrics` | Prometheus 指标（可通过 `DMSX_API_METRICS_ENABLED` 关闭；建议仅集群内访问） |
 | GET | `/v1/config/livekit` | LiveKit 配置查询（`{ enabled, url }`） |
 
 ### 租户与组织结构

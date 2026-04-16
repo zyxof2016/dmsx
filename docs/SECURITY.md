@@ -15,6 +15,7 @@
 - **AuthZ**：**RBAC** 角色示例：`PlatformAdmin`, `TenantAdmin`, `SiteAdmin`, `Operator`, `Auditor`, `ReadOnly`。
 - **范围**：权限绑定在 `tenant_id` + 可选 `site_id` / `group_id`；API 层校验 **URL 路径中的 `{tenant_id}` 必须落在 JWT 允许的租户集合内**（`tenant_id` ∪ `allowed_tenant_ids`）。**RBAC**：可选 **`tenant_roles`** 按活动租户覆盖角色；无键时回退令牌级 **`roles`**。切换租户即换 URL 前缀；签发方维护 `allowed_tenant_ids` 与 `tenant_roles`。（完整约定见 [`API.md`](API.md)。）
 - **Postgres RLS（纵深防御）**：租户域表启用 RLS，策略依赖会话变量 `dmsx.tenant_id`（UUID 文本）与 `dmsx.is_platform_admin`（`true`/`false`）。`dmsx-api` 在业务事务内使用 `set_config(..., true)` 做**事务级**绑定，避免连接池复用导致会话串味；`PlatformAdmin` 令牌对应 `dmsx.is_platform_admin=true` 以访问跨租户运维路径。**开发注意**：`DMSX_API_AUTH_MODE=disabled` 时中间件会注入**合成** `AuthContext`（路径含 `{tenant_id}` 时为该租户 `TenantAdmin`，否则为 `PlatformAdmin`），仅用于本地/内网，生产务必启用 JWT/OIDC。
+- **OIDC/JWKS 强制 `iss`/`aud`**：当使用 `DMSX_API_OIDC_DISCOVERY_URL` 或 `DMSX_API_JWKS_URL` 验签时，服务端要求同时配置 `DMSX_API_JWT_ISSUER` 与 `DMSX_API_JWT_AUDIENCE` 并校验令牌 `iss`/`aud`；避免接受来自非预期签发方/受众但签名有效的 JWT。
 - **ABAC**：`devices.labels` + 策略 `scope_expr`；评估引擎在 PolicyService（后续实现）。
 
 ## 通信安全

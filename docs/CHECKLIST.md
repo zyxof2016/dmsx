@@ -47,7 +47,7 @@
 
 以下**不要求**在内测前完成；下一里程碑（扩大用户面或公网暴露）再纳入计划：
 
-- Postgres **RLS**、按 `tenant_id` **HASH 分区**、独立迁移工具链成熟
+- Postgres 按 `tenant_id` **HASH 分区**（除 `commands` 外的热点表仍延后）、独立迁移工具链成熟
 - **ClickHouse** 客户端写入审计/遥测、物化视图、归档策略落地
 - **Redis**（缓存/在线/锁）、**NATS JetStream**（命令投递）、**S3/MinIO 预签名**等控制面横切生产化
 - **`dmsx-device-gw` 作为默认数据面**、设备 **mTLS** 全链路、CA 集成与吊销自动化
@@ -66,6 +66,8 @@
 - [x] **HTTP 门禁**：[`scripts/public-beta-multi-tenant-smoke.sh`](../scripts/public-beta-multi-tenant-smoke.sh) — 使用与 API 一致的 **`DMSX_API_JWT_SECRET`**、`python3` 标准库签发 HS256 JWT；在租户 A、B 各执行一遍 [`internal-beta-smoke-http.sh`](../scripts/internal-beta-smoke-http.sh)；**仅含租户 A 的令牌**访问租户 B 的 `GET .../devices` 须 **403**。
 - [x] **库级基线**：[`scripts/internal-beta-verify.sh`](../scripts/internal-beta-verify.sh)（与内测相同）。
 - [ ] **生产化加码**（本小节不勾选即视为未承诺）：公网 **HTTPS**、**`iss`/`aud` 强制**、**速率限制**、按 **`tenant_roles`** 的细粒度写权限冒烟、真实 IdP **JWKS** 长稳联调等。
+  - 参考脚本：[`scripts/oidc-jwks-prod-smoke.sh`](../scripts/oidc-jwks-prod-smoke.sh)（需要你从真实 IdP 获取 5 个不同语义的 JWT：valid / a-only / bad-iss / bad-aud / platform-admin）。
+  - 参考清单：`deploy/kubernetes/dmsx-api.yaml` + `deploy/kubernetes/dmsx-api-ingress.yaml` + `deploy/kubernetes/dmsx-api-secrets.example.yaml` + `deploy/kubernetes/dmsx-api-networkpolicy.yaml`（生产建议迁移到 GitOps，并将 Secret 交由 External Secrets 管理；NetworkPolicy 需按集群命名空间/标签调整）。
 
 #### 多租户公测验证记录
 
@@ -74,6 +76,7 @@
 | 2026-04-16 | 重编并启动 `dmsx-api`（`DMSX_API_AUTH_MODE=jwt`，PG 已应用迁移含 `004_second_tenant_seed`） | **通过**（库内存在租户 A + B） |
 | 2026-04-16 | `./scripts/public-beta-multi-tenant-smoke.sh`（`DMSX_SMOKE_API=http://127.0.0.1:8080`，`DMSX_API_JWT_SECRET` 与 API 对齐） | **通过**（A/B 主链路 + 跨租户 403） |
 | 2026-04-16 | `./scripts/internal-beta-verify.sh` | **通过**（`dmsx-api` 48、`dmsx-agent` 6） |
+| 2026-04-16 | 新增 `scripts/oidc-jwks-prod-smoke.sh`（OIDC/JWKS 生产化冒烟脚本模板） | **已就绪**（待接入真实 IdP token 运行） |
 
 ---
 
@@ -101,6 +104,9 @@
 - [x] `dmsx-api` `policies` 已补齐 `repo/service` 分层（`repo/policies.rs` + `services/policies.rs`，handlers 进一步收敛，`cargo test -p dmsx-api --lib`、`cargo check -p dmsx-api` 已通过）
 - [x] `dmsx-api` `artifacts` / `compliance` / `stats` / `tenant seed` 已完成 `repo/service` 收口（`repo/artifacts.rs` / `repo/compliance.rs` / `repo/stats.rs` / `repo/tenants.rs` + 对应 services，`app.rs` 启动 seed 下沉，`cargo test -p dmsx-api --lib`、`cargo check -p dmsx-api` 已通过）
 - [~] 集成测试框架（`dmsx-agent --lib` 已有实际用例；`dmsx-api` 已补 `build_router()` 路由级 smoke tests：health / livekit config / auth reject / tenant mismatch，workspace / 全量二进制链路待继续扩展）
+- [x] `dmsx-api` 指标端点（`GET /metrics`，Prometheus 文本格式；支持 `DMSX_API_METRICS_ENABLED` 关闭与 `DMSX_API_METRICS_BEARER` 固定 Bearer）— `cargo test -p dmsx-api` 通过
+  - 验证：`DMSX_API_METRICS_ENABLED=false` 时 `GET /metrics` 返回 404；设置 `DMSX_API_METRICS_BEARER` 后缺失/错误 token 返回 401，正确 token 返回 200（见 `app.rs` 单测）
+- [x] 横切面：`X-Request-Id` 透传/生成并在响应返回；全局请求超时（`DMSX_API_REQUEST_TIMEOUT_SECONDS`）可配置；并发上限（`DMSX_API_CONCURRENCY_LIMIT_*`）可选启用
 - [ ] `cargo bench` 性能基准
 
 ---
@@ -137,7 +143,7 @@
 - [x] `command_results` 表（命令执行结果 — exit_code/stdout/stderr）
 - [x] 所有枚举类型（`device_platform` / `enroll_status` 等）
 - [x] RLS（Row Level Security）策略（迁移 `migrations/005_rls_tenant_isolation.sql`；`dmsx-api` 在每条写读业务 SQL 上使用 `BEGIN` + `set_config(..., true)` 绑定 `dmsx.tenant_id` / `dmsx.is_platform_admin`，与连接池复用兼容。**验证**：`cargo test -p dmsx-api`；有 Postgres 且已跑迁移时 `DMSX_TEST_DATABASE_URL=... cargo test -p dmsx-api --test rls_tenant_session`）
-- [ ] 按 `tenant_id` HASH 分区
+- [~] 按 `tenant_id` HASH 分区（**`commands`**：`migrations/006_commands_hash_partition.sql`，`PARTITION BY HASH (tenant_id)` 共 8 分区；`PRIMARY KEY (tenant_id, id)`；`command_results` 外键改为 `(tenant_id, command_id) → (tenant_id, id)`。其余表顺序见 [`POSTGRES_TENANT_PARTITIONING_PLAN.md`](POSTGRES_TENANT_PARTITIONING_PLAN.md)。**验证**：修改迁移后 `cargo build -p dmsx-api` 再启动以嵌入 `sqlx::migrate!`；库上 `\d commands` 应显示 `Partitioned table`）
 - [ ] 数据库版本迁移工具（sqlx-migrate / refinery）
 
 ### ClickHouse（`migrations/ch/001_init.sql`）

@@ -1,0 +1,35 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dmsx-api-ingress
+  # Adjust if you deploy into a different namespace.
+  namespace: dmsx
+  labels:
+    app.kubernetes.io/name: dmsx-api
+    app.kubernetes.io/part-of: dmsx
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: dmsx-api
+  policyTypes: ["Ingress"]
+  ingress:
+    # Allow traffic from Ingress Controller (adjust labels to match your cluster).
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8080
+    # Allow Prometheus to scrape /metrics (adjust labels to match your cluster).
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+          podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - protocol: TCP
+          port: 8080
+

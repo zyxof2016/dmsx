@@ -24,8 +24,8 @@ thiserror = "2.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 axum = { version = "0.8", features = ["ws"] }
-tower = "0.5"
-tower-http = { version = "0.6", features = ["trace", "cors", "limit"] }
+tower = { version = "0.5", features = ["limit", "timeout"] }
+tower-http = { version = "0.6", features = ["trace", "cors", "limit", "request-id"] }
 tonic = "0.12"
 prost = "0.13"
 tonic-build = "0.12"

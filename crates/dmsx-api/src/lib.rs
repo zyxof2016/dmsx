@@ -4,6 +4,7 @@ mod db_rls;
 mod desktop;
 mod handlers;
 mod limits;
+mod metrics;
 mod migrate_embedded;
 mod query_types;
 mod repo;

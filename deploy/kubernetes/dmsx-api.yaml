@@ -2,9 +2,13 @@ apiVersion: v1
 kind: Service
 metadata:
   name: dmsx-api
+  namespace: dmsx
+  labels:
+    app.kubernetes.io/name: dmsx-api
+    app.kubernetes.io/part-of: dmsx
 spec:
   selector:
-    app: dmsx-api
+    app.kubernetes.io/name: dmsx-api
   ports:
     - name: http
       port: 8080
@@ -14,15 +18,20 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: dmsx-api
+  namespace: dmsx
+  labels:
+    app.kubernetes.io/name: dmsx-api
+    app.kubernetes.io/part-of: dmsx
 spec:
   replicas: 2
   selector:
     matchLabels:
-      app: dmsx-api
+      app.kubernetes.io/name: dmsx-api
   template:
     metadata:
       labels:
-        app: dmsx-api
+        app.kubernetes.io/name: dmsx-api
+        app.kubernetes.io/part-of: dmsx
     spec:
       containers:
         - name: dmsx-api
@@ -34,6 +43,52 @@ spec:
               value: dmsx_api=info,tower_http=info
             - name: DMSX_API_BIND
               value: "0.0.0.0:8080"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: dmsx-api-secrets
+                  key: database_url
+            - name: LIVEKIT_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dmsx-api-secrets
+                  key: livekit_api_key
+            - name: LIVEKIT_API_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dmsx-api-secrets
+                  key: livekit_api_secret
+            # Production hardening knobs (replace values for your environment).
+            - name: DMSX_API_ENV
+              value: "prod"
+            - name: DMSX_API_AUTH_MODE
+              value: "jwt"
+            # OIDC discovery (preferred) or set DMSX_API_JWKS_URL directly.
+            - name: DMSX_API_OIDC_DISCOVERY_URL
+              value: "https://issuer.example/.well-known/openid-configuration"
+            # Required when JWKS is enabled.
+            - name: DMSX_API_JWT_ISSUER
+              value: "https://issuer.example"
+            - name: DMSX_API_JWT_AUDIENCE
+              value: "dmsx-control-plane"
+            # Rate limiting (per-tenant) and request body limits.
+            - name: DMSX_API_REQUEST_BODY_LIMIT_BYTES
+              value: "1048576"
+            - name: DMSX_API_RATE_LIMIT_ENABLED
+              value: "true"
+            - name: DMSX_API_RATE_LIMIT_PER_SECOND
+              value: "50"
+            - name: DMSX_API_RATE_LIMIT_BURST
+              value: "100"
+            # Metrics: keep internal-only (NetworkPolicy/Ingress). Optional bearer gate.
+            - name: DMSX_API_METRICS_ENABLED
+              value: "true"
+            # Optional: protect /metrics with a fixed bearer token.
+            # - name: DMSX_API_METRICS_BEARER
+            #   valueFrom:
+            #     secretKeyRef:
+            #       name: dmsx-api-secrets
+            #       key: metrics_bearer
           readinessProbe:
             httpGet:
               path: /ready
