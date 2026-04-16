@@ -4,13 +4,16 @@ use axum::{
     response::IntoResponse,
     Json,
 };
+use dmsx_core::DmsxError;
 use livekit_api::access_token::{AccessToken, VideoGrants};
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use uuid::Uuid;
 
-use crate::db;
-use crate::dto::CreateCommandReq;
+use crate::desktop_helpers::{
+    build_start_desktop_command, build_stop_desktop_command, livekit_enabled,
+};
+use crate::error::map_db_error;
+use crate::repo::commands as command_repo;
 use crate::state::{AppState, DesktopSession};
 
 // ---------------------------------------------------------------------------
@@ -57,7 +60,7 @@ pub struct SessionDeleteQuery {
 
 pub async fn livekit_config(State(st): State<AppState>) -> impl IntoResponse {
     Json(LivekitConfigResponse {
-        enabled: !st.livekit_url.is_empty() && !st.livekit_api_key.is_empty(),
+        enabled: livekit_enabled(&st.livekit_url, &st.livekit_api_key),
         url: st.livekit_url.clone(),
     })
 }
@@ -70,7 +73,7 @@ pub async fn session_create(
     State(st): State<AppState>,
     Path((tid, did)): Path<(Uuid, Uuid)>,
     Json(req): Json<SessionCreateReq>,
-) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+) -> Result<impl IntoResponse, DmsxError> {
     let room_name = format!("desktop-{did}-{}", chrono::Utc::now().timestamp());
     let session_id = Uuid::new_v4().to_string();
     let stale_session_id = st.device_sessions.write().await.insert(did, session_id.clone());
@@ -89,12 +92,7 @@ pub async fn session_create(
         true,
         true,
     )
-    .map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({"detail": format!("token generation failed: {e}")})),
-        )
-    })?;
+    .map_err(|e| DmsxError::Internal(format!("token generation failed: {e}")))?;
 
     let agent_token = generate_token(
         &st.livekit_api_key,
@@ -105,12 +103,7 @@ pub async fn session_create(
         true,
         false,
     )
-    .map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({"detail": format!("token generation failed: {e}")})),
-        )
-    })?;
+    .map_err(|e| DmsxError::Internal(format!("token generation failed: {e}")))?;
 
     st.desktop_sessions
         .write()
@@ -154,24 +147,24 @@ pub async fn session_delete(
     State(st): State<AppState>,
     Path((tid, did)): Path<(Uuid, Uuid)>,
     Query(query): Query<SessionDeleteQuery>,
-) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
-    let removed = st.desktop_sessions.write().await.remove(&query.session_id);
-    if let Some(session) = removed {
+) -> Result<impl IntoResponse, DmsxError> {
+    {
+        let mut sessions = st.desktop_sessions.write().await;
+        let session = sessions
+            .get(&query.session_id)
+            .ok_or_else(|| DmsxError::NotFound("desktop session not found".into()))?;
         if session.tenant_id != tid || session.device_id != did {
-            return Err((
-                StatusCode::NOT_FOUND,
-                Json(json!({"detail": "desktop session not found"})),
-            ));
+            return Err(DmsxError::NotFound("desktop session not found".into()));
         }
-
-        let mut device_sessions = st.device_sessions.write().await;
-        if device_sessions.get(&did) == Some(&query.session_id) {
-            device_sessions.remove(&did);
-        }
-
-        enqueue_stop_command(&st, tid, did, query.session_id, Some(10)).await?;
+        sessions.remove(&query.session_id);
     }
 
+    let mut device_sessions = st.device_sessions.write().await;
+    if device_sessions.get(&did) == Some(&query.session_id) {
+        device_sessions.remove(&did);
+    }
+
+    enqueue_stop_command(&st, tid, did, query.session_id, Some(10)).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -215,34 +208,21 @@ async fn enqueue_start_command(
     agent_token: &str,
     width: u32,
     height: u32,
-) -> Result<(), (StatusCode, Json<serde_json::Value>)> {
-    let cmd = CreateCommandReq {
-        target_device_id: device_id,
-        payload: json!({
-            "action": "start_desktop",
-            "params": {
-                "room": room_name,
-                "token": agent_token,
-                "livekit_url": st.livekit_url,
-                "session_id": session_id,
-                "width": width,
-                "height": height,
-            }
-        }),
-        priority: Some(10),
-        ttl_seconds: Some(120),
-        idempotency_key: Some(format!("desktop-{session_id}")),
-    };
+) -> Result<(), DmsxError> {
+    let cmd = build_start_desktop_command(
+        device_id,
+        session_id,
+        room_name,
+        agent_token,
+        &st.livekit_url,
+        width,
+        height,
+    );
 
-    db::create_command(&st.db, tenant_id, &cmd)
+    command_repo::create_command(&st.db, tenant_id, &cmd)
         .await
         .map(|_| ())
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({"detail": format!("command creation failed: {e}")})),
-            )
-        })
+        .map_err(map_db_error)
 }
 
 async fn enqueue_stop_command(
@@ -251,27 +231,11 @@ async fn enqueue_stop_command(
     device_id: Uuid,
     session_id: String,
     priority: Option<i16>,
-) -> Result<(), (StatusCode, Json<serde_json::Value>)> {
-    let cmd = CreateCommandReq {
-        target_device_id: device_id,
-        payload: json!({
-            "action": "stop_desktop",
-            "params": {
-                "session_id": session_id,
-            }
-        }),
-        priority,
-        ttl_seconds: Some(60),
-        idempotency_key: None,
-    };
+) -> Result<(), DmsxError> {
+    let cmd = build_stop_desktop_command(device_id, &session_id, priority);
 
-    db::create_command(&st.db, tenant_id, &cmd)
+    command_repo::create_command(&st.db, tenant_id, &cmd)
         .await
         .map(|_| ())
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({"detail": format!("command creation failed: {e}")})),
-            )
-        })
+        .map_err(map_db_error)
 }

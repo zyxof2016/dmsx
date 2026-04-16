@@ -3,6 +3,7 @@ name = "dmsx-device-gw"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+description = "DMSX 数据面 DeviceGateway gRPC skeleton"
 
 [[bin]]
 name = "dmsx-device-gw"

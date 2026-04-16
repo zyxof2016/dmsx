@@ -1,7 +1,6 @@
 use axum::{
-    extract::{Path, Query, Request, State},
+    extract::{Path, Query, State},
     http::StatusCode,
-    middleware::Next,
     response::{IntoResponse, Response},
     Json,
 };
@@ -9,21 +8,11 @@ use dmsx_core::*;
 use serde_json::json;
 use uuid::Uuid;
 
-use crate::db;
 use crate::dto::*;
-use crate::error::map_db_error;
-use crate::helpers::{command_status_from_exit_code, compute_shadow_delta};
+use crate::services::{artifacts, commands, compliance, devices, policies, shadow, stats};
 use crate::state::AppState;
 
 pub type ApiResult<T> = Result<T, DmsxError>;
-
-// ---------------------------------------------------------------------------
-// Auth middleware (stub)
-// ---------------------------------------------------------------------------
-
-pub async fn auth_middleware(request: Request, next: Next) -> Response {
-    next.run(request).await
-}
 
 // ---------------------------------------------------------------------------
 // Health
@@ -31,6 +20,23 @@ pub async fn auth_middleware(request: Request, next: Next) -> Response {
 
 pub async fn health() -> impl IntoResponse {
     Json(json!({ "status": "ok", "service": "dmsx-api" }))
+}
+
+pub async fn ready(State(st): State<AppState>) -> impl IntoResponse {
+    let auth = crate::auth::auth_readiness(&st.auth).await;
+    let status = if auth.ready {
+        StatusCode::OK
+    } else {
+        StatusCode::SERVICE_UNAVAILABLE
+    };
+    (
+        status,
+        Json(json!({
+            "status": if auth.ready { "ok" } else { "not_ready" },
+            "service": "dmsx-api",
+            "auth": auth,
+        })),
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -41,8 +47,7 @@ pub async fn stats(
     State(st): State<AppState>,
     Path(tenant_id): Path<Uuid>,
 ) -> ApiResult<Json<DashboardStats>> {
-    let s = db::get_stats(&st.db, tenant_id).await.map_err(map_db_error)?;
-    Ok(Json(s))
+    Ok(Json(stats::get_stats(&st, tenant_id).await?))
 }
 
 // ---------------------------------------------------------------------------
@@ -54,15 +59,7 @@ pub async fn devices_list(
     Path(tid): Path<Uuid>,
     Query(params): Query<DeviceListParams>,
 ) -> ApiResult<Json<ListResponse<Device>>> {
-    let lim = params.limit();
-    let off = params.offset();
-    let (items, total) = db::list_devices(&st.db, tid, &params).await.map_err(map_db_error)?;
-    Ok(Json(ListResponse {
-        items,
-        total,
-        limit: lim,
-        offset: off,
-    }))
+    Ok(Json(devices::list_devices(&st, tid, &params).await?))
 }
 
 pub async fn devices_create(
@@ -70,30 +67,15 @@ pub async fn devices_create(
     Path(tid): Path<Uuid>,
     Json(body): Json<CreateDeviceReq>,
 ) -> ApiResult<Response> {
-    body.validate()?;
-    let d = db::create_device(&st.db, tid, &body).await.map_err(map_db_error)?;
-    db::write_audit(
-        &st.db,
-        tid,
-        "create",
-        "device",
-        &d.id.0.to_string(),
-        json!({"platform": format!("{:?}", body.platform), "hostname": body.hostname}),
-    )
-    .await
-    .ok();
-    Ok((StatusCode::CREATED, Json(d)).into_response())
+    let device = devices::create_device(&st, tid, &body).await?;
+    Ok((StatusCode::CREATED, Json(device)).into_response())
 }
 
 pub async fn devices_get(
     State(st): State<AppState>,
     Path((tid, did)): Path<(Uuid, Uuid)>,
 ) -> ApiResult<Json<Device>> {
-    db::get_device(&st.db, tid, did)
-        .await
-        .map_err(map_db_error)?
-        .map(Json)
-        .ok_or_else(|| DmsxError::NotFound(format!("device {did}")))
+    Ok(Json(devices::get_device(&st, tid, did).await?))
 }
 
 pub async fn devices_patch(
@@ -101,29 +83,15 @@ pub async fn devices_patch(
     Path((tid, did)): Path<(Uuid, Uuid)>,
     Json(body): Json<UpdateDeviceReq>,
 ) -> ApiResult<Json<Device>> {
-    body.validate()?;
-    let d = db::update_device(&st.db, tid, did, &body)
-        .await
-        .map_err(map_db_error)?
-        .ok_or_else(|| DmsxError::NotFound(format!("device {did}")))?;
-    db::write_audit(&st.db, tid, "update", "device", &did.to_string(), json!({}))
-        .await
-        .ok();
-    Ok(Json(d))
+    Ok(Json(devices::update_device(&st, tid, did, &body).await?))
 }
 
 pub async fn devices_delete(
     State(st): State<AppState>,
     Path((tid, did)): Path<(Uuid, Uuid)>,
 ) -> ApiResult<StatusCode> {
-    if db::delete_device(&st.db, tid, did).await.map_err(map_db_error)? {
-        db::write_audit(&st.db, tid, "delete", "device", &did.to_string(), json!({}))
-            .await
-            .ok();
-        Ok(StatusCode::NO_CONTENT)
-    } else {
-        Err(DmsxError::NotFound(format!("device {did}")))
-    }
+    devices::delete_device(&st, tid, did).await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 // ---------------------------------------------------------------------------
@@ -135,15 +103,7 @@ pub async fn policies_list(
     Path(tid): Path<Uuid>,
     Query(params): Query<PolicyListParams>,
 ) -> ApiResult<Json<ListResponse<Policy>>> {
-    let lim = params.limit();
-    let off = params.offset();
-    let (items, total) = db::list_policies(&st.db, tid, &params).await.map_err(map_db_error)?;
-    Ok(Json(ListResponse {
-        items,
-        total,
-        limit: lim,
-        offset: off,
-    }))
+    Ok(Json(policies::list_policies(&st, tid, &params).await?))
 }
 
 pub async fn policies_create(
@@ -151,30 +111,15 @@ pub async fn policies_create(
     Path(tid): Path<Uuid>,
     Json(body): Json<CreatePolicyReq>,
 ) -> ApiResult<Response> {
-    body.validate()?;
-    let p = db::create_policy(&st.db, tid, &body).await.map_err(map_db_error)?;
-    db::write_audit(
-        &st.db,
-        tid,
-        "create",
-        "policy",
-        &p.id.0.to_string(),
-        json!({"name": body.name}),
-    )
-    .await
-    .ok();
-    Ok((StatusCode::CREATED, Json(p)).into_response())
+    let policy = policies::create_policy(&st, tid, &body).await?;
+    Ok((StatusCode::CREATED, Json(policy)).into_response())
 }
 
 pub async fn policies_get(
     State(st): State<AppState>,
     Path((tid, pid)): Path<(Uuid, Uuid)>,
 ) -> ApiResult<Json<Policy>> {
-    db::get_policy(&st.db, tid, pid)
-        .await
-        .map_err(map_db_error)?
-        .map(Json)
-        .ok_or_else(|| DmsxError::NotFound(format!("policy {pid}")))
+    Ok(Json(policies::get_policy(&st, tid, pid).await?))
 }
 
 pub async fn policies_patch(
@@ -182,29 +127,15 @@ pub async fn policies_patch(
     Path((tid, pid)): Path<(Uuid, Uuid)>,
     Json(body): Json<UpdatePolicyReq>,
 ) -> ApiResult<Json<Policy>> {
-    body.validate()?;
-    let p = db::update_policy(&st.db, tid, pid, &body)
-        .await
-        .map_err(map_db_error)?
-        .ok_or_else(|| DmsxError::NotFound(format!("policy {pid}")))?;
-    db::write_audit(&st.db, tid, "update", "policy", &pid.to_string(), json!({}))
-        .await
-        .ok();
-    Ok(Json(p))
+    Ok(Json(policies::update_policy(&st, tid, pid, &body).await?))
 }
 
 pub async fn policies_delete(
     State(st): State<AppState>,
     Path((tid, pid)): Path<(Uuid, Uuid)>,
 ) -> ApiResult<StatusCode> {
-    if db::delete_policy(&st.db, tid, pid).await.map_err(map_db_error)? {
-        db::write_audit(&st.db, tid, "delete", "policy", &pid.to_string(), json!({}))
-            .await
-            .ok();
-        Ok(StatusCode::NO_CONTENT)
-    } else {
-        Err(DmsxError::NotFound(format!("policy {pid}")))
-    }
+    policies::delete_policy(&st, tid, pid).await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 pub async fn policy_publish(
@@ -212,20 +143,8 @@ pub async fn policy_publish(
     Path((tid, pid)): Path<(Uuid, Uuid)>,
     Json(body): Json<PublishPolicyReq>,
 ) -> ApiResult<Response> {
-    let rev = db::publish_policy(&st.db, tid, pid, body.spec)
-        .await
-        .map_err(map_db_error)?;
-    db::write_audit(
-        &st.db,
-        tid,
-        "publish",
-        "policy_revision",
-        &pid.to_string(),
-        json!({"version": rev.version}),
-    )
-    .await
-    .ok();
-    Ok((StatusCode::CREATED, Json(rev)).into_response())
+    let revision = policies::publish_policy(&st, tid, pid, body).await?;
+    Ok((StatusCode::CREATED, Json(revision)).into_response())
 }
 
 // ---------------------------------------------------------------------------
@@ -237,15 +156,7 @@ pub async fn commands_list(
     Path(tid): Path<Uuid>,
     Query(params): Query<CommandListParams>,
 ) -> ApiResult<Json<ListResponse<Command>>> {
-    let lim = params.limit();
-    let off = params.offset();
-    let (items, total) = db::list_commands(&st.db, tid, &params).await.map_err(map_db_error)?;
-    Ok(Json(ListResponse {
-        items,
-        total,
-        limit: lim,
-        offset: off,
-    }))
+    Ok(Json(commands::list_commands(&st, tid, &params).await?))
 }
 
 pub async fn commands_create(
@@ -253,32 +164,15 @@ pub async fn commands_create(
     Path(tid): Path<Uuid>,
     Json(body): Json<CreateCommandReq>,
 ) -> ApiResult<Response> {
-    body.validate()?;
-    let c = db::create_command(&st.db, tid, &body)
-        .await
-        .map_err(map_db_error)?;
-    db::write_audit(
-        &st.db,
-        tid,
-        "create",
-        "command",
-        &c.id.0.to_string(),
-        json!({"target_device_id": body.target_device_id}),
-    )
-    .await
-    .ok();
-    Ok((StatusCode::ACCEPTED, Json(c)).into_response())
+    let command = commands::create_command(&st, tid, &body).await?;
+    Ok((StatusCode::ACCEPTED, Json(command)).into_response())
 }
 
 pub async fn commands_get(
     State(st): State<AppState>,
     Path((tid, cid)): Path<(Uuid, Uuid)>,
 ) -> ApiResult<Json<Command>> {
-    db::get_command(&st.db, tid, cid)
-        .await
-        .map_err(map_db_error)?
-        .map(Json)
-        .ok_or_else(|| DmsxError::NotFound(format!("command {cid}")))
+    Ok(Json(commands::get_command(&st, tid, cid).await?))
 }
 
 // ---------------------------------------------------------------------------
@@ -289,19 +183,7 @@ pub async fn shadow_get(
     State(st): State<AppState>,
     Path((tid, did)): Path<(Uuid, Uuid)>,
 ) -> ApiResult<Json<ShadowResponse>> {
-    let s = db::get_or_create_shadow(&st.db, tid, did)
-        .await
-        .map_err(map_db_error)?;
-    let delta = compute_shadow_delta(&s.desired, &s.reported);
-    Ok(Json(ShadowResponse {
-        device_id: did,
-        reported: s.reported,
-        desired: s.desired,
-        delta,
-        reported_at: s.reported_at,
-        desired_at: s.desired_at,
-        version: s.version,
-    }))
+    Ok(Json(shadow::get_shadow(&st, tid, did).await?))
 }
 
 pub async fn shadow_update_desired(
@@ -309,23 +191,9 @@ pub async fn shadow_update_desired(
     Path((tid, did)): Path<(Uuid, Uuid)>,
     Json(body): Json<UpdateShadowDesiredReq>,
 ) -> ApiResult<Json<ShadowResponse>> {
-    body.validate()?;
-    let s = db::update_shadow_desired(&st.db, tid, did, &body.desired)
-        .await
-        .map_err(map_db_error)?;
-    db::write_audit(&st.db, tid, "update_desired", "device_shadow", &did.to_string(), json!({}))
-        .await
-        .ok();
-    let delta = compute_shadow_delta(&s.desired, &s.reported);
-    Ok(Json(ShadowResponse {
-        device_id: did,
-        reported: s.reported,
-        desired: s.desired,
-        delta,
-        reported_at: s.reported_at,
-        desired_at: s.desired_at,
-        version: s.version,
-    }))
+    Ok(Json(
+        shadow::update_shadow_desired(&st, tid, did, &body).await?,
+    ))
 }
 
 pub async fn shadow_update_reported(
@@ -333,20 +201,9 @@ pub async fn shadow_update_reported(
     Path((tid, did)): Path<(Uuid, Uuid)>,
     Json(body): Json<UpdateShadowReportedReq>,
 ) -> ApiResult<Json<ShadowResponse>> {
-    body.validate()?;
-    let s = db::update_shadow_reported(&st.db, tid, did, &body.reported)
-        .await
-        .map_err(map_db_error)?;
-    let delta = compute_shadow_delta(&s.desired, &s.reported);
-    Ok(Json(ShadowResponse {
-        device_id: did,
-        reported: s.reported,
-        desired: s.desired,
-        delta,
-        reported_at: s.reported_at,
-        desired_at: s.desired_at,
-        version: s.version,
-    }))
+    Ok(Json(
+        shadow::update_shadow_reported(&st, tid, did, &body).await?,
+    ))
 }
 
 // ---------------------------------------------------------------------------
@@ -358,30 +215,8 @@ pub async fn device_action(
     Path((tid, did)): Path<(Uuid, Uuid)>,
     Json(body): Json<DeviceActionReq>,
 ) -> ApiResult<Response> {
-    body.validate()?;
-    let payload = json!({ "action": body.action, "params": body.params });
-    let cmd_req = CreateCommandReq {
-        target_device_id: did,
-        payload,
-        priority: body.priority,
-        ttl_seconds: body.ttl_seconds,
-        idempotency_key: None,
-    };
-    cmd_req.validate()?;
-    let c = db::create_command(&st.db, tid, &cmd_req)
-        .await
-        .map_err(map_db_error)?;
-    db::write_audit(
-        &st.db,
-        tid,
-        "device_action",
-        "command",
-        &c.id.0.to_string(),
-        json!({"device_id": did, "action": body.action}),
-    )
-    .await
-    .ok();
-    Ok((StatusCode::ACCEPTED, Json(c)).into_response())
+    let command = commands::create_device_action_command(&st, tid, did, &body).await?;
+    Ok((StatusCode::ACCEPTED, Json(command)).into_response())
 }
 
 // ---------------------------------------------------------------------------
@@ -393,17 +228,7 @@ pub async fn device_commands_list(
     Path((tid, did)): Path<(Uuid, Uuid)>,
     Query(params): Query<CommandListParams>,
 ) -> ApiResult<Json<ListResponse<Command>>> {
-    let lim = params.limit();
-    let off = params.offset();
-    let (items, total) = db::list_device_commands(&st.db, tid, did, lim, off)
-        .await
-        .map_err(map_db_error)?;
-    Ok(Json(ListResponse {
-        items,
-        total,
-        limit: lim,
-        offset: off,
-    }))
+    Ok(Json(commands::list_device_commands(&st, tid, did, &params).await?))
 }
 
 // ---------------------------------------------------------------------------
@@ -414,11 +239,7 @@ pub async fn command_result_get(
     State(st): State<AppState>,
     Path((tid, cid)): Path<(Uuid, Uuid)>,
 ) -> ApiResult<Json<dmsx_core::CommandResult>> {
-    db::get_command_result(&st.db, tid, cid)
-        .await
-        .map_err(map_db_error)?
-        .map(Json)
-        .ok_or_else(|| DmsxError::NotFound(format!("result for command {cid}")))
+    Ok(Json(commands::get_command_result(&st, tid, cid).await?))
 }
 
 // ---------------------------------------------------------------------------
@@ -430,21 +251,9 @@ pub async fn command_status_update(
     Path((tid, cid)): Path<(Uuid, Uuid)>,
     Json(body): Json<UpdateCommandStatusReq>,
 ) -> ApiResult<Json<Command>> {
-    let c = db::update_command_status(&st.db, tid, cid, body.status)
-        .await
-        .map_err(map_db_error)?
-        .ok_or_else(|| DmsxError::NotFound(format!("command {cid}")))?;
-    db::write_audit(
-        &st.db,
-        tid,
-        "update_status",
-        "command",
-        &cid.to_string(),
-        json!({"new_status": format!("{:?}", body.status)}),
-    )
-    .await
-    .ok();
-    Ok(Json(c))
+    Ok(Json(
+        commands::update_command_status(&st, tid, cid, &body).await?,
+    ))
 }
 
 pub async fn command_result_submit(
@@ -452,32 +261,7 @@ pub async fn command_result_submit(
     Path((tid, cid)): Path<(Uuid, Uuid)>,
     Json(body): Json<SubmitCommandResultReq>,
 ) -> ApiResult<Response> {
-    let result = db::upsert_command_result(
-        &st.db,
-        tid,
-        cid,
-        body.exit_code,
-        &body.stdout,
-        &body.stderr,
-        body.evidence_key.as_deref(),
-    )
-    .await
-    .map_err(map_db_error)?;
-    let new_status = command_status_from_exit_code(body.exit_code);
-    db::update_command_status(&st.db, tid, cid, new_status)
-        .await
-        .map_err(map_db_error)
-        .ok();
-    db::write_audit(
-        &st.db,
-        tid,
-        "submit_result",
-        "command",
-        &cid.to_string(),
-        json!({"exit_code": body.exit_code}),
-    )
-    .await
-    .ok();
+    let result = commands::submit_command_result(&st, tid, cid, &body).await?;
     Ok((StatusCode::CREATED, Json(result)).into_response())
 }
 
@@ -490,15 +274,7 @@ pub async fn artifacts_list(
     Path(tid): Path<Uuid>,
     Query(params): Query<ArtifactListParams>,
 ) -> ApiResult<Json<ListResponse<Artifact>>> {
-    let lim = params.limit();
-    let off = params.offset();
-    let (items, total) = db::list_artifacts(&st.db, tid, &params).await.map_err(map_db_error)?;
-    Ok(Json(ListResponse {
-        items,
-        total,
-        limit: lim,
-        offset: off,
-    }))
+    Ok(Json(artifacts::list_artifacts(&st, tid, &params).await?))
 }
 
 pub async fn artifacts_create(
@@ -506,21 +282,8 @@ pub async fn artifacts_create(
     Path(tid): Path<Uuid>,
     Json(body): Json<CreateArtifactReq>,
 ) -> ApiResult<Response> {
-    body.validate()?;
-    let a = db::create_artifact(&st.db, tid, &body)
-        .await
-        .map_err(map_db_error)?;
-    db::write_audit(
-        &st.db,
-        tid,
-        "create",
-        "artifact",
-        &a.id.0.to_string(),
-        json!({"name": body.name, "version": body.version}),
-    )
-    .await
-    .ok();
-    Ok((StatusCode::CREATED, Json(a)).into_response())
+    let artifact = artifacts::create_artifact(&st, tid, &body).await?;
+    Ok((StatusCode::CREATED, Json(artifact)).into_response())
 }
 
 // ---------------------------------------------------------------------------
@@ -532,15 +295,7 @@ pub async fn compliance_list(
     Path(tid): Path<Uuid>,
     Query(params): Query<FindingListParams>,
 ) -> ApiResult<Json<ListResponse<ComplianceFinding>>> {
-    let lim = params.limit();
-    let off = params.offset();
-    let (items, total) = db::list_findings(&st.db, tid, &params).await.map_err(map_db_error)?;
-    Ok(Json(ListResponse {
-        items,
-        total,
-        limit: lim,
-        offset: off,
-    }))
+    Ok(Json(compliance::list_findings(&st, tid, &params).await?))
 }
 
 // ---------------------------------------------------------------------------

@@ -1,4 +1,8 @@
-//! DeviceGateway：gRPC 骨架。生产环境需启用 mTLS、连接限流与 OpenTelemetry。
+//! DeviceGateway：未来数据面主链路的 gRPC 骨架。
+//!
+//! 当前仓库中，`dmsx-agent` 仍以 HTTP 控制面接口为主通信路径；
+//! 本 crate 主要用于承载后续 mTLS、长连接 streaming、背压与离线重放能力。
+//! 生产环境启用前仍需补齐 enrollment、命令流、策略下发与审计写入闭环。
 
 use std::pin::Pin;
 use std::time::{SystemTime, UNIX_EPOCH};

@@ -26,7 +26,12 @@
 - [x] `dmsx-agent` 首批测试用例已补充（`device` 注册/心跳 + `script` 参数分支，`cargo test -p dmsx-agent --lib` 已通过）
 - [x] `dmsx-api` 轻量测试入口已建立（`lib.rs` / `app.rs` / `error.rs`，`cargo test -p dmsx-api --lib` 已通过）
 - [x] `dmsx-api` handlers 纯逻辑已下沉到 `helpers` 并补测试（影子 delta / 命令结果状态，`cargo test -p dmsx-api --lib` 已通过 10 项）
-- [~] 集成测试框架（`dmsx-agent --lib` 已有实际用例，workspace / 全量二进制链路待继续扩展）
+- [x] `dmsx-api` desktop 纯构造逻辑已下沉到 `desktop_helpers` 并补测试（LiveKit 可用性 / start-stop desktop command payload，`cargo test -p dmsx-api --lib` 已通过 13 项）
+- [x] `dmsx-api` devices / commands / shadow 已下沉到 `services`，handlers 收敛为薄层（`cargo test -p dmsx-api --lib`、`cargo check -p dmsx-api` 已通过）
+- [x] `dmsx-api` `db.rs` 首轮拆分为 repo 模块（`repo/devices.rs` / `repo/commands.rs` / `repo/shadow.rs` / `repo/audit.rs`，`cargo test -p dmsx-api --lib`、`cargo check -p dmsx-api` 已通过）
+- [x] `dmsx-api` `policies` 已补齐 `repo/service` 分层（`repo/policies.rs` + `services/policies.rs`，handlers 进一步收敛，`cargo test -p dmsx-api --lib`、`cargo check -p dmsx-api` 已通过）
+- [x] `dmsx-api` `artifacts` / `compliance` / `stats` / `tenant seed` 已完成 `repo/service` 收口（`repo/artifacts.rs` / `repo/compliance.rs` / `repo/stats.rs` / `repo/tenants.rs` + 对应 services，`app.rs` 启动 seed 下沉，`cargo test -p dmsx-api --lib`、`cargo check -p dmsx-api` 已通过）
+- [~] 集成测试框架（`dmsx-agent --lib` 已有实际用例；`dmsx-api` 已补 `build_router()` 路由级 smoke tests：health / livekit config / auth reject / tenant mismatch，workspace / 全量二进制链路待继续扩展）
 - [ ] `cargo bench` 性能基准
 
 ---
@@ -100,10 +105,8 @@
 - [x] `GET/POST /v1/tenants/{tid}/artifacts` 制品列表/创建（sqlx 持久化）
 - [x] `GET /v1/tenants/{tid}/compliance/findings` 合规发现列表（sqlx 持久化）
 - [x] `GET /v1/tenants/{tid}/stats` Dashboard 聚合统计（sqlx）
-- [x] `POST /v1/tenants/{tid}/devices/{did}/desktop/session` 创建远程桌面会话（LiveKit Token + Agent 命令）
-- [x] `DELETE /v1/tenants/{tid}/devices/{did}/desktop/session` 终止远程桌面会话
-- [x] `GET /v1/tenants/{tid}/devices/{did}/desktop/ws/viewer` WebSocket 视频帧订阅（管理员端）
-- [x] `GET /v1/tenants/{tid}/devices/{did}/desktop/ws/agent` WebSocket 视频帧推送（Agent 端）
+- [x] `POST /v1/tenants/{tid}/devices/{did}/desktop/session` 创建远程桌面会话（LiveKit Token + Agent `start_desktop`）
+- [x] `DELETE /v1/tenants/{tid}/devices/{did}/desktop/session?session_id=` 终止指定远程桌面会话（`stop_desktop`）
 - [x] `GET /v1/config/livekit` LiveKit 配置查询
 - [~] `POST /v1/tenants/{tid}/ai/anomalies` AI 异常检测（规则引擎 stub）
 - [~] `POST /v1/tenants/{tid}/ai/recommendations` AI 策略推荐（stub）
@@ -112,12 +115,12 @@
 
 ### 中间件与横切
 
-- [~] 认证中间件骨架（`auth_middleware`，当前直接放行）
+- [x] 认证中间件骨架（`auth` 模块 + Bearer/JWT 解析 + `/health` 放行 + 可配置 `DMSX_API_AUTH_MODE`）
 - [x] 监听地址可配置（`DMSX_API_BIND` 环境变量）
 - [x] `TraceLayer` 日志追踪
-- [ ] JWT / OIDC 认证实现
-- [ ] RBAC 权限校验
-- [ ] 租户 URL ↔ JWT `tenant_id` 一致性校验
+- [~] JWT / OIDC 认证实现（JWT `issuer` / `audience` 校验已支持；OIDC discovery -> `jwks_uri` 加载、JWKS 校验、后台 TTL 刷新、未知 `kid` 强制刷新、刷新失败 stale fallback、最大陈旧窗口、启动首刷失败可配置策略已接入；`/ready` 已暴露认证/JWKS 就绪状态；外部 IdP 实机联调与告警/指标后端集成待补）
+- [x] RBAC 权限校验（已细化到资源级：全局配置 / devices / policies / commands / shadow / artifacts / compliance / desktop / AI；`TenantAdmin` 与 `PlatformAdmin` 非租户路由权限已区分）
+- [x] 租户 URL ↔ JWT `tenant_id` 一致性校验
 - [ ] 速率限制（per-tenant）
 - [ ] 请求体大小限制
 - [ ] CORS 生产配置
@@ -245,7 +248,7 @@
 - [x] 设备详情抽屉（Tabs：基本信息 / 设备影子 / 远控面板 / 远程桌面）
 - [x] 设备影子面板（ShadowPanel — 三列对比 Reported/Desired/Delta + JSON 编辑器 + 乐观并发）
 - [x] 远控面板（RemoteControl — 快捷操作网格 + 脚本执行器 + 操作历史 + 结果查看 + 擦除三重确认）
-- [x] 远程桌面面板（RemoteDesktop — WebSocket 实时画面 + 键鼠控制 + 坐标映射 + 全屏 + RustDesk 备选）
+- [x] 远程桌面面板（RemoteDesktop — LiveKit WebRTC 订阅 + Data Channel 键鼠 + 状态反馈 / 重连 + RustDesk 备选）
 - [x] 策略详情抽屉（完整信息 + 作用域字段）
 - [x] 命令详情抽屉（payload JSON 高亮、状态标签、目标设备信息 + 执行结果展示 exit_code/stdout/stderr）
 - [ ] 系统设置页面
@@ -257,12 +260,16 @@
 
 ## 9. OpenAPI 契约（`openapi/dmsx-control-plane.yaml`）
 
-- [x] 全部控制面路由定义（含策略单资源 CRUD）
+- [x] OpenAPI `paths` 与 `dmsx-api` 已注册路由对齐（已移除未实现的租户/组织/站点/组 POST 占位路径）
+- [x] `GET /v1/config/livekit`、`POST/DELETE .../devices/{did}/desktop/session`（与当前远程桌面主链路一致）
 - [x] `ProblemDetails` 错误 schema
-- [x] `CommandCreate` / `StubEntity` / `DeviceList` schema
-- [ ] 完善所有请求/响应 schema（替换 `type: object` 占位）
-- [ ] 认证安全方案（`bearerAuth` / `oauth2`）
-- [ ] 所有端点 4xx/5xx 错误响应引用 `ProblemDetails`
+- [x] `CommandCreate` / `ListResponseDevice` / `Device` / `Command` / `ShadowResponse` / `Policy` / `PolicyRevision` / `ListResponsePolicy` 等核心 schema（OpenAPI）
+- [x] 设备影子、远控动作、设备/租户命令列表、命令状态与结果、统计、策略 CRUD + revision、AI 请求体等已写入 OpenAPI
+- [x] 制品列表/创建、合规发现列表已在 OpenAPI 中强类型化（`Artifact` / `ComplianceFinding` 及分页列表）
+- [x] OpenAPI 全局 **`bearerAuth`**（`securitySchemes` + 根级 `security`）；`/health`、`/ready` 使用 `security: []`
+- [x] `components.responses` 提供 **401 / 403 / 404 / 400 / 409 / 500**（`ProblemDetails`）复用定义；带 `requestBody` 的操作已挂 **400**，部分创建类 POST 已挂 **409**，各操作已挂 **500**（`InternalServerError`）
+- [x] 各 `paths` 操作已批量声明 `401` / `403`；`components.responses.NotFound` 及典型 `404`（设备/影子/策略/命令/桌面会话等）已对齐
+- [ ] 按需补充 `oauth2` 与更细错误码文档
 
 ---
 
@@ -273,8 +280,8 @@
 - [x] RBAC 角色与范围设计
 - [x] 审计不可篡改设计（PG + CH + 对象存储）
 - [x] 制品签名设计（cosign / sigstore）
-- [ ] 认证实现（JWT / OIDC）
-- [ ] RBAC 中间件实现
+- [~] 认证实现（JWT `issuer` / `audience` 校验已支持；OIDC discovery -> `jwks_uri` 加载、JWKS 校验、后台 TTL 刷新与未知 `kid` 强制刷新已接入；外部 IdP 实机联调与更完整轮转/失效策略待补）
+- [x] RBAC 中间件实现（JWT `roles` -> 资源级路由权限；缺失角色、越权写策略、越权访问全局配置均返回 `403`）
 - [ ] 设备证书签发（CA 集成）
 - [ ] 证书轮换 / 吊销实现
 - [x] 审计日志自动写入（所有 create/update/delete/publish 操作写入 audit_logs）

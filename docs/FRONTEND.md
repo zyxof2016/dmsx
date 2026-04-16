@@ -6,13 +6,13 @@
 |----|------|------|
 | 框架 | React 19 + TypeScript | 类型安全、生态丰富 |
 | 构建 | Vite 6 | 快速 HMR、ESM 原生，`/v1/*` 代理到后端 |
-| 路由 | TanStack Router v1 | 类型安全路由，URL 路径参数，浏览器前进/后退 |
+| 路由 | TanStack Router v1 | 类型安全路由；设备详情支持 **`?tab=`** 查询参数（深链、刷新、分享后恢复 Tab） |
 | 数据层 | TanStack Query v5 | 缓存、重试、轮询、乐观更新 |
 | UI 组件 | Ant Design 5 | 企业级组件、中文本地化 |
 | 图表 | Recharts | 轻量、声明式 |
 | 日期 | Day.js | 轻量时间格式化 |
-| 远程桌面 | WebSocket + Canvas（JPEG 帧流）| 内置 WebSocket 方案 |
-| 远程桌面备用 | livekit-client（已安装，待 WebRTC 迁移）| 官方 LiveKit JS SDK |
+| 远程桌面 | LiveKit WebRTC + `livekit-client` | 浏览器直连房间订阅远端视频轨 |
+| 远程桌面备用 | RustDesk | 作为跨网络/人工接管的备选方案 |
 
 ## 目录结构
 
@@ -24,26 +24,27 @@ web/
 ├── tsconfig.json
 └── src/
     ├── main.tsx             # 入口：QueryClient + AntD ConfigProvider + Router
-    ├── routes.tsx           # TanStack Router 路由树定义
+    ├── router.tsx           # TanStack Router 路由树定义
     ├── api/
     │   ├── client.ts        # fetch 封装 + 租户路径工具 + TENANT_ID
     │   ├── types.ts         # 所有 DTO TypeScript 接口
     │   └── hooks.ts         # TanStack Query hooks（设备/策略/命令/影子/远控/桌面等）
+    ├── pages/
+    │   ├── Dashboard.tsx        # 态势总览
+    │   ├── Devices.tsx          # 设备管理列表页
+    │   ├── Policies.tsx         # 策略中心列表页
+    │   ├── Commands.tsx         # 远程命令列表页
+    │   ├── Artifacts.tsx        # 应用分发列表页
+    │   ├── Compliance.tsx       # 安全合规页
+    │   ├── Network.tsx          # 网络管控页
+    │   └── AiCenter.tsx         # AI 智慧中心
     └── components/
-        ├── Dashboard.tsx        # 态势总览（KPI + AI洞察 + 安全态势 + 图表）
-        ├── Devices.tsx          # 设备管理（表格 + 服务端筛选 + 批量操作 + CSV）
         ├── DeviceDetail.tsx     # 设备详情抽屉（Tabs：基本信息/影子/远控/远程桌面）
         ├── ShadowPanel.tsx      # 设备影子面板（三列对比 + JSON 编辑器）
         ├── RemoteControl.tsx    # 远控面板（快捷操作 + 脚本 + 历史 + 结果）
-        ├── RemoteDesktop.tsx    # 远程桌面（WebSocket 画面 + 键鼠控制 + RustDesk 备选）
-        ├── Policies.tsx         # 策略中心（CRUD + 发布）
+        ├── RemoteDesktop.tsx    # 远程桌面（LiveKit 房间 + Data Channel 输入 + RustDesk 备选）
         ├── PolicyDetail.tsx     # 策略详情抽屉
-        ├── Commands.tsx         # 远程命令（下发 + 回执 + 状态筛选）
-        ├── CommandDetail.tsx    # 命令详情抽屉（payload + 执行结果）
-        ├── Artifacts.tsx        # 应用分发（上传 + SHA256）
-        ├── Compliance.tsx       # 安全合规（发现项 + 合规率）
-        ├── Network.tsx          # 网络管控（站点 + 隧道）
-        └── AiCenter.tsx         # AI 智慧中心（四大功能 Tab）
+        └── CommandDetail.tsx    # 命令详情抽屉（payload + 执行结果）
 ```
 
 ## 页面设计
@@ -60,6 +61,15 @@ web/
 
 ### 设备详情抽屉（DeviceDetail）
 
+路由：`/devices/$deviceId`，可选查询参数 **`tab`**，取值与 Tab `key` 一致：
+
+- `info`：基本信息（默认）
+- `shadow`：设备影子
+- `remote`：远控面板
+- `desktop`：远程桌面
+
+切换 Tab 时使用 `navigate({ search: { tab }, replace: true })` 写回 URL，保证浏览器后退与外链打开时落在正确面板。
+
 **基本信息 Tab**：设备全量字段 Descriptions 展示。
 
 **设备影子 Tab**（ShadowPanel）：
@@ -74,9 +84,9 @@ web/
 - 命令历史表格 + 执行结果查看（exit_code / stdout / stderr）
 
 **远程桌面 Tab**（RemoteDesktop）：
-- **WebSocket 方案（主）**：点击「连接」→ POST 创建会话 → 等待 Agent 开始采集 → Canvas 渲染 JPEG 帧
-- 键鼠控制：Canvas 捕获事件 → 坐标映射（Canvas 尺寸→远端分辨率）→ WS 发送 JSON
-- 工具栏：全屏、Ctrl+Alt+Del、断开连接
+- **LiveKit 主链路**：点击「连接」→ POST 创建会话 → 浏览器基于 `token/livekit_url` 入房 → 订阅远端视频轨
+- 键鼠控制：前端采集鼠标/键盘事件 → LiveKit Data Channel → Agent 注入输入
+- 状态反馈：创建中、等待设备接入、已连接、重连中、已断开、错误
 - **RustDesk 方案（备选）**：显示 RustDesk ID、一键打开 Web Client 或本地客户端
 
 ### AI 智慧中心（AiCenter）
@@ -115,3 +125,4 @@ web/
 - 生产：Nginx/Ingress 统一入口，前端静态资源 + API 反代
 - API 客户端（`api/client.ts`）统一处理 Problem Details 错误
 - 所有 TypeScript 类型定义在 `api/types.ts`，与后端 DTO 严格对齐
+- `tsconfig.json` 使用 `noEmit: true`，避免将编译产物写回 `src/`

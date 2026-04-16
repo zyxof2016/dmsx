@@ -21,17 +21,18 @@ flowchart TB
   end
   IG --> API
   IG --> GW
-  IG -->|WebRTC ICE| LK
+  IG -->|WebRTC ICE / TURN| LK
   API --> PG
   API --> NATS
   API --> REDIS
-  API <-->|WebSocket 远程桌面| LK
   GW --> NATS
   GW --> PG
   API --> S3
   GW --> S3
   API -.->|"async audit/analytics"| CH
 ```
+
+远程桌面：**浏览器与 Agent 直连 LiveKit**（Ingress 仅暴露信令/ICE）；`dmsx-api` 负责签发 JWT、维护 `session_id` 生命周期，并通过命令触发 Agent 入房，**不经由 API ↔ LiveKit 的桌面视频 WebSocket**。
 
 - **HPA**：`dmsx-api`、`dmsx-device-gw` 按 CPU / gRPC 并发指标扩展。
 - **PDB**：保证滚动升级时最少可用副本。
