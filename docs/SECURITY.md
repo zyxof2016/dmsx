@@ -41,6 +41,23 @@
 - 运行态：**Kubernetes Secrets + External Secrets Operator** 同步 Vault/KMS。
 - 数据加密：**PG TDE/磁盘加密**（云厂商）；敏感字段 **应用层信封加密**（KMS 数据密钥）。
 
+### 开发/内测：敏感信息处理约定（落地）
+
+敏感信息（示例）：
+
+- `DATABASE_URL`（若含生产 host/user/password）
+- `DMSX_API_JWT_SECRET`
+- `DMSX_API_METRICS_BEARER`
+- `LIVEKIT_API_SECRET`
+- 任何 `Authorization: Bearer ...`、OIDC client secret、KMS/Vault token
+
+约定：
+
+- **不提交**：真实密钥/令牌不得进入仓库（包括 `.env`、脚本硬编码、截图/日志粘贴）。
+- **模板化**：仓库提供 `.env.example` 作为变量模板；本地复制为 `.env` 后自行替换。
+- **脱敏**：共享排障信息时，对 token/secret 至少保留前后各 4 位，其余替换为 `***`（例如 `abcd***wxyz`）。
+- **最小暴露面**：本地/内测优先绑定回环地址（如 `DMSX_API_BIND=127.0.0.1:8080`），公网演示按 `CHECKLIST` 的单独评审流程执行。
+
 ## 威胁建模要点（摘要）
 
 - 被盗设备证书 → 吊销 + 设备隔离命令 + 会话失效。

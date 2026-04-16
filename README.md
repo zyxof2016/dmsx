@@ -60,6 +60,10 @@ REPRODUCE_TAKE_PORT_5432=1 REPRODUCE_MINIMAL=1 ./scripts/reproduce-dev-env.sh
 
 若未加 `REPRODUCE_TAKE_PORT_5432=1` 且 5432 已被占用，compose 可能无法绑定；脚本仍会检测已有映射 **5432** 的容器是否在 `pg_isready` 意义上满足依赖（不保证来自本 compose）。
 
+### 环境变量（本地/内测模板）
+
+仓库提供 `.env.example`（**不含真实密钥**）作为本地/内测模板。建议复制为 `.env` 并按需替换（`.env` 已加入 `.gitignore`，不要提交真实密钥）。
+
 ### 内测基线（可选）
 
 **合并/打标签前 DoD 一键校验**（推荐；需本机已起 `dmsx-api` + Postgres 才能跑主链路冒烟）：
