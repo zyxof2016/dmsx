@@ -14,7 +14,7 @@ use tower_http::{
 
 use crate::{
     auth::{load_auth_config_from_env, spawn_jwks_refresh_task},
-    desktop, handlers,
+    desktop, handlers, migrate_embedded,
     services::bootstrap,
     state::AppState,
 };
@@ -31,10 +31,7 @@ pub async fn build_state_from_env() -> AppState {
 
     tracing::info!("connected to postgres");
 
-    sqlx::migrate!("../../migrations")
-        .run(&pool)
-        .await
-        .expect("failed to run migrations");
+    migrate_embedded::run(&pool).await;
 
     tracing::info!("migrations applied");
 
@@ -73,6 +70,16 @@ pub fn build_router(st: AppState) -> Router {
     Router::new()
         .route("/health", get(handlers::health))
         .route("/ready", get(handlers::ready))
+        .route("/v1/tenants", post(handlers::tenants_create))
+        .route(
+            "/v1/tenants/{tenant_id}/orgs/{org_id}/sites",
+            post(handlers::sites_create),
+        )
+        .route(
+            "/v1/tenants/{tenant_id}/sites/{site_id}/groups",
+            post(handlers::groups_create),
+        )
+        .route("/v1/tenants/{tenant_id}/orgs", post(handlers::orgs_create))
         .route("/v1/tenants/{tenant_id}/stats", get(handlers::stats))
         .route(
             "/v1/tenants/{tenant_id}/devices",
@@ -229,7 +236,9 @@ mod tests {
         let claims = JwtClaims {
             sub: "integration-user".to_string(),
             tenant_id,
+            allowed_tenant_ids: vec![],
             roles,
+            tenant_roles: HashMap::new(),
             iat: now.timestamp(),
             exp: (now + Duration::minutes(5)).timestamp(),
             iss: issuer.map(str::to_string),
@@ -378,7 +387,10 @@ mod tests {
 
         assert_eq!(status, StatusCode::FORBIDDEN);
         assert_eq!(body["title"], "Forbidden");
-        assert_eq!(body["detail"], "tenant in URL does not match JWT tenant_id");
+        assert_eq!(
+            body["detail"],
+            "tenant in URL is not permitted for this token"
+        );
     }
 
     #[tokio::test]
@@ -423,6 +435,33 @@ mod tests {
                 ),
             )
             .body(Body::empty())
+            .expect("request");
+
+        let response = router.oneshot(request).await.expect("response");
+        let status = response.status();
+        let body = response_body(response).await;
+
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        assert_eq!(body["title"], "Forbidden");
+    }
+
+    #[tokio::test]
+    async fn tenant_admin_cannot_post_create_tenant_on_real_router() {
+        let secret = "test-secret-please-change-me";
+        let tenant_id = Uuid::new_v4();
+        let router = build_router(test_state(AuthMode::Jwt));
+        let request = Request::builder()
+            .method("POST")
+            .uri("/v1/tenants")
+            .header(
+                AUTHORIZATION,
+                format!(
+                    "Bearer {}",
+                    issue_token(secret, tenant_id, vec!["TenantAdmin".to_string()])
+                ),
+            )
+            .header("content-type", "application/json")
+            .body(Body::from(r#"{"name":"new-tenant-from-tenant-admin"}"#))
             .expect("request");
 
         let response = router.oneshot(request).await.expect("response");

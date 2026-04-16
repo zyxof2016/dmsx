@@ -7,11 +7,14 @@ services:
       POSTGRES_USER: dmsx
       POSTGRES_PASSWORD: dmsx
       POSTGRES_DB: dmsx
+    # 默认绑定主机 5432；若与其它 Postgres 冲突，可先停占用端口的容器，或使用
+    # REPRODUCE_TAKE_PORT_5432=1 ./scripts/reproduce-dev-env.sh（见 README）。
     ports:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ../migrations:/docker-entrypoint-initdb.d:ro
+      # 勿挂载 ../migrations 到 initdb：会与 dmsx-api 启动时 sqlx::migrate 重复执行 DDL（42P07）。
+      # Schema 由 `cargo run -p dmsx-api`（或 CI）应用 migrations/。
 
   redis:
     image: redis:7-alpine

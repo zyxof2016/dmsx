@@ -3,6 +3,7 @@ pub mod bootstrap;
 pub mod commands;
 pub mod compliance;
 pub mod devices;
+pub mod hierarchy;
 pub mod policies;
 pub mod shadow;
 pub mod stats;

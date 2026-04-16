@@ -2,6 +2,7 @@ pub mod auth;
 
 mod desktop;
 mod handlers;
+mod migrate_embedded;
 mod query_types;
 mod repo;
 

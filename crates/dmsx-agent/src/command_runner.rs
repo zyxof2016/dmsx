@@ -1,4 +1,7 @@
+use std::process::Stdio;
+
 use reqwest::Client;
+use tokio::process::Command as TokioCommand;
 use tracing::{error, info, warn};
 use dmsx_agent::api::{CommandItem, ListResponse, SubmitResultReq, UpdateStatusReq};
 use dmsx_agent::config::AgentConfig;
@@ -81,7 +84,7 @@ async fn execute_command(
         "stop_desktop" => {
             let target_session_id = params
                 .get("session_id")
-                .and_then(|v| v.as_str())
+                .and_then(|v: &serde_json::Value| v.as_str())
                 .unwrap_or_default();
             if desktop_session
                 .as_ref()
@@ -110,7 +113,7 @@ async fn execute_command(
         "shutdown" => {
             let delay = params
                 .get("delay_seconds")
-                .and_then(|v| v.as_u64())
+                .and_then(|v: &serde_json::Value| v.as_u64())
                 .unwrap_or(30);
             info!(delay_seconds = delay, "shutdown requested");
             schedule_shutdown(delay).await
@@ -130,6 +133,10 @@ async fn execute_command(
         "install_update" => {
             info!("install_update requested");
             (0, "update acknowledged (stub)".into(), String::new())
+        }
+        "smoke_noop" => {
+            info!("smoke_noop — no side effects");
+            (0, "smoke_noop ok".into(), String::new())
         }
         _ => {
             warn!(action = %action, "unknown action");

@@ -14,7 +14,7 @@
 
 当前脚手架为 **workspace 多 crate**，便于后续拆仓：
 
-1. **api-gateway**（`dmsx-api`）：REST、限流、租户解析、审计注入、桌面会话管理、LiveKit token 签发。
+1. **api-gateway**（`dmsx-api`）：REST、限流、**JWT 租户许可**（`tenant_id` ∪ `allowed_tenant_ids`）、**按租户 RBAC**（`tenant_roles` / `roles`）、`AuthContext` 注入、审计注入、桌面会话管理、LiveKit token 签发（管理面 JWT 语义见 [`API.md`](API.md)）。
 2. **device-gateway**（`dmsx-device-gw`）：mTLS 终端、gRPC streaming、背压；当前仍是未来数据面主链路的骨架。
 3. **device-agent**（`dmsx-agent`）：跨平台独立二进制，当前通过 HTTP 与控制面通信，并在远程桌面场景下直接加入 LiveKit 房间。
 4. **device-service** / **policy-service** / **command-service** / **app-repo-service** / **compliance-service** / **network-service**：逻辑可先共库，按 bounded context 分模块，流量上来再独立进程 + gRPC 内部调用。
@@ -77,7 +77,7 @@ LiveKit
 
 ## 与外部系统集成
 
-- **身份**：OIDC / SAML（企业 SSO）；设备侧 **mTLS + enrollment token**。
+- **身份**：OIDC / SAML（企业 SSO）；控制面 REST 使用 **Bearer JWT**（可选多租户声明与按租户角色，见 [`API.md`](API.md)）；设备侧 **mTLS + enrollment token**。
 - **EDR/SIEM**：Webhook 或 Kafka 出站；合规服务消费告警关联 `device_id`。
 - **网络**：本阶段以 **策略下发 + 对接现有 ZTNA/SD-WAN API** 为主，不自研完整数据面。
 - **远程桌面**：LiveKit WebRTC（主）+ RustDesk（备选）。

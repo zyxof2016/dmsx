@@ -58,6 +58,12 @@ flowchart TB
 | `LIVEKIT_URL` | `ws://127.0.0.1:7880` | LiveKit Server WebSocket 地址 |
 | `LIVEKIT_API_KEY` | `dmsx-api-key` | LiveKit API Key（与 livekit.yaml 一致） |
 | `LIVEKIT_API_SECRET` | `dmsx-api-secret-that-is-at-least-32-chars` | LiveKit API Secret |
+| `DMSX_API_AUTH_MODE` | `disabled` | `jwt` 时校验 `Authorization: Bearer`；JWT 声明（**`tenant_id`**、**`allowed_tenant_ids`**、**`tenant_roles`**、**`roles`**）语义见 [`API.md`](API.md) |
+| `DMSX_API_JWT_SECRET` | 开发回退常量 | `jwt` 模式下 HS256 密钥；**生产必须显式配置** |
+| `DMSX_API_JWT_ISSUER` / `DMSX_API_JWT_AUDIENCE` | （可选） | 与签发方一致的 `iss` / `aud` 校验 |
+| `DMSX_API_OIDC_DISCOVERY_URL` / `DMSX_API_JWKS_URL` | （可选） | OIDC discovery 或直连 JWKS；详见 `crates/dmsx-api` 认证模块与 `docs/CHECKLIST.md` |
+
+启用 `jwt` 时，管理台或 BFF 签发的访问令牌须与 **OpenAPI `bearerAuth`** 及 **[`API.md`](API.md)** 中的多租户 / 按租户 RBAC 约定一致，否则路径租户或写操作将返回 **403**。
 
 ## 环境变量（dmsx-agent）
 

@@ -1,6 +1,6 @@
 use sysinfo::System;
 
-pub(crate) fn detect_platform() -> &'static str {
+pub fn detect_platform() -> &'static str {
     if cfg!(target_os = "windows") {
         "windows"
     } else if cfg!(target_os = "macos") {
@@ -18,11 +18,11 @@ pub(crate) fn detect_platform() -> &'static str {
     }
 }
 
-pub(crate) fn hostname() -> String {
+pub fn hostname() -> String {
     System::host_name().unwrap_or_else(|| "unknown".into())
 }
 
-pub(crate) fn os_version() -> Option<String> {
+pub fn os_version() -> Option<String> {
     System::os_version()
 }
 

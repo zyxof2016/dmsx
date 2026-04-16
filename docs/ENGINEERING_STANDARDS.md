@@ -433,7 +433,7 @@ src/
 ### 11.1 默认安全
 
 - 所有接口默认要求身份校验，测试/开发放行必须显式标记。
-- 所有租户级资源必须校验 `tenant_id` 一致性。
+- 所有租户级资源：路径中的 `{tenant_id}` 必须落在 JWT 允许的租户集合（`tenant_id` ∪ `allowed_tenant_ids`）；业务与 SQL 必须使用中间件注入的 **`AuthContext.tenant_id`** 及解析后的 **有效角色**（`tenant_roles` / `roles`），不得仅凭客户端 body 信任租户（详见 [`API.md`](API.md)）。
 - 高危操作默认不自动执行。
 
 ### 11.2 审计要求
@@ -579,8 +579,8 @@ Code Review 必查：
    - 避免后续业务继续堆入路由与 handler
 3. **补齐测试基线**
    - 优先覆盖 `dmsx-core` 校验、`dmsx-api` 关键接口、影子与命令状态流
-4. **补齐认证、RBAC、租户一致性校验**
-   - 这是功能可商用前的硬门槛
+4. **强化认证、RBAC 与数据面租户隔离**
+   - 控制面已支持 JWT **`allowed_tenant_ids`**、**`tenant_roles`** 与路径租户校验；商用前仍需 **Postgres RLS**、限流、审计写入 **ClickHouse** 等（见 [`CHECKLIST.md`](CHECKLIST.md)、[`API.md`](API.md)）
 5. **建立前端统一体验规范**
    - 尤其是危险操作确认、统一错误提示、表格页一致性、AI 结果可解释性
 

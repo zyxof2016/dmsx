@@ -9,6 +9,74 @@
 
 ---
 
+## 内测阶段目标与完成定义（当前）
+
+> **当前目标：先内测**（与 `docs/SCALING_AND_ROADMAP.md` 中「控制面可用 + Agent 主链路闭环」一致）。本节为 **内测门禁 DoD** 与 **明确延后项**，用于收敛范围；公测或多租户生产前再对照下方 §1 起全文逐项加码。
+>
+> **本轮内测范围**：**不包含远程桌面**（不验收 LiveKit 联调、不要求管理台远控面板与 Agent 桌面会话闭环）。`docker compose` 仍可带 LiveKit 服务，但**不作为本轮内测门禁**。
+
+### 内测 DoD（交付内测用户前建议逐项勾选）
+
+- [x] **环境可复现**：按 `README.md` 与 `deploy/docker-compose.yml` 可在内测机拉起依赖；**仓库侧** 一键校验见 [`scripts/reproduce-dev-env.sh`](../scripts/reproduce-dev-env.sh)（验证 **主机 5432** 上 `postgres://dmsx:dmsx@127.0.0.1:5432/dmsx` 与 README 一致；**2026-04-16** 已通过 compose + 回退检测）。`dmsx-api` / `dmsx-agent` / 前端 `web/` 的**参与者网络说明**仍见未勾「范围与反馈」或发版说明（**本轮不要求**为验桌面而单独拉起或打通 LiveKit）
+- [x] **主链路可重复演示**：设备注册 → 心跳 → 命令下发/轮询/状态与结果，在内测环境至少完成 **2 轮**完整走通（含失败重试或刷新后的可理解表现）。**辅助脚本**（curl + `python3`，不启真实 Agent）：[`scripts/internal-beta-smoke-http.sh`](../scripts/internal-beta-smoke-http.sh)（环境变量见脚本头注释；可跑多遍作多轮中的「API 闭环」）；**仓库侧** 2026-04-16 已连续跑通 **2 轮**（见下表）
+- **远程桌面（本轮不适用）**：已明确**不纳入**本轮内测；**不要求**完成 LiveKit + `POST/DELETE .../desktop/session` + 浏览器/Agent 联调。后续轮次或专项里程碑再启用验收口径时，可改回可勾选条目。
+- [x] **认证约定落地**：内测统一 `DMSX_API_AUTH_MODE`（常见为 `disabled` 或团队共享 JWT）；**本轮冒烟**在 `disabled` 下完成。若启用 `jwt`，JWT 中 `tenant_id` / `allowed_tenant_ids` / `tenant_roles` / `roles` 与 `docs/API.md`、`openapi/dmsx-control-plane.yaml` 一致；**库测** `dmsx-api --lib` 已覆盖 JWT/JWKS 分支（见 `internal-beta-verify.sh`），参与者取令牌方式仍须在发版说明中单独告知
+- [x] **自动化基线绿灯**：`cargo test -p dmsx-api --lib`、`cargo test -p dmsx-agent --lib`（或与 CI 等价命令）在内测所用分支/标签上通过（**一键脚本**：[`scripts/internal-beta-verify.sh`](../scripts/internal-beta-verify.sh)；**验证记录**见下表）
+- [ ] **范围与反馈**：本文件 §1 起各节中 `[~]`/`[ ]` 项已作为「已知能力边界」对内测说明；反馈入口（负责人 / Issue / 群）已指定
+
+#### 内测验证记录（仓库侧可复现）
+
+| 日期 | 命令 / 动作 | 结果 |
+|------|-------------|------|
+| 2026-04-16 | `cargo test -p dmsx-api --lib` | **48 passed** |
+| 2026-04-16 | `cargo test -p dmsx-agent --lib` | **6 passed**（Agent lib 测试含 `wiremock` 等依赖，首编译可能较慢） |
+| 2026-04-16 | `./scripts/internal-beta-smoke-http.sh`（`DMSX_SMOKE_API=http://127.0.0.1:8080`，本机已起 `dmsx-api` + PG） | **通过**（脚本已改为 `python3` 解析 JSON，无需 jq） |
+| 2026-04-16 | `./scripts/internal-beta-smoke-http.sh` **第 2 轮**（同上 `DMSX_SMOKE_API` / `DMSX_API_AUTH_MODE=disabled`） | **通过** |
+| 2026-04-16 | `./scripts/internal-beta-verify.sh`（复跑：`dmsx-api` 48 passed、`dmsx-agent` 6 passed） | **通过** |
+| 2026-04-16 | `./scripts/reproduce-dev-env.sh`（`REPRODUCE_MINIMAL=1`；本机 5432 占用时回退校验 `dmsx-postgres`） | **通过**；随后 `dmsx-api` + `internal-beta-smoke-http.sh` **通过** |
+
+### 网内测试建议（内测环境）
+
+> 面向「先内测」：**控制面与数据默认只在团队内网 / VPN 可达范围验证**，避免与公网生产要求混淆。
+
+- [ ] **网络边界**：`dmsx-api`、Postgres、管理台等仅绑定内网地址或经 VPN；若必须经公网演示，须单独评审（TLS、**`jwt` 模式**、防火墙白名单），且不把生产密钥写入仓库（**本轮**未验收远程桌面时，**LiveKit 可不作为必起/必通依赖**）
+- [ ] **节奏**：每次合并至内测分支或打内测标签前，至少执行 DoD 中的 **`cargo test -p dmsx-api --lib`**、**`cargo test -p dmsx-agent --lib`**，并跑通 **一条**主路径冒烟（可用 **[`scripts/internal-beta-smoke-http.sh`](../scripts/internal-beta-smoke-http.sh)** 代替手工 curl，仍需真实 Agent 的场景另测）
+- [ ] **数据与凭据**：内测库、JWT 密钥及（若启用桌面或 LiveKit 时的）LiveKit Secret 视为敏感；截图/录屏中含 token 时须打码；不向网外渠道粘贴完整环境变量
+
+### 内测阶段明确延后（不纳入内测门禁）
+
+以下**不要求**在内测前完成；下一里程碑（扩大用户面或公网暴露）再纳入计划：
+
+- Postgres **RLS**、按 `tenant_id` **HASH 分区**、独立迁移工具链成熟
+- **ClickHouse** 客户端写入审计/遥测、物化视图、归档策略落地
+- **Redis**（缓存/在线/锁）、**NATS JetStream**（命令投递）、**S3/MinIO 预签名**等控制面横切生产化
+- **`dmsx-device-gw` 作为默认数据面**、设备 **mTLS** 全链路、CA 集成与吊销自动化
+- **AI** 四类接口从 stub 到真实引擎、**OpenAPI oauth2** 等文档增强
+- **K8s** Ingress/HPA/PDB、应用侧 OTel SDK、完整告警规则等运维深化
+
+---
+
+## 多租户公测（控制面 `jwt` + 双租户数据）
+
+> **定位**：在 **内测 `disabled` 冒烟** 之外，对 **`DMSX_API_AUTH_MODE=jwt`**、**路径租户 ∈ `tenant_id` ∪ `allowed_tenant_ids`**（见 [`API.md`](API.md)）以及 **库内第二租户** 下的主链路做一次可复现的门禁。不等价于公网生产就绪（TLS、配额、审计落库等仍见 §1 起全文与下方未勾选项）。
+
+### 多租户公测 DoD（仓库侧）
+
+- [x] **第二租户种子**：[`migrations/004_second_tenant_seed.sql`](../migrations/004_second_tenant_seed.sql)（租户 B `22222222-2222-2222-2222-222222222222`）。**注意**：`sqlx::migrate!` 在 **编译 `dmsx-api` 时**嵌入迁移文件；新增或修改 `migrations/*.sql` 后须 **`cargo build -p dmsx-api`（或 `cargo run` 触发重编）** 再启动 API，否则数据库不会执行新脚本。
+- [x] **HTTP 门禁**：[`scripts/public-beta-multi-tenant-smoke.sh`](../scripts/public-beta-multi-tenant-smoke.sh) — 使用与 API 一致的 **`DMSX_API_JWT_SECRET`**、`python3` 标准库签发 HS256 JWT；在租户 A、B 各执行一遍 [`internal-beta-smoke-http.sh`](../scripts/internal-beta-smoke-http.sh)；**仅含租户 A 的令牌**访问租户 B 的 `GET .../devices` 须 **403**。
+- [x] **库级基线**：[`scripts/internal-beta-verify.sh`](../scripts/internal-beta-verify.sh)（与内测相同）。
+- [ ] **生产化加码**（本小节不勾选即视为未承诺）：公网 **HTTPS**、**`iss`/`aud` 强制**、**速率限制**、按 **`tenant_roles`** 的细粒度写权限冒烟、真实 IdP **JWKS** 长稳联调等。
+
+#### 多租户公测验证记录
+
+| 日期 | 命令 / 动作 | 结果 |
+|------|-------------|------|
+| 2026-04-16 | 重编并启动 `dmsx-api`（`DMSX_API_AUTH_MODE=jwt`，PG 已应用迁移含 `004_second_tenant_seed`） | **通过**（库内存在租户 A + B） |
+| 2026-04-16 | `./scripts/public-beta-multi-tenant-smoke.sh`（`DMSX_SMOKE_API=http://127.0.0.1:8080`，`DMSX_API_JWT_SECRET` 与 API 对齐） | **通过**（A/B 主链路 + 跨租户 403） |
+| 2026-04-16 | `./scripts/internal-beta-verify.sh` | **通过**（`dmsx-api` 48、`dmsx-agent` 6） |
+
+---
+
 ## 1. 工程基础
 
 - [x] Rust workspace 搭建（`Cargo.toml`、`Cargo.lock`）
@@ -84,10 +152,10 @@
 ### 路由
 
 - [x] `GET /health` 健康检查
-- [~] `POST /v1/tenants` 创建租户（stub, 启动时自动 seed）
-- [~] `POST /v1/tenants/{tid}/orgs` 创建组织（stub）
-- [~] `POST /v1/tenants/{tid}/orgs/{oid}/sites` 创建站点（stub）
-- [~] `POST /v1/tenants/{tid}/sites/{sid}/groups` 创建设备组（stub）
+- [x] `POST /v1/tenants` 创建租户（sqlx；**PlatformAdmin**；`disabled` 开发模式不校验）
+- [x] `POST /v1/tenants/{tid}/orgs` 创建组织（sqlx + 审计）
+- [x] `POST /v1/tenants/{tid}/orgs/{oid}/sites` 创建站点（sqlx，校验 org 归属租户）
+- [x] `POST /v1/tenants/{tid}/sites/{sid}/groups` 创建设备组（sqlx，校验 site 归属租户）
 - [x] `GET /v1/tenants/{tid}/devices` 设备列表（sqlx 持久化）
 - [x] `POST /v1/tenants/{tid}/devices` 注册设备（sqlx 持久化）
 - [x] `GET/PATCH/DELETE /v1/tenants/{tid}/devices/{did}` 设备 CRUD（sqlx 持久化）
@@ -118,9 +186,9 @@
 - [x] 认证中间件骨架（`auth` 模块 + Bearer/JWT 解析 + `/health` 放行 + 可配置 `DMSX_API_AUTH_MODE`）
 - [x] 监听地址可配置（`DMSX_API_BIND` 环境变量）
 - [x] `TraceLayer` 日志追踪
-- [~] JWT / OIDC 认证实现（JWT `issuer` / `audience` 校验已支持；OIDC discovery -> `jwks_uri` 加载、JWKS 校验、后台 TTL 刷新、未知 `kid` 强制刷新、刷新失败 stale fallback、最大陈旧窗口、启动首刷失败可配置策略已接入；`/ready` 已暴露认证/JWKS 就绪状态；外部 IdP 实机联调与告警/指标后端集成待补）
+- [~] JWT / OIDC 认证实现（JWT `issuer` / `audience` 校验已支持；可选 **`allowed_tenant_ids`** 与 **`tenant_id`** 并集作为路径租户白名单；可选 **`tenant_roles`** 按活动租户覆盖 RBAC（无键回退 **`roles`**）；OIDC discovery -> `jwks_uri` 加载、JWKS 校验、后台 TTL 刷新、未知 `kid` 强制刷新、刷新失败 stale fallback、最大陈旧窗口、启动首刷失败可配置策略已接入；`/ready` 已暴露认证/JWKS 就绪状态；外部 IdP 实机联调与告警/指标后端集成待补）
 - [x] RBAC 权限校验（已细化到资源级：全局配置 / devices / policies / commands / shadow / artifacts / compliance / desktop / AI；`TenantAdmin` 与 `PlatformAdmin` 非租户路由权限已区分）
-- [x] 租户 URL ↔ JWT `tenant_id` 一致性校验
+- [x] 路径 `{tenant_id}` 与 JWT 许可集合及 RBAC（`tenant_id` ∪ `allowed_tenant_ids`；`tenant_roles` 按活动租户覆盖 `roles`；见 [`API.md`](API.md)）
 - [ ] 速率限制（per-tenant）
 - [ ] 请求体大小限制
 - [ ] CORS 生产配置
@@ -281,7 +349,7 @@
 - [x] 审计不可篡改设计（PG + CH + 对象存储）
 - [x] 制品签名设计（cosign / sigstore）
 - [~] 认证实现（JWT `issuer` / `audience` 校验已支持；OIDC discovery -> `jwks_uri` 加载、JWKS 校验、后台 TTL 刷新与未知 `kid` 强制刷新已接入；外部 IdP 实机联调与更完整轮转/失效策略待补）
-- [x] RBAC 中间件实现（JWT `roles` -> 资源级路由权限；缺失角色、越权写策略、越权访问全局配置均返回 `403`）
+- [x] RBAC 中间件实现（按活动租户解析 **`roles`**：`tenant_roles` 有键则用该数组，否则用令牌级 `roles`；资源级路由权限；缺失角色、越权写策略、越权访问全局配置均返回 `403`）
 - [ ] 设备证书签发（CA 集成）
 - [ ] 证书轮换 / 吊销实现
 - [x] 审计日志自动写入（所有 create/update/delete/publish 操作写入 audit_logs）
@@ -337,8 +405,10 @@
 
 | 状态 | 数量 |
 |------|------|
-| [x] 已完成 | 135 |
-| [~] 骨架/Stub | 17 |
+| [x] 已完成 | 139 |
+| [~] 骨架/Stub | 13 |
 | [ ] 未开始 | 48 |
 
-> 最后更新：2026-04-15（LiveKit 远程桌面集成完成）
+> 上表仅统计 **§1 起各功能小节** 中带状态标记的条目；**「内测阶段目标与完成定义」** 中的 DoD 为过程自查项，**未计入**上表「未开始」数量。其中 **「自动化基线绿灯」** 已勾选并附验证记录，亦不纳入上表「已完成」计数。
+
+> 最后更新：2026-04-16（**租户/组织/站点/组 POST** 已落地 + OpenAPI；**Agent** `smoke_noop` + `scripts/agent-dev-e2e.sh`；**环境可复现** / **多租户公测**见前文；新增迁移后须重编 `dmsx-api`）

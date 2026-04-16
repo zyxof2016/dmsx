@@ -13,7 +13,7 @@
 
 - **AuthN**：OIDC（Keycloak/Entra ID/Okta 等）；服务账号用 **JWT + mTLS**（双向约束）。
 - **AuthZ**：**RBAC** 角色示例：`PlatformAdmin`, `TenantAdmin`, `SiteAdmin`, `Operator`, `Auditor`, `ReadOnly`。
-- **范围**：权限绑定在 `tenant_id` + 可选 `site_id` / `group_id`；API 层强制 **URL/JWT tenant 一致性**。
+- **范围**：权限绑定在 `tenant_id` + 可选 `site_id` / `group_id`；API 层校验 **URL 路径中的 `{tenant_id}` 必须落在 JWT 允许的租户集合内**（`tenant_id` ∪ `allowed_tenant_ids`）。**RBAC**：可选 **`tenant_roles`** 按活动租户覆盖角色；无键时回退令牌级 **`roles`**。切换租户即换 URL 前缀；签发方维护 `allowed_tenant_ids` 与 `tenant_roles`。（完整约定见 [`API.md`](API.md)。）
 - **ABAC**：`devices.labels` + 策略 `scope_expr`；评估引擎在 PolicyService（后续实现）。
 
 ## 通信安全

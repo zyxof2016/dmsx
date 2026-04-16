@@ -4,7 +4,7 @@ use sysinfo::{Disks, System};
 use crate::platform::{detect_platform, hostname, os_version};
 use crate::rustdesk::detect_rustdesk;
 
-pub(crate) fn collect_telemetry() -> serde_json::Value {
+pub fn collect_telemetry() -> serde_json::Value {
     let mut sys = System::new_all();
     sys.refresh_all();
 

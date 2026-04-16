@@ -9,7 +9,9 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::dto::*;
-use crate::services::{artifacts, commands, compliance, devices, policies, shadow, stats};
+use crate::services::{
+    artifacts, commands, compliance, devices, hierarchy, policies, shadow, stats,
+};
 use crate::state::AppState;
 
 pub type ApiResult<T> = Result<T, DmsxError>;
@@ -48,6 +50,45 @@ pub async fn stats(
     Path(tenant_id): Path<Uuid>,
 ) -> ApiResult<Json<DashboardStats>> {
     Ok(Json(stats::get_stats(&st, tenant_id).await?))
+}
+
+// ---------------------------------------------------------------------------
+// Tenant hierarchy
+// ---------------------------------------------------------------------------
+
+pub async fn tenants_create(
+    State(st): State<AppState>,
+    Json(body): Json<CreateTenantReq>,
+) -> ApiResult<Response> {
+    let tenant = hierarchy::create_tenant(&st, &body).await?;
+    Ok((StatusCode::CREATED, Json(tenant)).into_response())
+}
+
+pub async fn orgs_create(
+    State(st): State<AppState>,
+    Path(tenant_id): Path<Uuid>,
+    Json(body): Json<CreateOrgReq>,
+) -> ApiResult<Response> {
+    let org = hierarchy::create_org(&st, tenant_id, &body).await?;
+    Ok((StatusCode::CREATED, Json(org)).into_response())
+}
+
+pub async fn sites_create(
+    State(st): State<AppState>,
+    Path((tenant_id, org_id)): Path<(Uuid, Uuid)>,
+    Json(body): Json<CreateSiteReq>,
+) -> ApiResult<Response> {
+    let site = hierarchy::create_site(&st, tenant_id, org_id, &body).await?;
+    Ok((StatusCode::CREATED, Json(site)).into_response())
+}
+
+pub async fn groups_create(
+    State(st): State<AppState>,
+    Path((tenant_id, site_id)): Path<(Uuid, Uuid)>,
+    Json(body): Json<CreateGroupReq>,
+) -> ApiResult<Response> {
+    let group = hierarchy::create_group(&st, tenant_id, site_id, &body).await?;
+    Ok((StatusCode::CREATED, Json(group)).into_response())
 }
 
 // ---------------------------------------------------------------------------

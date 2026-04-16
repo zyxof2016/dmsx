@@ -1,14 +1,14 @@
 #[derive(Debug, Clone)]
-pub(crate) struct AgentConfig {
-    pub(crate) api_base: String,
-    pub(crate) tenant_id: String,
-    pub(crate) heartbeat_interval: std::time::Duration,
-    pub(crate) command_poll_interval: std::time::Duration,
-    pub(crate) rustdesk_relay: Option<String>,
+pub struct AgentConfig {
+    pub api_base: String,
+    pub tenant_id: String,
+    pub heartbeat_interval: std::time::Duration,
+    pub command_poll_interval: std::time::Duration,
+    pub rustdesk_relay: Option<String>,
 }
 
 impl AgentConfig {
-    pub(crate) fn from_env() -> Self {
+    pub fn from_env() -> Self {
         Self {
             api_base: std::env::var("DMSX_API_URL")
                 .unwrap_or_else(|_| "http://127.0.0.1:8080".into()),
@@ -30,7 +30,7 @@ impl AgentConfig {
         }
     }
 
-    pub(crate) fn tenant_url(&self, path: &str) -> String {
+    pub fn tenant_url(&self, path: &str) -> String {
         format!("{}/v1/tenants/{}{}", self.api_base, self.tenant_id, path)
     }
 }

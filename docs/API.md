@@ -2,11 +2,28 @@
 
 ## 控制面 REST（前缀 `/v1`）
 
-基址示例：`https://api.example.com`。所有路径下资源均属于路径中的 `{tenant_id}`（或从 JWT `tenant_id` 推导后与 URL 校验一致）。
+基址示例：`https://api.example.com`。租户作用域由 URL 路径中的 `{tenant_id}` 决定；JWT 须证明该租户在本令牌下可访问（见下「多租户 JWT」）。
 
 **远程桌面**：音视频与键鼠控制走 **LiveKit WebRTC**（浏览器 `livekit-client` 订阅、Agent SDK 发布）；`dmsx-api` 负责会话创建、LiveKit JWT 签发，并通过命令队列触发 Agent `start_desktop` / `stop_desktop`。**不再提供**经 `dmsx-api` 的桌面 JPEG WebSocket 中继端点。
 
-**认证**：除 `/health`、`/ready` 外，管理接口需 `Authorization: Bearer <JWT>`（租户 URL 与 JWT 内 `tenant_id` 须一致；`GET /v1/config/livekit` 需 **PlatformAdmin**）。OpenAPI 根级 **`security: [bearerAuth]`**，并在各操作中声明 **`401` / `403`**；资源类接口另声明 **`404`**；各操作另声明 **`500`**（内部错误）。上述错误均复用 `components.responses` 与 **`ProblemDetails`**（见 `openapi/dmsx-control-plane.yaml`）。
+**认证**：除 `/health`、`/ready` 外，管理接口需 `Authorization: Bearer <JWT>`（路径 `{tenant_id}` 须被该 JWT 允许；`GET /v1/config/livekit` 需 **PlatformAdmin**）。OpenAPI 根级 **`security: [bearerAuth]`**，并在各操作中声明 **`401` / `403`**；资源类接口另声明 **`404`**；各操作另声明 **`500`**（内部错误）。上述错误均复用 `components.responses` 与 **`ProblemDetails`**（见 `openapi/dmsx-control-plane.yaml`）。
+
+**多租户 JWT（单用户多租户）**：JWT 声明中含 **`tenant_id`**（UUID，默认/主租户，无 `allowed_tenant_ids` 时即唯一允许租户）与可选数组 **`allowed_tenant_ids`**（UUID）。有效租户集合为 **`tenant_id` ∪ `allowed_tenant_ids`**。对 `/v1/tenants/{tenant_id}/...` 的请求，路径中的 `{tenant_id}` 必须属于该集合，否则 **403**。`AuthContext` 中的活动租户与路径一致，便于前端**切换租户**：更换 URL 中的 `{tenant_id}` 即可；签发方应在成员关系变化时更新 **`allowed_tenant_ids`**。
+
+**按租户 RBAC（`tenant_roles`）**：可选对象 **`tenant_roles`**，键为租户 UUID 字符串、值为该租户下角色字符串数组（与令牌级 **`roles`** 同一套角色名，如 `TenantAdmin`、`ReadOnly`）。对某次请求，**活动租户**为路径中的 `{tenant_id}`（无路径租户时，如 `GET /v1/config/livekit`，则为 JWT 的 **`tenant_id`**）。若 **`tenant_roles` 中存在该活动租户的键**（含空数组 `[]`），则本请求 **仅使用该键对应数组** 做 RBAC；若 **无该键**，则回退使用令牌级 **`roles`**。空数组表示该租户下显式无角色，受保护路由将 **403**（与「未声明 `roles`」行为一致）。
+
+示例（节选 payload）：
+
+```json
+"tenant_id": "11111111-1111-1111-1111-111111111111",
+"roles": ["TenantAdmin"],
+"allowed_tenant_ids": ["22222222-2222-2222-2222-222222222222"],
+"tenant_roles": {
+  "22222222-2222-2222-2222-222222222222": ["ReadOnly"]
+}
+```
+
+上例中访问 `/v1/tenants/11111111-.../devices` 时使用 **`TenantAdmin`**；访问 `/v1/tenants/22222222-.../devices` 时使用 **`ReadOnly`**。
 
 机器可读 OpenAPI 见文末；**`paths` 与当前 `crates/dmsx-api` 已注册路由对齐**；未实现的 HTTP 路由不会出现在 OpenAPI 中（见下方「租户与组织结构」说明）。
 
@@ -20,14 +37,14 @@
 
 ### 租户与组织结构
 
-> **实现状态**：下表中带 **「（规划中）」** 的 **POST** 为**目标产品契约**，当前 **`dmsx-api` 二进制未注册对应 HTTP 路由**（默认租户由迁移 + 启动 `bootstrap` 写入）。因此 **OpenAPI 不包含这些未实现路径**；统计接口已实现并收录 OpenAPI。
+> **实现状态**：下列 **POST** 已在 `dmsx-api` 注册并与 **OpenAPI** 对齐。`POST /v1/tenants` 与 `GET /v1/config/livekit` 同级 RBAC：**仅 `PlatformAdmin`**（`jwt` 模式；`disabled` 不校验）。其余创建路径在 **`jwt` 模式**下需 **`TenantAdmin`**（或更高）且路径 `{tid}` 属于 JWT 许可租户集合；请求体字段 **`name`** 长度 1–200。站点创建要求 **`org_id`** 属于该租户；设备组创建要求 **`site_id`** 属于该租户（否则 **400**）。名称在同一父级下违反唯一约束时 **409**。
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/v1/tenants` | 创建租户（规划中；平台级，需超级管理员） |
-| POST | `/v1/tenants/{tid}/orgs` | 创建组织（规划中） |
-| POST | `/v1/tenants/{tid}/orgs/{oid}/sites` | 创建站点（规划中） |
-| POST | `/v1/tenants/{tid}/sites/{sid}/groups` | 创建设备组（规划中） |
+| POST | `/v1/tenants` | 创建租户（服务端生成 `id`；**PlatformAdmin**） |
+| POST | `/v1/tenants/{tid}/orgs` | 创建组织 |
+| POST | `/v1/tenants/{tid}/orgs/{oid}/sites` | 创建站点（校验 `org_id` 归属租户） |
+| POST | `/v1/tenants/{tid}/sites/{sid}/groups` | 创建设备组（校验 `site_id` 归属租户） |
 | GET | `/v1/tenants/{tid}/stats` | Dashboard 聚合统计 |
 
 ### 设备管理
@@ -214,4 +231,4 @@ HTTP 使用 **Problem Details**（`application/problem+json`）。当前 `dmsx_c
 
 gRPC：标准 `google.rpc.Status` 可附加 `ErrorInfo`（`reason`, `domain`, `metadata`）。
 
-机器可读 OpenAPI：[openapi/dmsx-control-plane.yaml](../openapi/dmsx-control-plane.yaml)（`paths` 与已实现路由一致；全局 **`security: [bearerAuth]`**，`/health` 与 `/ready` 除外；`components.responses` 含 **401 / 403 / 404 / 400 / 409 / 500** 与 `ProblemDetails` schema）。
+机器可读 OpenAPI：[openapi/dmsx-control-plane.yaml](../openapi/dmsx-control-plane.yaml)（`paths` 与已实现路由一致；全局 **`security: [bearerAuth]`**，`/health` 与 `/ready` 除外；**`bearerAuth`** 说明中含 **`allowed_tenant_ids`**、**`tenant_roles`** 与 **`roles`** 语义；`components.responses` 含 **401 / 403 / 404 / 400 / 409 / 500** 与 `ProblemDetails` schema）。

@@ -37,6 +37,7 @@ DMSX 的目标不是“做一个功能拼盘”，而是演进为一套具备以
 
 - 当前阶段是“**控制面可用 + Agent 主链路闭环 + 数据面骨架预埋**”。
 - 后续演进必须围绕“**从可用单体控制面，逐步收敛到稳定控制面 + 独立数据面**”推进。
+- 若以 **「先内测」** 为当前里程碑：**内测 DoD 与明确延后项**见 [`CHECKLIST.md`](CHECKLIST.md) 开篇章节 **「内测阶段目标与完成定义」**。
 
 ---
 
@@ -104,7 +105,7 @@ DMSX 的目标不是“做一个功能拼盘”，而是演进为一套具备以
 
 持续演进方向：
 
-- 多租户与权限模型稳定
+- 多租户与权限模型稳定（控制面 JWT：`tenant_id` / **`allowed_tenant_ids`** / **`tenant_roles`** 与 RBAC 中间件；契约见 [`API.md`](API.md) / [`openapi/dmsx-control-plane.yaml`](../openapi/dmsx-control-plane.yaml)）
 - 声明式策略与 revision/reconcile 模式成熟
 - 命令状态机、幂等与审计语义稳定
 - 桌面会话与设备详情操作连续性完善

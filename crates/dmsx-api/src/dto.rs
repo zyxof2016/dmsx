@@ -134,6 +134,58 @@ impl UpdateDeviceReq {
 }
 
 // ---------------------------------------------------------------------------
+// Tenant hierarchy (orgs / sites / groups)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+pub struct CreateTenantReq {
+    pub name: String,
+}
+
+impl CreateTenantReq {
+    pub fn validate(&self) -> Result<(), DmsxError> {
+        check_len("name", &self.name, 1, 200)?;
+        Ok(())
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateOrgReq {
+    pub name: String,
+}
+
+impl CreateOrgReq {
+    pub fn validate(&self) -> Result<(), DmsxError> {
+        check_len("name", &self.name, 1, 200)?;
+        Ok(())
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateSiteReq {
+    pub name: String,
+}
+
+impl CreateSiteReq {
+    pub fn validate(&self) -> Result<(), DmsxError> {
+        check_len("name", &self.name, 1, 200)?;
+        Ok(())
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateGroupReq {
+    pub name: String,
+}
+
+impl CreateGroupReq {
+    pub fn validate(&self) -> Result<(), DmsxError> {
+        check_len("name", &self.name, 1, 200)?;
+        Ok(())
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Policies
 // ---------------------------------------------------------------------------
 

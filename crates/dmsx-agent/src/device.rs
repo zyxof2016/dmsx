@@ -7,7 +7,7 @@ use crate::config::AgentConfig;
 use crate::platform::{detect_platform, hostname, os_version};
 use crate::telemetry::collect_telemetry;
 
-pub(crate) async fn find_or_register_device(
+pub async fn find_or_register_device(
     client: &Client,
     cfg: &AgentConfig,
 ) -> Result<String, Box<dyn std::error::Error>> {
@@ -58,7 +58,7 @@ pub(crate) async fn find_or_register_device(
     Ok(dev.id)
 }
 
-pub(crate) async fn heartbeat(
+pub async fn heartbeat(
     client: &Client,
     cfg: &AgentConfig,
     device_id: &str,
@@ -96,7 +96,7 @@ pub(crate) async fn heartbeat(
     Ok(())
 }
 
-pub(crate) async fn mark_offline(client: &Client, cfg: &AgentConfig, device_id: &str) {
+pub async fn mark_offline(client: &Client, cfg: &AgentConfig, device_id: &str) {
     let url = cfg.tenant_url(&format!("/devices/{device_id}"));
     let _ = client
         .patch(&url)

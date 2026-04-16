@@ -6,14 +6,14 @@
 
 - [架构与服务边界](docs/ARCHITECTURE.md)
 - [领域模型与表结构](docs/DOMAIN_MODEL.md)
-- [API 契约](docs/API.md)
+- [API 契约](docs/API.md)（JWT：`tenant_id` / `allowed_tenant_ids` / `tenant_roles` 与 RBAC 约定）
 - [安全设计](docs/SECURITY.md)
 - [AI 智慧管控设计](docs/AI_DESIGN.md)
 - [前端架构](docs/FRONTEND.md)
 - [部署与可观测性](docs/DEPLOYMENT.md)
 - [Android 设备接入](docs/ANDROID_DEPLOY.md)
 - [容量与路线图](docs/SCALING_AND_ROADMAP.md)
-- [功能清单与完成状态](docs/CHECKLIST.md)
+- [功能清单与完成状态](docs/CHECKLIST.md)（含 **内测 / 多租户公测 DoD**）
 
 ## 快速开始
 
@@ -33,11 +33,78 @@ sudo apt install -y libxcb1-dev libxcb-shm0-dev libxcb-randr0-dev libxdo-dev
 
 ### 依赖服务（一键拉起）
 
+在项目根目录执行：
+
 ```bash
 docker compose -f deploy/docker-compose.yml up -d
 ```
 
 包含 Postgres / Redis / NATS / ClickHouse / MinIO / RustDesk / LiveKit / OTel Collector。
+
+**环境可复现校验**（确认主机 **5432** 上 `dmsx`/`dmsx` 可连）：
+
+```bash
+chmod +x scripts/reproduce-dev-env.sh   # 首次
+./scripts/reproduce-dev-env.sh          # 全栈
+# 或仅数据库：
+REPRODUCE_MINIMAL=1 ./scripts/reproduce-dev-env.sh
+```
+
+**由本仓库 compose 独占主机 5432**（会先 `docker stop` 掉当前所有映射 **5432** 的容器，再启动 compose 里的 Postgres；会中断其它占用该端口的库，**仅建议本机开发**使用）：
+
+```bash
+REPRODUCE_TAKE_PORT_5432=1 REPRODUCE_MINIMAL=1 ./scripts/reproduce-dev-env.sh
+# 全栈同理：
+# REPRODUCE_TAKE_PORT_5432=1 ./scripts/reproduce-dev-env.sh
+```
+
+若未加 `REPRODUCE_TAKE_PORT_5432=1` 且 5432 已被占用，compose 可能无法绑定；脚本仍会检测已有映射 **5432** 的容器是否在 `pg_isready` 意义上满足依赖（不保证来自本 compose）。
+
+### 内测基线（可选）
+
+**库级回归**（无需起 Docker，仅需 Rust 工具链）：
+
+```bash
+chmod +x scripts/internal-beta-verify.sh   # 首次
+./scripts/internal-beta-verify.sh
+```
+
+**主链路 HTTP 冒烟**（需 **curl**、**python3**；`docker compose` 已起 Postgres 且本机已跑 `dmsx-api`；默认 `DMSX_API_AUTH_MODE=disabled`；若启用 `jwt` 请设置 `DMSX_SMOKE_BEARER`）：
+
+```bash
+chmod +x scripts/internal-beta-smoke-http.sh   # 首次
+./scripts/internal-beta-smoke-http.sh
+```
+
+结果与内测 DoD 其余项见 [`docs/CHECKLIST.md`](docs/CHECKLIST.md) 开篇「内测阶段目标与完成定义」。
+
+**真实 Agent 最小 E2E**（需本机已起 `dmsx-api` + Postgres；脚本预置与本机 `hostname` 一致的设备后下发 `smoke_noop`，再 `cargo run` Agent 若干秒并断言命令 **succeeded**）：
+
+```bash
+chmod +x scripts/agent-dev-e2e.sh   # 首次
+DMSX_E2E_API="http://127.0.0.1:8080" ./scripts/agent-dev-e2e.sh
+```
+
+### 多租户公测门禁（`jwt` + 双租户，可选）
+
+面向 **`DMSX_API_AUTH_MODE=jwt`**：数据库须已应用 **`migrations/004_second_tenant_seed.sql`**（由 `dmsx-api` 启动时 `sqlx::migrate!` 执行；**新增/改过迁移文件后请重新 `cargo build -p dmsx-api` 再启动**，否则新 SQL 不会进库）。
+
+```bash
+chmod +x scripts/public-beta-multi-tenant-smoke.sh   # 首次
+# 终端 1：与脚本共用同一 DMSX_API_JWT_SECRET（示例为开发回退密钥）
+DATABASE_URL="postgres://dmsx:dmsx@127.0.0.1:5432/dmsx" \
+  DMSX_API_AUTH_MODE=jwt \
+  DMSX_API_JWT_SECRET="dmsx-dev-jwt-secret-change-me-please" \
+  DMSX_API_BIND="127.0.0.1:8080" \
+  cargo run -p dmsx-api
+
+# 终端 2
+DMSX_SMOKE_API="http://127.0.0.1:8080" \
+  DMSX_API_JWT_SECRET="dmsx-dev-jwt-secret-change-me-please" \
+  ./scripts/public-beta-multi-tenant-smoke.sh
+```
+
+验收口径与记录见 [`docs/CHECKLIST.md`](docs/CHECKLIST.md)「多租户公测」专节。
 
 ### 后端
 
@@ -86,7 +153,7 @@ cd web && npm install && npm run dev  # http://localhost:3000
 | `crates/dmsx-agent` | 跨平台设备代理（Windows / Linux / Android）— 遥测 + 命令 + 远程桌面 |
 | `web/` | 管理台前端（React + TypeScript + Ant Design + TanStack Router） |
 | `proto/` | gRPC Proto 定义（Agent + Health） |
-| `migrations/` | Postgres 初始化 SQL（含 device_shadows / command_results） |
+| `migrations/` | Postgres 迁移 SQL（由 **`dmsx-api` 启动时 sqlx 执行**；compose 内 Postgres **不再**挂载到 initdb，避免与 sqlx 重复建表） |
 | `migrations/ch/` | ClickHouse 初始化 SQL |
 | `openapi/` | OpenAPI 3.1 契约 |
 | `deploy/` | Docker Compose（含 LiveKit / RustDesk）、K8s、Dockerfile、OTel |

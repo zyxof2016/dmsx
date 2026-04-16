@@ -12,6 +12,7 @@ use jsonwebtoken::{
 };
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
@@ -46,8 +47,16 @@ pub enum AuthMode {
 pub struct JwtClaims {
     pub sub: String,
     pub tenant_id: Uuid,
+    /// 额外可访问的租户 ID。为空时仅允许 [`Self::tenant_id`]（兼容旧令牌）。
+    /// 非空时，有效集合为 `tenant_id` ∪ `allowed_tenant_ids`；带 `{tenant_id}` 的 URL 须落在该集合内。
+    #[serde(default)]
+    pub allowed_tenant_ids: Vec<Uuid>,
     #[serde(default)]
     pub roles: Vec<String>,
+    /// 按租户覆盖 RBAC：键为租户 UUID（JSON 中为字符串键）。若当前路径租户 **存在键**（含空数组），则仅使用该数组作为本请求角色；
+    /// 若 **无键**，则回退到令牌级 [`Self::roles`]。
+    #[serde(default)]
+    pub tenant_roles: HashMap<Uuid, Vec<String>>,
     pub exp: i64,
     pub iat: i64,
     pub iss: Option<String>,
@@ -266,13 +275,29 @@ pub async fn auth_readiness(config: &AuthConfig) -> AuthReadiness {
 }
 
 impl AuthContext {
-    fn from_claims(claims: JwtClaims) -> Self {
+    fn from_claims(claims: JwtClaims, active_tenant_id: Uuid, effective_roles: Vec<String>) -> Self {
         Self {
             subject: claims.sub,
-            tenant_id: claims.tenant_id,
-            roles: claims.roles,
+            tenant_id: active_tenant_id,
+            roles: effective_roles,
         }
     }
+}
+
+fn jwt_permitted_tenant_ids(claims: &JwtClaims) -> HashSet<Uuid> {
+    let mut ids = HashSet::new();
+    ids.insert(claims.tenant_id);
+    for tid in &claims.allowed_tenant_ids {
+        ids.insert(*tid);
+    }
+    ids
+}
+
+fn effective_roles_for_tenant(claims: &JwtClaims, active_tenant: Uuid) -> Vec<String> {
+    if let Some(roles) = claims.tenant_roles.get(&active_tenant) {
+        return roles.clone();
+    }
+    claims.roles.clone()
 }
 
 pub async fn auth_middleware(
@@ -294,20 +319,33 @@ pub async fn auth_middleware(
         Err(err) => return err.into_response(),
     };
 
-    if let Some(path_tenant_id) = tenant_id_from_path(request.uri().path()) {
-        if path_tenant_id != claims.tenant_id {
-            return DmsxError::Forbidden("tenant in URL does not match JWT tenant_id".into())
+    let permitted = jwt_permitted_tenant_ids(&claims);
+    let path_tenant_id = tenant_id_from_path(request.uri().path());
+    let active_tenant_id = match path_tenant_id {
+        Some(tid) => {
+            if !permitted.contains(&tid) {
+                return DmsxError::Forbidden(
+                    "tenant in URL is not permitted for this token".into(),
+                )
                 .into_response();
+            }
+            tid
         }
-    }
+        None => claims.tenant_id,
+    };
 
-    if let Err(err) = authorize_request(request.method(), request.uri().path(), &claims.roles) {
+    let effective_roles = effective_roles_for_tenant(&claims, active_tenant_id);
+    if let Err(err) =
+        authorize_request(request.method(), request.uri().path(), &effective_roles)
+    {
         return err.into_response();
     }
 
-    request
-        .extensions_mut()
-        .insert(AuthContext::from_claims(claims));
+    request.extensions_mut().insert(AuthContext::from_claims(
+        claims,
+        active_tenant_id,
+        effective_roles,
+    ));
     next.run(request).await
 }
 
@@ -357,7 +395,7 @@ fn is_read_request(method: &Method) -> bool {
 }
 
 fn classify_resource(path: &str) -> ResourceKind {
-    if path == "/v1/config/livekit" {
+    if path == "/v1/config/livekit" || path == "/v1/tenants" {
         return ResourceKind::GlobalConfig;
     }
     if path.ends_with("/stats") {
@@ -725,6 +763,7 @@ fn tenant_id_from_path(path: &str) -> Option<Uuid> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
     use axum::{
         body::{to_bytes, Body},
         extract::Extension,
@@ -825,11 +864,81 @@ mod tests {
         let claims = JwtClaims {
             sub: "user-123".to_string(),
             tenant_id,
+            allowed_tenant_ids: vec![],
             roles,
+            tenant_roles: HashMap::new(),
             iat: now.timestamp(),
             exp: (now + Duration::minutes(5)).timestamp(),
             iss: issuer.map(str::to_string),
             aud: audience.map(str::to_string),
+        };
+        encode(
+            &Header::default(),
+            &claims,
+            &EncodingKey::from_secret(secret.as_bytes()),
+        )
+        .expect("encode token")
+    }
+
+    fn issue_token_with_allowed(
+        secret: &str,
+        tenant_id: Uuid,
+        allowed_tenant_ids: Vec<Uuid>,
+        roles: Vec<String>,
+    ) -> String {
+        issue_token_with_allowed_and_tenant_roles(
+            secret,
+            tenant_id,
+            allowed_tenant_ids,
+            roles,
+            HashMap::new(),
+        )
+    }
+
+    fn issue_token_with_allowed_and_tenant_roles(
+        secret: &str,
+        tenant_id: Uuid,
+        allowed_tenant_ids: Vec<Uuid>,
+        roles: Vec<String>,
+        tenant_roles: HashMap<Uuid, Vec<String>>,
+    ) -> String {
+        let now = Utc::now();
+        let claims = JwtClaims {
+            sub: "user-123".to_string(),
+            tenant_id,
+            allowed_tenant_ids,
+            roles,
+            tenant_roles,
+            iat: now.timestamp(),
+            exp: (now + Duration::minutes(5)).timestamp(),
+            iss: Some("dmsx-tests".to_string()),
+            aud: None,
+        };
+        encode(
+            &Header::default(),
+            &claims,
+            &EncodingKey::from_secret(secret.as_bytes()),
+        )
+        .expect("encode token")
+    }
+
+    fn issue_token_with_tenant_roles(
+        secret: &str,
+        tenant_id: Uuid,
+        global_roles: Vec<String>,
+        tenant_roles: HashMap<Uuid, Vec<String>>,
+    ) -> String {
+        let now = Utc::now();
+        let claims = JwtClaims {
+            sub: "user-123".to_string(),
+            tenant_id,
+            allowed_tenant_ids: vec![],
+            roles: global_roles,
+            tenant_roles,
+            iat: now.timestamp(),
+            exp: (now + Duration::minutes(5)).timestamp(),
+            iss: Some("dmsx-tests".to_string()),
+            aud: None,
         };
         encode(
             &Header::default(),
@@ -851,7 +960,9 @@ mod tests {
         let claims = JwtClaims {
             sub: "user-123".to_string(),
             tenant_id,
+            allowed_tenant_ids: vec![],
             roles,
+            tenant_roles: HashMap::new(),
             iat: now.timestamp(),
             exp: (now + Duration::minutes(5)).timestamp(),
             iss: issuer.map(str::to_string),
@@ -964,7 +1075,142 @@ mod tests {
         let body = response_body(response).await;
 
         assert_eq!(body["title"], "Forbidden");
-        assert_eq!(body["detail"], "tenant in URL does not match JWT tenant_id");
+        assert_eq!(
+            body["detail"],
+            "tenant in URL is not permitted for this token"
+        );
+    }
+
+    #[tokio::test]
+    async fn jwt_mode_accepts_path_tenant_in_allowed_tenant_ids() {
+        let secret = "test-secret-please-change-me";
+        let primary = Uuid::new_v4();
+        let other = Uuid::new_v4();
+        let router = test_router(test_state(AuthMode::Jwt));
+        let request = Request::builder()
+            .uri(format!("/v1/tenants/{other}/devices"))
+            .header(
+                AUTHORIZATION,
+                format!(
+                    "Bearer {}",
+                    issue_token_with_allowed(
+                        secret,
+                        primary,
+                        vec![other],
+                        vec!["TenantAdmin".to_string()],
+                    )
+                ),
+            )
+            .body(Body::empty())
+            .expect("request");
+
+        let response = router.oneshot(request).await.expect("response");
+        let body = response_body(response).await;
+
+        assert_eq!(body["tenant_id"], other.to_string());
+        assert_eq!(body["subject"], "user-123");
+    }
+
+    #[tokio::test]
+    async fn jwt_mode_per_tenant_roles_override_global() {
+        let secret = "test-secret-please-change-me";
+        let tid = Uuid::new_v4();
+        let mut tenant_roles = HashMap::new();
+        tenant_roles.insert(tid, vec!["ReadOnly".to_string()]);
+        let token = issue_token_with_tenant_roles(
+            secret,
+            tid,
+            vec!["TenantAdmin".to_string()],
+            tenant_roles,
+        );
+        let router = test_router(test_state(AuthMode::Jwt));
+
+        let request = Request::builder()
+            .uri(format!("/v1/tenants/{tid}/devices"))
+            .header(AUTHORIZATION, format!("Bearer {token}"))
+            .body(Body::empty())
+            .expect("request");
+        let response = router.clone().oneshot(request).await.expect("response");
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_body(response).await;
+        assert_eq!(body["roles"], json!(["ReadOnly"]));
+
+        let request = Request::builder()
+            .method("POST")
+            .uri(format!("/v1/tenants/{tid}/policies"))
+            .header(AUTHORIZATION, format!("Bearer {token}"))
+            .body(Body::empty())
+            .expect("request");
+        let response = router.oneshot(request).await.expect("response");
+        let body = response_body(response).await;
+        assert_eq!(body["title"], "Forbidden");
+    }
+
+    #[tokio::test]
+    async fn jwt_mode_per_tenant_explicit_empty_roles_denies() {
+        let secret = "test-secret-please-change-me";
+        let tid = Uuid::new_v4();
+        let mut tenant_roles = HashMap::new();
+        tenant_roles.insert(tid, vec![]);
+        let router = test_router(test_state(AuthMode::Jwt));
+        let request = Request::builder()
+            .uri(format!("/v1/tenants/{tid}/devices"))
+            .header(
+                AUTHORIZATION,
+                format!(
+                    "Bearer {}",
+                    issue_token_with_tenant_roles(
+                        secret,
+                        tid,
+                        vec!["TenantAdmin".to_string()],
+                        tenant_roles,
+                    )
+                ),
+            )
+            .body(Body::empty())
+            .expect("request");
+        let response = router.oneshot(request).await.expect("response");
+        let body = response_body(response).await;
+        assert_eq!(body["title"], "Forbidden");
+        assert_eq!(
+            body["detail"],
+            "JWT roles are required for RBAC-protected routes"
+        );
+    }
+
+    #[tokio::test]
+    async fn jwt_mode_allowed_tenant_without_override_uses_global_roles() {
+        let secret = "test-secret-please-change-me";
+        let primary = Uuid::new_v4();
+        let other = Uuid::new_v4();
+        let mut tenant_roles = HashMap::new();
+        tenant_roles.insert(other, vec!["ReadOnly".to_string()]);
+        let token = issue_token_with_allowed_and_tenant_roles(
+            secret,
+            primary,
+            vec![other],
+            vec!["TenantAdmin".to_string()],
+            tenant_roles,
+        );
+        let router = test_router(test_state(AuthMode::Jwt));
+
+        let request = Request::builder()
+            .uri(format!("/v1/tenants/{primary}/devices"))
+            .header(AUTHORIZATION, format!("Bearer {token}"))
+            .body(Body::empty())
+            .expect("request");
+        let response = router.clone().oneshot(request).await.expect("response");
+        let body = response_body(response).await;
+        assert_eq!(body["roles"], json!(["TenantAdmin"]));
+
+        let request = Request::builder()
+            .uri(format!("/v1/tenants/{other}/devices"))
+            .header(AUTHORIZATION, format!("Bearer {token}"))
+            .body(Body::empty())
+            .expect("request");
+        let response = router.oneshot(request).await.expect("response");
+        let body = response_body(response).await;
+        assert_eq!(body["roles"], json!(["ReadOnly"]));
     }
 
     #[tokio::test]

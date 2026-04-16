@@ -1,6 +1,6 @@
 use tracing::{info, warn};
 
-pub(crate) fn configure_rustdesk_server(relay_server: &str) {
+pub fn configure_rustdesk_server(relay_server: &str) {
     let dir = match rustdesk_config_dir() {
         Some(d) => d,
         None => return,
@@ -23,7 +23,7 @@ key = ''
     }
 }
 
-pub(crate) fn detect_rustdesk() -> serde_json::Value {
+pub fn detect_rustdesk() -> serde_json::Value {
     let rustdesk_id = read_rustdesk_id();
     let has_password = read_rustdesk_password().is_some();
     let installed = rustdesk_id.is_some() || which_cmd("rustdesk");

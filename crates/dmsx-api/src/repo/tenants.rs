@@ -13,3 +13,11 @@ pub async fn ensure_tenant(pool: &PgPool, tid: Uuid, name: &str) -> Result<Tenan
     .fetch_one(pool)
     .await
 }
+
+/// 新建租户（服务端生成 `id`）。需由上层做 **PlatformAdmin** 等权限约束。
+pub async fn insert_tenant(pool: &PgPool, name: &str) -> Result<Tenant, sqlx::Error> {
+    sqlx::query_as::<_, Tenant>("INSERT INTO tenants (name) VALUES ($1) RETURNING *")
+        .bind(name)
+        .fetch_one(pool)
+        .await
+}

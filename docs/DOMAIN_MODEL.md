@@ -10,7 +10,7 @@ Tenant
                     └── Device（也可挂 Site，primary_group 可选）
 ```
 
-- 所有业务表含 **`tenant_id`**，查询默认带租户谓词；进阶可使用 **PostgreSQL RLS**（`SET app.tenant_id = ...` + policy）。
+- 所有业务表含 **`tenant_id`**，查询默认带租户谓词；进阶可使用 **PostgreSQL RLS**（`SET app.tenant_id = ...` + policy）。**管理 REST** 侧由 `dmsx-api` 中间件校验 JWT 中的租户许可与角色后再注入 **`AuthContext.tenant_id`**（见 `API.md`），与存储层租户列一致。
 - **标签** `devices.labels`（JSONB）用于 ABAC / 策略选择；`scope_kind = label` 时 `policies.scope_expr` 存表达式。
 
 ## 核心实体（与 `dmsx-core` / `migrations/001_init.sql` 对齐）

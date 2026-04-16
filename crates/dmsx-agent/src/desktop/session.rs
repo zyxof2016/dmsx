@@ -8,20 +8,20 @@ use tracing::{error, info};
 use super::capture::{primary_capture_size, spawn_capture_loop};
 use super::input::apply_input_event;
 
-pub(crate) struct DesktopSession {
-    pub(crate) session_id: String,
+pub struct DesktopSession {
+    pub session_id: String,
     stop_flag: Arc<AtomicBool>,
     handle: tokio::task::JoinHandle<()>,
 }
 
 impl DesktopSession {
-    pub(crate) async fn stop(self) {
+    pub async fn stop(self) {
         self.stop_flag.store(true, Ordering::Relaxed);
         let _ = self.handle.await;
     }
 }
 
-pub(crate) async fn start_desktop_session(
+pub async fn start_desktop_session(
     params: &serde_json::Value,
 ) -> Result<DesktopSession, String> {
     let livekit_url = params

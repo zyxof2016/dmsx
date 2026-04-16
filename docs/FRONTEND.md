@@ -14,6 +14,11 @@
 | 远程桌面 | LiveKit WebRTC + `livekit-client` | 浏览器直连房间订阅远端视频轨 |
 | 远程桌面备用 | RustDesk | 作为跨网络/人工接管的备选方案 |
 
+## 认证与多租户（与 `docs/API.md` 一致）
+
+- **开发**：`web/src/api/client.ts` 用常量 **`TENANT_ID`** 经 **`tenantPath()`** 拼出 `/v1/tenants/{tid}/...`，须与本机 Postgres 种子租户一致；当前 `fetch` 未默认带 `Authorization`（与 `DMSX_API_AUTH_MODE=disabled` 联调）。
+- **生产**：所有 `/v1/...` 请求应带 **`Authorization: Bearer <JWT>`**；签发方在 JWT 中写入路径租户许可（**`tenant_id` ∪ `allowed_tenant_ids`**）及可选 **`tenant_roles`**（按活动租户覆盖角色）。**切换租户** = 改 URL 中的 `{tenant_id}`（及前端路由若绑定租户），并确保证件仍允许该租户；无需单独「切换租户」API。
+
 ## 目录结构
 
 ```
