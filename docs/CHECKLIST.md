@@ -41,6 +41,7 @@
 > 面向「先内测」：**控制面与数据默认只在团队内网 / VPN 可达范围验证**，避免与公网生产要求混淆。
 
 - [ ] **网络边界**：`dmsx-api`、Postgres、管理台等仅绑定内网地址或经 VPN；若必须经公网演示，须单独评审（TLS、**`jwt` 模式**、防火墙白名单），且不把生产密钥写入仓库（**本轮**未验收远程桌面时，**LiveKit 可不作为必起/必通依赖**）
+  - 验证（K8s 示例）：`kubectl -n dmsx get svc dmsx-api -o yaml | rg "type:"`（应为空/ClusterIP）；内测阶段默认不 apply `deploy/kubernetes/dmsx-api-ingress.yaml`；如需 Ingress，务必使用 internal IngressClass 或源 IP 白名单
 - [ ] **节奏**：每次合并至内测分支或打内测标签前，至少执行 DoD 中的 **`cargo test -p dmsx-api --lib`**、**`cargo test -p dmsx-agent --lib`**，并跑通 **一条**主路径冒烟（可用 **[`scripts/internal-beta-smoke-http.sh`](../scripts/internal-beta-smoke-http.sh)** 代替手工 curl，仍需真实 Agent 的场景另测）。**推荐一键脚本**：[`scripts/internal-beta-dod.sh`](../scripts/internal-beta-dod.sh)
 - [ ] **数据与凭据**：内测库、JWT 密钥及（若启用桌面或 LiveKit 时的）LiveKit Secret 视为敏感；截图/录屏中含 token 时须打码；不向网外渠道粘贴完整环境变量
 

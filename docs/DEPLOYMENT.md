@@ -84,6 +84,23 @@ kubectl apply -f deploy/kubernetes/dmsx-api-networkpolicy.yaml
 kubectl apply -f deploy/kubernetes/dmsx-api-ingress.yaml
 ```
 
+## 内测网络边界（推荐默认）
+
+面向「先内测」阶段，建议默认 **不对公网暴露控制面**，只在团队内网 / VPN 可达范围验证。
+
+推荐落地方式（Kubernetes）：
+
+- **对外暴露最小化**：只 apply `deploy/kubernetes/dmsx-api.yaml`（Service 默认为 **ClusterIP**），不要创建 `LoadBalancer` Service。
+- **是否需要 Ingress**：
+  - 不需要外部访问时：**不要 apply** `deploy/kubernetes/dmsx-api-ingress.yaml`。
+  - 需要在内网演示时：使用 **内网 IngressClass**（或 internal LB）并对来源做白名单限制；公网域名不暴露。
+- **入站收敛**：建议 apply `deploy/kubernetes/dmsx-api-networkpolicy.yaml`，将 `dmsx-api:8080` 入站限制为 Ingress Controller 与采集器（如 Prometheus）来源（按集群 namespace/label 调整）。
+
+推荐落地方式（本机/裸机）：
+
+- **只绑定回环**：`DMSX_API_BIND=127.0.0.1:8080`（避免误暴露到公网网卡）。
+- **通过 VPN 访问**：若需要远程访问，优先通过 VPN/跳板机端口转发，不直接把 `0.0.0.0:8080` 挂公网。
+
 ## Ingress / TLS（生产建议）
 
 `dmsx-api` 应用进程默认明文 HTTP 监听（见 `DMSX_API_BIND`），生产环境建议由 **Ingress** 终止 TLS，并在集群边界做最小防护。
