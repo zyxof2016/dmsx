@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dmsx-api-config
+  namespace: dmsx
+  labels:
+    app.kubernetes.io/name: dmsx-api
+    app.kubernetes.io/part-of: dmsx
+data:
+  # 非敏感配置示例（敏感值请放 Secret）
+  RUST_LOG: "dmsx_api=info,tower_http=info"
+  DMSX_API_BIND: "0.0.0.0:8080"
+  DMSX_API_ENV: "prod"
+  DMSX_API_AUTH_MODE: "jwt"
+  DMSX_API_REQUEST_BODY_LIMIT_BYTES: "1048576"
+  DMSX_API_RATE_LIMIT_ENABLED: "true"
+  DMSX_API_RATE_LIMIT_PER_SECOND: "50"
+  DMSX_API_RATE_LIMIT_BURST: "100"
+  DMSX_API_METRICS_ENABLED: "true"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dmsx-device-gw-config
+  namespace: dmsx
+  labels:
+    app.kubernetes.io/name: dmsx-device-gw
+    app.kubernetes.io/part-of: dmsx
+data:
+  RUST_LOG: "dmsx_device_gw=info"
+  DMSX_GW_BIND: "0.0.0.0:50051"
+

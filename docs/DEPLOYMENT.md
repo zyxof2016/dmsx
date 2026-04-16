@@ -58,6 +58,10 @@ flowchart TB
 - `deploy/kubernetes/dmsx-api-secrets.example.yaml`：Secret 模板（示例值需要替换；生产建议由 External Secrets/Vault/KMS 生成）。
 - `deploy/kubernetes/dmsx-api-networkpolicy.yaml`：NetworkPolicy 示例（限制入站，仅允许 Ingress Controller 与 Prometheus 抓取；需按集群命名空间/标签调整）。
 - `deploy/kubernetes/namespace-dmsx.yaml`：Namespace（`dmsx`）示例（含推荐 labels）。
+- `deploy/kubernetes/dmsx-rbac.yaml`：Namespace 内最小 RBAC（ServiceAccount + 只读 ConfigMap 的 Role/RoleBinding 模板；默认禁用 SA token 自动挂载）。
+- `deploy/kubernetes/dmsx-configmap.example.yaml`：ConfigMap 示例（非敏感配置；敏感值仍用 Secret）。
+- `deploy/kubernetes/dmsx-hpa.yaml`：HPA 示例（基于 CPU utilization；依赖 Metrics Server）。
+- `deploy/kubernetes/dmsx-pdb.yaml`：PDB 示例（滚动升级/节点维护时保持最小可用副本）。
 - `deploy/kubernetes/monitoring/`：可观测性配套模板（Prometheus Operator / Grafana 场景）：
   - `dmsx-api-servicemonitor.yaml`：抓取 `dmsx-api` 的 `/metrics`
   - `dmsx-api-prometheusrule.yaml`：告警规则示例
@@ -81,11 +85,21 @@ kubectl -n dmsx apply -f deploy/kubernetes/dmsx-api-secrets.example.yaml
 # 3) 部署 API（Service + Deployment）
 kubectl apply -f deploy/kubernetes/dmsx-api.yaml
 
+# 3.1) （推荐）RBAC（最小）+ 禁用 SA token 自动挂载
+kubectl apply -f deploy/kubernetes/dmsx-rbac.yaml
+
+# 3.2) （可选）ConfigMap 示例（非敏感配置）
+kubectl apply -f deploy/kubernetes/dmsx-configmap.example.yaml
+
 # 4) （可选）限制入站：只允许 Ingress Controller / Prometheus
 kubectl apply -f deploy/kubernetes/dmsx-api-networkpolicy.yaml
 
 # 5) （可选）Ingress（把 host / tls secretName 替换为你的域名与证书 Secret）
 kubectl apply -f deploy/kubernetes/dmsx-api-ingress.yaml
+
+# 6) （可选）HPA/PDB（依赖 Metrics Server；按你环境调整副本与阈值）
+kubectl apply -f deploy/kubernetes/dmsx-hpa.yaml
+kubectl apply -f deploy/kubernetes/dmsx-pdb.yaml
 ```
 
 ## 内测网络边界（推荐默认）

@@ -381,11 +381,11 @@
 
 - [x] `dmsx-api` Deployment + Service（探针 / resources / securityContext）
 - [x] `dmsx-device-gw` Deployment + Service（gRPC 探针 / resources / securityContext）
-- [ ] Namespace / RBAC 清单
-- [ ] ConfigMap / Secret 示例
+- [x] Namespace / RBAC 清单（Namespace：`deploy/kubernetes/namespace-dmsx.yaml`；RBAC：`deploy/kubernetes/dmsx-rbac.yaml`）
+- [x] ConfigMap / Secret 示例（ConfigMap：`deploy/kubernetes/dmsx-configmap.example.yaml`；Secret：`deploy/kubernetes/dmsx-api-secrets.example.yaml`）
 - [ ] Ingress + TLS 清单
-- [ ] HPA 自动伸缩配置
-- [ ] PDB 配置
+- [x] HPA 自动伸缩配置（`deploy/kubernetes/dmsx-hpa.yaml`）
+- [x] PDB 配置（`deploy/kubernetes/dmsx-pdb.yaml`）
 
 ### 可观测性
 

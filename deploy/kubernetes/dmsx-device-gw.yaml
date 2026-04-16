@@ -33,6 +33,8 @@ spec:
         app.kubernetes.io/name: dmsx-device-gw
         app.kubernetes.io/part-of: dmsx
     spec:
+      serviceAccountName: dmsx-device-gw
+      automountServiceAccountToken: false
       containers:
         - name: dmsx-device-gw
           image: ghcr.io/example/dmsx-device-gw:0.1.0

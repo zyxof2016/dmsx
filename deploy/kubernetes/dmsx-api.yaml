@@ -33,6 +33,8 @@ spec:
         app.kubernetes.io/name: dmsx-api
         app.kubernetes.io/part-of: dmsx
     spec:
+      serviceAccountName: dmsx-api
+      automountServiceAccountToken: false
       containers:
         - name: dmsx-api
           image: ghcr.io/example/dmsx-api:0.1.0
