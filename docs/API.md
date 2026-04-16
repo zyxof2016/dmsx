@@ -8,6 +8,11 @@
 
 **认证**：除 `/health`、`/ready` 外，管理接口需 `Authorization: Bearer <JWT>`（路径 `{tenant_id}` 须被该 JWT 允许；`GET /v1/config/livekit` 需 **PlatformAdmin**）。OpenAPI 根级 **`security: [bearerAuth]`**，并在各操作中声明 **`401` / `403`**；资源类接口另声明 **`404`**；各操作另声明 **`500`**（内部错误）。上述错误均复用 `components.responses` 与 **`ProblemDetails`**（见 `openapi/dmsx-control-plane.yaml`）。
 
+**横切限制（可选）**：控制面可启用 **请求体大小限制** 与 **速率限制**（per-tenant）。当启用时：
+
+- 请求体超限返回 **413**（`Payload Too Large`，ProblemDetails）
+- 触发速率限制返回 **429**（`Too Many Requests`，ProblemDetails；并附 `retry-after`/`x-ratelimit-after` 等头）
+
 **多租户 JWT（单用户多租户）**：JWT 声明中含 **`tenant_id`**（UUID，默认/主租户，无 `allowed_tenant_ids` 时即唯一允许租户）与可选数组 **`allowed_tenant_ids`**（UUID）。有效租户集合为 **`tenant_id` ∪ `allowed_tenant_ids`**。对 `/v1/tenants/{tenant_id}/...` 的请求，路径中的 `{tenant_id}` 必须属于该集合，否则 **403**。`AuthContext` 中的活动租户与路径一致，便于前端**切换租户**：更换 URL 中的 `{tenant_id}` 即可；签发方应在成员关系变化时更新 **`allowed_tenant_ids`**。
 
 **按租户 RBAC（`tenant_roles`）**：可选对象 **`tenant_roles`**，键为租户 UUID 字符串、值为该租户下角色字符串数组（与令牌级 **`roles`** 同一套角色名，如 `TenantAdmin`、`ReadOnly`）。对某次请求，**活动租户**为路径中的 `{tenant_id}`（无路径租户时，如 `GET /v1/config/livekit`，则为 JWT 的 **`tenant_id`**）。若 **`tenant_roles` 中存在该活动租户的键**（含空数组 `[]`），则本请求 **仅使用该键对应数组** 做 RBAC；若 **无该键**，则回退使用令牌级 **`roles`**。空数组表示该租户下显式无角色，受保护路由将 **403**（与「未声明 `roles`」行为一致）。

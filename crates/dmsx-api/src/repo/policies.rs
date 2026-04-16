@@ -1,5 +1,5 @@
 use dmsx_core::{Policy, PolicyRevision};
-use sqlx::PgPool;
+use sqlx::PgConnection;
 use uuid::Uuid;
 
 use crate::dto::{CreatePolicyReq, PolicyListParams, UpdatePolicyReq};
@@ -10,7 +10,7 @@ const POLICY_WHERE: &str = "\
     AND ($3::policy_scope_kind IS NULL OR scope_kind = $3)";
 
 pub async fn list_policies(
-    pool: &PgPool,
+    conn: &mut PgConnection,
     tid: Uuid,
     p: &PolicyListParams,
 ) -> Result<(Vec<Policy>, i64), sqlx::Error> {
@@ -22,34 +22,39 @@ pub async fn list_policies(
     let data_sql =
         format!("SELECT * FROM policies {POLICY_WHERE} ORDER BY created_at DESC LIMIT $4 OFFSET $5");
 
-    let (total, items) = tokio::try_join!(
-        sqlx::query_scalar::<_, i64>(&count_sql)
-            .bind(tid)
-            .bind(search)
-            .bind(p.scope_kind)
-            .fetch_one(pool),
-        sqlx::query_as::<_, Policy>(&data_sql)
-            .bind(tid)
-            .bind(search)
-            .bind(p.scope_kind)
-            .bind(lim)
-            .bind(off)
-            .fetch_all(pool),
-    )?;
+    let total = sqlx::query_scalar::<_, i64>(&count_sql)
+        .bind(tid)
+        .bind(search)
+        .bind(p.scope_kind)
+        .fetch_one(&mut *conn)
+        .await?;
+
+    let items = sqlx::query_as::<_, Policy>(&data_sql)
+        .bind(tid)
+        .bind(search)
+        .bind(p.scope_kind)
+        .bind(lim)
+        .bind(off)
+        .fetch_all(&mut *conn)
+        .await?;
 
     Ok((items, total))
 }
 
-pub async fn get_policy(pool: &PgPool, tid: Uuid, pid: Uuid) -> Result<Option<Policy>, sqlx::Error> {
+pub async fn get_policy(
+    conn: &mut PgConnection,
+    tid: Uuid,
+    pid: Uuid,
+) -> Result<Option<Policy>, sqlx::Error> {
     sqlx::query_as("SELECT * FROM policies WHERE tenant_id = $1 AND id = $2")
         .bind(tid)
         .bind(pid)
-        .fetch_optional(pool)
+        .fetch_optional(&mut *conn)
         .await
 }
 
 pub async fn create_policy(
-    pool: &PgPool,
+    conn: &mut PgConnection,
     tid: Uuid,
     r: &CreatePolicyReq,
 ) -> Result<Policy, sqlx::Error> {
@@ -61,12 +66,12 @@ pub async fn create_policy(
     .bind(&r.name)
     .bind(&r.description)
     .bind(r.scope_kind)
-    .fetch_one(pool)
+    .fetch_one(&mut *conn)
     .await
 }
 
 pub async fn update_policy(
-    pool: &PgPool,
+    conn: &mut PgConnection,
     tid: Uuid,
     pid: Uuid,
     r: &UpdatePolicyReq,
@@ -84,21 +89,21 @@ pub async fn update_policy(
     .bind(&r.name)
     .bind(&r.description)
     .bind(r.scope_kind)
-    .fetch_optional(pool)
+    .fetch_optional(&mut *conn)
     .await
 }
 
-pub async fn delete_policy(pool: &PgPool, tid: Uuid, pid: Uuid) -> Result<bool, sqlx::Error> {
+pub async fn delete_policy(conn: &mut PgConnection, tid: Uuid, pid: Uuid) -> Result<bool, sqlx::Error> {
     let res = sqlx::query("DELETE FROM policies WHERE tenant_id = $1 AND id = $2")
         .bind(tid)
         .bind(pid)
-        .execute(pool)
+        .execute(&mut *conn)
         .await?;
     Ok(res.rows_affected() > 0)
 }
 
 pub async fn publish_policy(
-    pool: &PgPool,
+    conn: &mut PgConnection,
     tid: Uuid,
     pid: Uuid,
     spec: serde_json::Value,
@@ -113,6 +118,6 @@ pub async fn publish_policy(
     .bind(tid)
     .bind(pid)
     .bind(spec)
-    .fetch_one(pool)
+    .fetch_one(&mut *conn)
     .await
 }

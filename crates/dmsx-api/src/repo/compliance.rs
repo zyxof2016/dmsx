@@ -1,5 +1,5 @@
 use dmsx_core::ComplianceFinding;
-use sqlx::PgPool;
+use sqlx::PgConnection;
 use uuid::Uuid;
 
 use crate::dto::FindingListParams;
@@ -11,7 +11,7 @@ const FINDING_WHERE: &str = "\
     AND ($4::finding_status IS NULL OR status = $4)";
 
 pub async fn list_findings(
-    pool: &PgPool,
+    conn: &mut PgConnection,
     tid: Uuid,
     p: &FindingListParams,
 ) -> Result<(Vec<ComplianceFinding>, i64), sqlx::Error> {
@@ -24,22 +24,23 @@ pub async fn list_findings(
         "SELECT * FROM compliance_findings {FINDING_WHERE} ORDER BY detected_at DESC LIMIT $5 OFFSET $6"
     );
 
-    let (total, items) = tokio::try_join!(
-        sqlx::query_scalar::<_, i64>(&count_sql)
-            .bind(tid)
-            .bind(search)
-            .bind(p.severity)
-            .bind(p.status)
-            .fetch_one(pool),
-        sqlx::query_as::<_, ComplianceFinding>(&data_sql)
-            .bind(tid)
-            .bind(search)
-            .bind(p.severity)
-            .bind(p.status)
-            .bind(lim)
-            .bind(off)
-            .fetch_all(pool),
-    )?;
+    let total = sqlx::query_scalar::<_, i64>(&count_sql)
+        .bind(tid)
+        .bind(search)
+        .bind(p.severity)
+        .bind(p.status)
+        .fetch_one(&mut *conn)
+        .await?;
+
+    let items = sqlx::query_as::<_, ComplianceFinding>(&data_sql)
+        .bind(tid)
+        .bind(search)
+        .bind(p.severity)
+        .bind(p.status)
+        .bind(lim)
+        .bind(off)
+        .fetch_all(&mut *conn)
+        .await?;
 
     Ok((items, total))
 }

@@ -1,5 +1,5 @@
 use dmsx_core::Device;
-use sqlx::PgPool;
+use sqlx::PgConnection;
 use uuid::Uuid;
 
 use crate::dto::{CreateDeviceReq, DeviceListParams, UpdateDeviceReq};
@@ -12,7 +12,7 @@ const DEVICE_WHERE: &str = "\
     AND ($5::online_state IS NULL OR online_state = $5)";
 
 pub async fn list_devices(
-    pool: &PgPool,
+    conn: &mut PgConnection,
     tid: Uuid,
     p: &DeviceListParams,
 ) -> Result<(Vec<Device>, i64), sqlx::Error> {
@@ -25,38 +25,43 @@ pub async fn list_devices(
         "SELECT * FROM devices {DEVICE_WHERE} ORDER BY created_at DESC LIMIT $6 OFFSET $7"
     );
 
-    let (total, items) = tokio::try_join!(
-        sqlx::query_scalar::<_, i64>(&count_sql)
-            .bind(tid)
-            .bind(search)
-            .bind(p.platform)
-            .bind(p.enroll_status)
-            .bind(p.online_state)
-            .fetch_one(pool),
-        sqlx::query_as::<_, Device>(&data_sql)
-            .bind(tid)
-            .bind(search)
-            .bind(p.platform)
-            .bind(p.enroll_status)
-            .bind(p.online_state)
-            .bind(lim)
-            .bind(off)
-            .fetch_all(pool),
-    )?;
+    let total = sqlx::query_scalar::<_, i64>(&count_sql)
+        .bind(tid)
+        .bind(search)
+        .bind(p.platform)
+        .bind(p.enroll_status)
+        .bind(p.online_state)
+        .fetch_one(&mut *conn)
+        .await?;
+
+    let items = sqlx::query_as::<_, Device>(&data_sql)
+        .bind(tid)
+        .bind(search)
+        .bind(p.platform)
+        .bind(p.enroll_status)
+        .bind(p.online_state)
+        .bind(lim)
+        .bind(off)
+        .fetch_all(&mut *conn)
+        .await?;
 
     Ok((items, total))
 }
 
-pub async fn get_device(pool: &PgPool, tid: Uuid, did: Uuid) -> Result<Option<Device>, sqlx::Error> {
+pub async fn get_device(
+    conn: &mut PgConnection,
+    tid: Uuid,
+    did: Uuid,
+) -> Result<Option<Device>, sqlx::Error> {
     sqlx::query_as("SELECT * FROM devices WHERE tenant_id = $1 AND id = $2")
         .bind(tid)
         .bind(did)
-        .fetch_optional(pool)
+        .fetch_optional(&mut *conn)
         .await
 }
 
 pub async fn create_device(
-    pool: &PgPool,
+    conn: &mut PgConnection,
     tid: Uuid,
     r: &CreateDeviceReq,
 ) -> Result<Device, sqlx::Error> {
@@ -73,12 +78,12 @@ pub async fn create_device(
     .bind(r.site_id)
     .bind(r.primary_group_id)
     .bind(&r.labels)
-    .fetch_one(pool)
+    .fetch_one(&mut *conn)
     .await
 }
 
 pub async fn update_device(
-    pool: &PgPool,
+    conn: &mut PgConnection,
     tid: Uuid,
     did: Uuid,
     r: &UpdateDeviceReq,
@@ -102,15 +107,15 @@ pub async fn update_device(
     .bind(r.enroll_status)
     .bind(r.online_state)
     .bind(&r.labels)
-    .fetch_optional(pool)
+    .fetch_optional(&mut *conn)
     .await
 }
 
-pub async fn delete_device(pool: &PgPool, tid: Uuid, did: Uuid) -> Result<bool, sqlx::Error> {
+pub async fn delete_device(conn: &mut PgConnection, tid: Uuid, did: Uuid) -> Result<bool, sqlx::Error> {
     let res = sqlx::query("DELETE FROM devices WHERE tenant_id = $1 AND id = $2")
         .bind(tid)
         .bind(did)
-        .execute(pool)
+        .execute(&mut *conn)
         .await?;
     Ok(res.rows_affected() > 0)
 }

@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Extension, Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
     Json,
@@ -9,6 +9,8 @@ use livekit_api::access_token::{AccessToken, VideoGrants};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::auth::AuthContext;
+use crate::db_rls;
 use crate::desktop_helpers::{
     build_start_desktop_command, build_stop_desktop_command, livekit_enabled,
 };
@@ -58,7 +60,10 @@ pub struct SessionDeleteQuery {
 // GET /v1/config/livekit
 // ---------------------------------------------------------------------------
 
-pub async fn livekit_config(State(st): State<AppState>) -> impl IntoResponse {
+pub async fn livekit_config(
+    State(st): State<AppState>,
+    Extension(_ctx): Extension<AuthContext>,
+) -> impl IntoResponse {
     Json(LivekitConfigResponse {
         enabled: livekit_enabled(&st.livekit_url, &st.livekit_api_key),
         url: st.livekit_url.clone(),
@@ -71,6 +76,7 @@ pub async fn livekit_config(State(st): State<AppState>) -> impl IntoResponse {
 
 pub async fn session_create(
     State(st): State<AppState>,
+    Extension(ctx): Extension<AuthContext>,
     Path((tid, did)): Path<(Uuid, Uuid)>,
     Json(req): Json<SessionCreateReq>,
 ) -> Result<impl IntoResponse, DmsxError> {
@@ -80,7 +86,7 @@ pub async fn session_create(
 
     if let Some(old_session_id) = &stale_session_id {
         st.desktop_sessions.write().await.remove(old_session_id);
-        enqueue_stop_command(&st, tid, did, old_session_id.clone(), Some(5)).await?;
+        enqueue_stop_command(&st, &ctx, tid, did, old_session_id.clone(), Some(5)).await?;
     }
 
     let viewer_token = generate_token(
@@ -118,6 +124,7 @@ pub async fn session_create(
 
     enqueue_start_command(
         &st,
+        &ctx,
         tid,
         did,
         &session_id,
@@ -145,6 +152,7 @@ pub async fn session_create(
 
 pub async fn session_delete(
     State(st): State<AppState>,
+    Extension(ctx): Extension<AuthContext>,
     Path((tid, did)): Path<(Uuid, Uuid)>,
     Query(query): Query<SessionDeleteQuery>,
 ) -> Result<impl IntoResponse, DmsxError> {
@@ -164,7 +172,7 @@ pub async fn session_delete(
         device_sessions.remove(&did);
     }
 
-    enqueue_stop_command(&st, tid, did, query.session_id, Some(10)).await?;
+    enqueue_stop_command(&st, &ctx, tid, did, query.session_id, Some(10)).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -201,6 +209,7 @@ fn generate_token(
 
 async fn enqueue_start_command(
     st: &AppState,
+    ctx: &AuthContext,
     tenant_id: Uuid,
     device_id: Uuid,
     session_id: &str,
@@ -219,14 +228,19 @@ async fn enqueue_start_command(
         height,
     );
 
-    command_repo::create_command(&st.db, tenant_id, &cmd)
+    let mut tx = db_rls::begin_rls_tx(&st.db, Some(tenant_id), ctx)
         .await
-        .map(|_| ())
-        .map_err(map_db_error)
+        .map_err(map_db_error)?;
+    command_repo::create_command(&mut *tx, tenant_id, &cmd)
+        .await
+        .map_err(map_db_error)?;
+    tx.commit().await.map_err(map_db_error)?;
+    Ok(())
 }
 
 async fn enqueue_stop_command(
     st: &AppState,
+    ctx: &AuthContext,
     tenant_id: Uuid,
     device_id: Uuid,
     session_id: String,
@@ -234,8 +248,12 @@ async fn enqueue_stop_command(
 ) -> Result<(), DmsxError> {
     let cmd = build_stop_desktop_command(device_id, &session_id, priority);
 
-    command_repo::create_command(&st.db, tenant_id, &cmd)
+    let mut tx = db_rls::begin_rls_tx(&st.db, Some(tenant_id), ctx)
         .await
-        .map(|_| ())
-        .map_err(map_db_error)
+        .map_err(map_db_error)?;
+    command_repo::create_command(&mut *tx, tenant_id, &cmd)
+        .await
+        .map_err(map_db_error)?;
+    tx.commit().await.map_err(map_db_error)?;
+    Ok(())
 }

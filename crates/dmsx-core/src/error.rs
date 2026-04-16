@@ -16,6 +16,10 @@ pub enum DmsxError {
     Conflict(String),
     #[error("validation: {0}")]
     Validation(String),
+    #[error("too many requests: {0}")]
+    TooManyRequests(String),
+    #[error("payload too large: {0}")]
+    PayloadTooLarge(String),
     #[error("internal: {0}")]
     Internal(String),
 }
@@ -60,6 +64,18 @@ impl DmsxError {
                 r#type: "about:blank",
                 title: "Bad Request",
                 status: 400,
+                detail: d.clone(),
+            },
+            Self::TooManyRequests(d) => ProblemDetails {
+                r#type: "about:blank",
+                title: "Too Many Requests",
+                status: 429,
+                detail: d.clone(),
+            },
+            Self::PayloadTooLarge(d) => ProblemDetails {
+                r#type: "about:blank",
+                title: "Payload Too Large",
+                status: 413,
                 detail: d.clone(),
             },
             Self::Internal(d) => ProblemDetails {

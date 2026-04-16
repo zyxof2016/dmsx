@@ -1,5 +1,5 @@
 use dmsx_core::Artifact;
-use sqlx::PgPool;
+use sqlx::PgConnection;
 use uuid::Uuid;
 
 use crate::dto::{ArtifactListParams, CreateArtifactReq};
@@ -9,7 +9,7 @@ const ARTIFACT_WHERE: &str = "\
     AND ($2::text IS NULL OR name ILIKE '%' || $2 || '%')";
 
 pub async fn list_artifacts(
-    pool: &PgPool,
+    conn: &mut PgConnection,
     tid: Uuid,
     p: &ArtifactListParams,
 ) -> Result<(Vec<Artifact>, i64), sqlx::Error> {
@@ -22,24 +22,25 @@ pub async fn list_artifacts(
         "SELECT * FROM artifacts {ARTIFACT_WHERE} ORDER BY created_at DESC LIMIT $3 OFFSET $4"
     );
 
-    let (total, items) = tokio::try_join!(
-        sqlx::query_scalar::<_, i64>(&count_sql)
-            .bind(tid)
-            .bind(search)
-            .fetch_one(pool),
-        sqlx::query_as::<_, Artifact>(&data_sql)
-            .bind(tid)
-            .bind(search)
-            .bind(lim)
-            .bind(off)
-            .fetch_all(pool),
-    )?;
+    let total = sqlx::query_scalar::<_, i64>(&count_sql)
+        .bind(tid)
+        .bind(search)
+        .fetch_one(&mut *conn)
+        .await?;
+
+    let items = sqlx::query_as::<_, Artifact>(&data_sql)
+        .bind(tid)
+        .bind(search)
+        .bind(lim)
+        .bind(off)
+        .fetch_all(&mut *conn)
+        .await?;
 
     Ok((items, total))
 }
 
 pub async fn create_artifact(
-    pool: &PgPool,
+    conn: &mut PgConnection,
     tid: Uuid,
     r: &CreateArtifactReq,
 ) -> Result<Artifact, sqlx::Error> {
@@ -54,6 +55,6 @@ pub async fn create_artifact(
     .bind(r.channel.as_deref().unwrap_or("stable"))
     .bind(&r.object_key)
     .bind(r.metadata.as_ref().unwrap_or(&serde_json::json!({})))
-    .fetch_one(pool)
+    .fetch_one(&mut *conn)
     .await
 }

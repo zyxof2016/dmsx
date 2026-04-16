@@ -1,10 +1,10 @@
 use dmsx_core::Group;
-use sqlx::PgPool;
+use sqlx::PgConnection;
 use uuid::Uuid;
 
 /// 在租户下创建设备组；`site_id` 必须属于同一 `tenant_id`。
 pub async fn insert_group(
-    pool: &PgPool,
+    conn: &mut PgConnection,
     tenant_id: Uuid,
     site_id: Uuid,
     name: &str,
@@ -18,6 +18,6 @@ pub async fn insert_group(
     .bind(tenant_id)
     .bind(site_id)
     .bind(name)
-    .fetch_one(pool)
+    .fetch_one(conn)
     .await
 }

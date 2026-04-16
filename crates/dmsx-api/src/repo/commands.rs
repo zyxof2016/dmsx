@@ -1,5 +1,5 @@
 use dmsx_core::{Command, CommandResult, CommandStatus};
-use sqlx::PgPool;
+use sqlx::PgConnection;
 use uuid::Uuid;
 
 use crate::dto::{CommandListParams, CreateCommandReq};
@@ -10,7 +10,7 @@ const COMMAND_WHERE: &str = "\
     AND ($3::uuid IS NULL OR target_device_id = $3)";
 
 pub async fn list_commands(
-    pool: &PgPool,
+    conn: &mut PgConnection,
     tid: Uuid,
     p: &CommandListParams,
 ) -> Result<(Vec<Command>, i64), sqlx::Error> {
@@ -22,38 +22,39 @@ pub async fn list_commands(
         "SELECT * FROM commands {COMMAND_WHERE} ORDER BY created_at DESC LIMIT $4 OFFSET $5"
     );
 
-    let (total, items) = tokio::try_join!(
-        sqlx::query_scalar::<_, i64>(&count_sql)
-            .bind(tid)
-            .bind(p.status)
-            .bind(p.target_device_id)
-            .fetch_one(pool),
-        sqlx::query_as::<_, Command>(&data_sql)
-            .bind(tid)
-            .bind(p.status)
-            .bind(p.target_device_id)
-            .bind(lim)
-            .bind(off)
-            .fetch_all(pool),
-    )?;
+    let total = sqlx::query_scalar::<_, i64>(&count_sql)
+        .bind(tid)
+        .bind(p.status)
+        .bind(p.target_device_id)
+        .fetch_one(&mut *conn)
+        .await?;
+
+    let items = sqlx::query_as::<_, Command>(&data_sql)
+        .bind(tid)
+        .bind(p.status)
+        .bind(p.target_device_id)
+        .bind(lim)
+        .bind(off)
+        .fetch_all(&mut *conn)
+        .await?;
 
     Ok((items, total))
 }
 
 pub async fn get_command(
-    pool: &PgPool,
+    conn: &mut PgConnection,
     tid: Uuid,
     cid: Uuid,
 ) -> Result<Option<Command>, sqlx::Error> {
     sqlx::query_as("SELECT * FROM commands WHERE tenant_id = $1 AND id = $2")
         .bind(tid)
         .bind(cid)
-        .fetch_optional(pool)
+        .fetch_optional(&mut *conn)
         .await
 }
 
 pub async fn create_command(
-    pool: &PgPool,
+    conn: &mut PgConnection,
     tid: Uuid,
     r: &CreateCommandReq,
 ) -> Result<Command, sqlx::Error> {
@@ -67,24 +68,24 @@ pub async fn create_command(
     .bind(r.priority.unwrap_or(0i16))
     .bind(r.ttl_seconds.unwrap_or(3600i32))
     .bind(&r.idempotency_key)
-    .fetch_one(pool)
+    .fetch_one(&mut *conn)
     .await
 }
 
 pub async fn get_command_result(
-    pool: &PgPool,
+    conn: &mut PgConnection,
     tid: Uuid,
     cid: Uuid,
 ) -> Result<Option<CommandResult>, sqlx::Error> {
     sqlx::query_as("SELECT * FROM command_results WHERE tenant_id = $1 AND command_id = $2")
         .bind(tid)
         .bind(cid)
-        .fetch_optional(pool)
+        .fetch_optional(&mut *conn)
         .await
 }
 
 pub async fn upsert_command_result(
-    pool: &PgPool,
+    conn: &mut PgConnection,
     tid: Uuid,
     cid: Uuid,
     exit_code: Option<i32>,
@@ -105,12 +106,12 @@ pub async fn upsert_command_result(
     .bind(stdout)
     .bind(stderr)
     .bind(evidence_key)
-    .fetch_one(pool)
+    .fetch_one(&mut *conn)
     .await
 }
 
 pub async fn update_command_status(
-    pool: &PgPool,
+    conn: &mut PgConnection,
     tid: Uuid,
     cid: Uuid,
     status: CommandStatus,
@@ -122,34 +123,35 @@ pub async fn update_command_status(
     .bind(tid)
     .bind(cid)
     .bind(status)
-    .fetch_optional(pool)
+    .fetch_optional(&mut *conn)
     .await
 }
 
 pub async fn list_device_commands(
-    pool: &PgPool,
+    conn: &mut PgConnection,
     tid: Uuid,
     did: Uuid,
     limit: i64,
     offset: i64,
 ) -> Result<(Vec<Command>, i64), sqlx::Error> {
-    let (total, items) = tokio::try_join!(
-        sqlx::query_scalar::<_, i64>(
-            "SELECT COUNT(*)::bigint FROM commands WHERE tenant_id = $1 AND target_device_id = $2"
-        )
-        .bind(tid)
-        .bind(did)
-        .fetch_one(pool),
-        sqlx::query_as::<_, Command>(
-            "SELECT * FROM commands WHERE tenant_id = $1 AND target_device_id = $2 \
-             ORDER BY created_at DESC LIMIT $3 OFFSET $4"
-        )
-        .bind(tid)
-        .bind(did)
-        .bind(limit)
-        .bind(offset)
-        .fetch_all(pool),
-    )?;
+    let total = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*)::bigint FROM commands WHERE tenant_id = $1 AND target_device_id = $2",
+    )
+    .bind(tid)
+    .bind(did)
+    .fetch_one(&mut *conn)
+    .await?;
+
+    let items = sqlx::query_as::<_, Command>(
+        "SELECT * FROM commands WHERE tenant_id = $1 AND target_device_id = $2 \
+         ORDER BY created_at DESC LIMIT $3 OFFSET $4",
+    )
+    .bind(tid)
+    .bind(did)
+    .bind(limit)
+    .bind(offset)
+    .fetch_all(&mut *conn)
+    .await?;
 
     Ok((items, total))
 }

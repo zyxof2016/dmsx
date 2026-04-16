@@ -22,8 +22,14 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 tower.workspace = true
 tower-http.workspace = true
+tower_governor = "0.6"
+governor = "0.8"
 livekit-api = "0.4"
 futures-util = "0.3"
 tokio-tungstenite = "0.26"
 jsonwebtoken = "10"
 reqwest = "0.12"
+
+[dev-dependencies]
+sqlx.workspace = true
+tokio.workspace = true

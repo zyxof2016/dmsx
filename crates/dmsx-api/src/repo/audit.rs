@@ -1,8 +1,8 @@
-use sqlx::PgPool;
+use sqlx::PgConnection;
 use uuid::Uuid;
 
 pub async fn write_audit(
-    pool: &PgPool,
+    conn: &mut PgConnection,
     tid: Uuid,
     action: &str,
     resource_type: &str,
@@ -18,7 +18,7 @@ pub async fn write_audit(
     .bind(resource_type)
     .bind(resource_id)
     .bind(payload)
-    .execute(pool)
+    .execute(conn)
     .await?;
     Ok(())
 }

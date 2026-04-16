@@ -4,19 +4,29 @@ use dmsx_core::{Group, Org, Site, Tenant};
 use serde_json::json;
 use uuid::Uuid;
 
+use crate::auth::AuthContext;
+use crate::db_rls;
 use crate::dto::{CreateGroupReq, CreateOrgReq, CreateSiteReq, CreateTenantReq};
 use crate::error::map_db_error;
 use crate::repo::{audit, groups, orgs, sites, tenants};
 use crate::services::ServiceResult;
 use crate::state::AppState;
 
-pub async fn create_tenant(st: &AppState, body: &CreateTenantReq) -> ServiceResult<Tenant> {
+pub async fn create_tenant(
+    st: &AppState,
+    ctx: &AuthContext,
+    body: &CreateTenantReq,
+) -> ServiceResult<Tenant> {
     body.validate()?;
-    let tenant = tenants::insert_tenant(&st.db, &body.name)
+    let mut tx = st.db.begin().await.map_err(map_db_error)?;
+    let tenant = tenants::insert_tenant(&mut *tx, &body.name)
+        .await
+        .map_err(map_db_error)?;
+    db_rls::apply_session_vars(&mut tx, Some(tenant.id.0), ctx.is_platform_admin())
         .await
         .map_err(map_db_error)?;
     audit::write_audit(
-        &st.db,
+        &mut *tx,
         tenant.id.0,
         "create",
         "tenant",
@@ -25,16 +35,25 @@ pub async fn create_tenant(st: &AppState, body: &CreateTenantReq) -> ServiceResu
     )
     .await
     .ok();
+    tx.commit().await.map_err(map_db_error)?;
     Ok(tenant)
 }
 
-pub async fn create_org(st: &AppState, tid: Uuid, body: &CreateOrgReq) -> ServiceResult<Org> {
+pub async fn create_org(
+    st: &AppState,
+    ctx: &AuthContext,
+    tid: Uuid,
+    body: &CreateOrgReq,
+) -> ServiceResult<Org> {
     body.validate()?;
-    let org = orgs::insert_org(&st.db, tid, &body.name)
+    let mut tx = db_rls::begin_rls_tx(&st.db, Some(tid), ctx)
+        .await
+        .map_err(map_db_error)?;
+    let org = orgs::insert_org(&mut *tx, tid, &body.name)
         .await
         .map_err(map_db_error)?;
     audit::write_audit(
-        &st.db,
+        &mut *tx,
         tid,
         "create",
         "org",
@@ -43,21 +62,26 @@ pub async fn create_org(st: &AppState, tid: Uuid, body: &CreateOrgReq) -> Servic
     )
     .await
     .ok();
+    tx.commit().await.map_err(map_db_error)?;
     Ok(org)
 }
 
 pub async fn create_site(
     st: &AppState,
+    ctx: &AuthContext,
     tid: Uuid,
     org_id: Uuid,
     body: &CreateSiteReq,
 ) -> ServiceResult<Site> {
     body.validate()?;
-    let site = sites::insert_site(&st.db, tid, org_id, &body.name)
+    let mut tx = db_rls::begin_rls_tx(&st.db, Some(tid), ctx)
+        .await
+        .map_err(map_db_error)?;
+    let site = sites::insert_site(&mut *tx, tid, org_id, &body.name)
         .await
         .map_err(map_db_error)?;
     audit::write_audit(
-        &st.db,
+        &mut *tx,
         tid,
         "create",
         "site",
@@ -66,21 +90,26 @@ pub async fn create_site(
     )
     .await
     .ok();
+    tx.commit().await.map_err(map_db_error)?;
     Ok(site)
 }
 
 pub async fn create_group(
     st: &AppState,
+    ctx: &AuthContext,
     tid: Uuid,
     site_id: Uuid,
     body: &CreateGroupReq,
 ) -> ServiceResult<Group> {
     body.validate()?;
-    let group = groups::insert_group(&st.db, tid, site_id, &body.name)
+    let mut tx = db_rls::begin_rls_tx(&st.db, Some(tid), ctx)
+        .await
+        .map_err(map_db_error)?;
+    let group = groups::insert_group(&mut *tx, tid, site_id, &body.name)
         .await
         .map_err(map_db_error)?;
     audit::write_audit(
-        &st.db,
+        &mut *tx,
         tid,
         "create",
         "group",
@@ -89,5 +118,6 @@ pub async fn create_group(
     )
     .await
     .ok();
+    tx.commit().await.map_err(map_db_error)?;
     Ok(group)
 }

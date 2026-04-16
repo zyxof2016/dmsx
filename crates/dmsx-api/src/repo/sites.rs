@@ -1,10 +1,10 @@
 use dmsx_core::Site;
-use sqlx::PgPool;
+use sqlx::PgConnection;
 use uuid::Uuid;
 
 /// 在租户下创建站点；`org_id` 必须属于同一 `tenant_id`，否则不插入任何行。
 pub async fn insert_site(
-    pool: &PgPool,
+    conn: &mut PgConnection,
     tenant_id: Uuid,
     org_id: Uuid,
     name: &str,
@@ -18,6 +18,6 @@ pub async fn insert_site(
     .bind(tenant_id)
     .bind(org_id)
     .bind(name)
-    .fetch_one(pool)
+    .fetch_one(conn)
     .await
 }

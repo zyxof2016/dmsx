@@ -6,7 +6,7 @@ use std::sync::{
 use tracing::{error, info};
 
 use super::capture::{primary_capture_size, spawn_capture_loop};
-use super::input::apply_input_event;
+use super::input::{apply_input_event, InputState};
 
 pub struct DesktopSession {
     pub session_id: String,
@@ -128,6 +128,7 @@ async fn desktop_stream_loop(
 
     let mut enigo = enigo::Enigo::new(&enigo::Settings::default())
         .map_err(|e| format!("failed to create input injector: {e:?}"))?;
+    let mut input_state = InputState::default();
 
     while !stop_flag.load(Ordering::Relaxed) {
         match tokio::time::timeout(std::time::Duration::from_millis(250), room_events.recv()).await {
@@ -136,7 +137,13 @@ async fn desktop_stream_loop(
                 topic,
                 ..
             })) if topic.as_deref() == Some("desktop-input") => {
-                apply_input_event(&mut enigo, &payload);
+                apply_input_event(
+                    &mut enigo,
+                    &mut input_state,
+                    &payload,
+                    capture_width,
+                    capture_height,
+                );
             }
             Ok(Some(_)) => {}
             Ok(None) => break,
@@ -145,6 +152,7 @@ async fn desktop_stream_loop(
     }
 
     stop_flag.store(true, Ordering::Relaxed);
+    input_state.release_all(&mut enigo);
     let _ = capture_task.await;
     let _ = room.close().await;
     Ok(())

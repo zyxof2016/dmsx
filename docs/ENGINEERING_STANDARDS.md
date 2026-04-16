@@ -76,6 +76,14 @@
 - `dmsx-core`：纯类型、校验、错误、领域约束
 - 新增独立 crate：当逻辑明显属于“基础设施公共层”时再拆
 
+### 2.3 同 package 的 `lib` 与 `bin`（以 `dmsx-agent` 为例）
+
+`dmsx-agent` 同时提供 **库**（`src/lib.rs`）与 **二进制**（`src/main.rs`）。二者在 Cargo 中属于**不同 crate 根**，可见性规则与「全在 lib 里」不同：
+
+- 二进制及其模块（如 `command_runner`）若通过 **`dmsx_agent::...`** 引用库中类型/函数，这些符号在库内必须是 **`pub`**；**`pub(crate)` 仅对库 crate 内部可见**，二进制侧会得到 **E0603**。
+- 二进制 crate **内部**模块之间应优先使用 **`crate::...`**，避免无意义地再绕一层 `dmsx_agent::`。
+- 与 **HTTP 冒烟 / E2E 脚本** 约定的**内置命令 `action` 名**（例如 `smoke_noop`）必须在 **API 契约、脚本、`dmsx-agent` 执行分支**三处语义一致；新增动作名时同步更新 `docs/API.md` 与 `README.md` 中的验证说明。
+
 ## 3. 模块化标准
 
 ### 3.1 单文件规模约束
@@ -165,6 +173,7 @@ src/
 - 默认私有，按需暴露。
 - 优先 `pub(crate)`，谨慎使用 `pub`。
 - `lib.rs` 应作为对外导出面，避免调用方深入依赖内部模块结构。
+- **例外**：与本仓库 **「同 package 的 lib + bin」**（见 §2.3）时，凡需被二进制通过 `crate_name::` 引用的库符号，应使用 **`pub`**（或拆分为独立 crate），不得以「缩小可见性」为由把二进制编译卡死。
 
 ### 4.3 函数设计
 
@@ -305,6 +314,13 @@ src/
 - 每次 schema 变更必须附带 migration。
 - migration 必须可重复执行、可审阅、可回滚或可替代。
 - 删除列、改枚举、重命名字段必须写兼容迁移方案。
+
+**`sqlx::migrate!` 与运行环境（强制）**
+
+- `sqlx::migrate!("../../migrations")` 在 **编译 `dmsx-api` 时嵌入**迁移文件与校验和；**新增或修改** `migrations/*.sql` 后必须 **`cargo build -p dmsx-api`（或等价重编）** 再启动进程，否则数据库不会执行新脚本、或出现校验不一致。
+- **单一 DDL 来源**：以 **`dmsx-api` 启动时** 的 sqlx 迁移为 **Postgres schema 的权威应用路径**；**禁止**再把同一套 `migrations/` 挂到 Postgres 容器的 `docker-entrypoint-initdb.d` 与 sqlx **并行跑一遍**（会导致 `42P07 relation already exists` 且 `_sqlx_migrations` 缺记录）。本仓库 `deploy/docker-compose.yml` 已按此约束配置。
+- **事实表**：以 **`_sqlx_migrations`** 作为 sqlx 侧已应用版本的记录；开发库若历史上曾混用 initdb 与 sqlx，仅允许通过**明确的兼容逻辑**（代码内已文档化）做一次性对齐；**生产环境**必须以干净迁移为准，不依赖「猜测式回填」。
+- **迁移并发**：sqlx 默认使用 **`pg_advisory_lock`**。若在**同一进程**内对失败路径做二次 `Migrator::run`，必须考虑会话级锁未释放导致的阻塞；扩展迁移逻辑时优先 **显式解锁 / 新连接 / 或对该路径 `set_locking(false)`**（本仓库兼容分支已处理典型自锁场景）。
 
 ### 7.4 幂等与并发控制
 
@@ -516,6 +532,18 @@ src/
 - 随机值、时间、外部依赖要可控。
 - 关键 bug 修复必须先补回归测试。
 
+### 13.4 本地验证与脚本基线
+
+在合并或打内测标签前，除 `cargo test` 外，建议至少跑通仓库内 **可复现脚本**（详见 `README.md`）：
+
+- `scripts/internal-beta-verify.sh`：库级回归（`dmsx-api` / `dmsx-agent`）。
+- `scripts/internal-beta-smoke-http.sh`：控制面主链路 HTTP 冒烟（需已起 Postgres + `dmsx-api`）。
+- `scripts/reproduce-dev-env.sh`：依赖服务 / 主机 **5432** 可达性校验（与 `DATABASE_URL` 约定一致）。
+- 涉及 **`jwt` + 多租户** 的改动：应能跑通 `scripts/public-beta-multi-tenant-smoke.sh`。
+- 涉及 **真实 Agent 行为** 的改动：应能跑通 `scripts/agent-dev-e2e.sh`（或说明为何不适用）。
+
+新增或修改上述脚本时，必须同步更新 `README.md` 与 `docs/CHECKLIST.md` 中对应验证说明。
+
 ## 14. CI/CD 与质量门禁
 
 ### 14.1 最低门禁
@@ -551,11 +579,14 @@ Code Review 必查：
 
 至少更新以下对应文档之一：
 
+- `README.md`（运行方式、环境变量、验证命令）
 - `docs/ARCHITECTURE.md`
 - `docs/API.md`
+- `openapi/dmsx-control-plane.yaml`（与已注册 HTTP 路由对齐）
 - `docs/SECURITY.md`
 - `docs/FRONTEND.md`
 - `docs/AI_DESIGN.md`
+- `docs/DEPLOYMENT.md` / `deploy/docker-compose.yml`（依赖拓扑、端口、迁移来源变更时）
 - `docs/CHECKLIST.md`
 
 ## 16. 完成定义
@@ -576,9 +607,9 @@ Code Review 必查：
 1. **拆分 `dmsx-agent/src/main.rs`**
    - 先拆 `config`、`telemetry`、`rustdesk`、`command_runner`、`desktop`
 2. **把 `dmsx-api` 进一步固化为 handler/service/repo 分层**
-   - 避免后续业务继续堆入路由与 handler
+   - 避免后续业务继续堆入路由与 handler；**迁移与启动装配**（如 `migrate_embedded`）保持独立小模块，避免 `app.rs` 膨胀
 3. **补齐测试基线**
-   - 优先覆盖 `dmsx-core` 校验、`dmsx-api` 关键接口、影子与命令状态流
+   - 优先覆盖 `dmsx-core` 校验、`dmsx-api` 关键接口、影子与命令状态流；**迁移 / Docker 初始化**类变更需补充「干净库 + 存量库」至少一种可复现验证路径（可落在脚本或文档）
 4. **强化认证、RBAC 与数据面租户隔离**
    - 控制面已支持 JWT **`allowed_tenant_ids`**、**`tenant_roles`** 与路径租户校验；商用前仍需 **Postgres RLS**、限流、审计写入 **ClickHouse** 等（见 [`CHECKLIST.md`](CHECKLIST.md)、[`API.md`](API.md)）
 5. **建立前端统一体验规范**

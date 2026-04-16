@@ -22,7 +22,7 @@
 - **远程桌面（本轮不适用）**：已明确**不纳入**本轮内测；**不要求**完成 LiveKit + `POST/DELETE .../desktop/session` + 浏览器/Agent 联调。后续轮次或专项里程碑再启用验收口径时，可改回可勾选条目。
 - [x] **认证约定落地**：内测统一 `DMSX_API_AUTH_MODE`（常见为 `disabled` 或团队共享 JWT）；**本轮冒烟**在 `disabled` 下完成。若启用 `jwt`，JWT 中 `tenant_id` / `allowed_tenant_ids` / `tenant_roles` / `roles` 与 `docs/API.md`、`openapi/dmsx-control-plane.yaml` 一致；**库测** `dmsx-api --lib` 已覆盖 JWT/JWKS 分支（见 `internal-beta-verify.sh`），参与者取令牌方式仍须在发版说明中单独告知
 - [x] **自动化基线绿灯**：`cargo test -p dmsx-api --lib`、`cargo test -p dmsx-agent --lib`（或与 CI 等价命令）在内测所用分支/标签上通过（**一键脚本**：[`scripts/internal-beta-verify.sh`](../scripts/internal-beta-verify.sh)；**验证记录**见下表）
-- [ ] **范围与反馈**：本文件 §1 起各节中 `[~]`/`[ ]` 项已作为「已知能力边界」对内测说明；反馈入口（负责人 / Issue / 群）已指定
+- [x] **范围与反馈**：范围与延后项见 [`docs/INTERNAL_BETA_SCOPE_AND_FEEDBACK.md`](INTERNAL_BETA_SCOPE_AND_FEEDBACK.md)；反馈入口（负责人 / Issue / 群）已指定并可被内测参与者直接引用
 
 #### 内测验证记录（仓库侧可复现）
 
@@ -86,11 +86,12 @@
 - [x] `.gitignore` 配置
 - [x] CI 流水线（`.github/workflows/ci.yml`：fmt / clippy / build / test / Docker）
 - [x] `cargo check` / `cargo clippy` 零错误零警告
-- [x] 工程规范与开发约定文档（`docs/ENGINEERING_STANDARDS.md`）
+- [x] 工程规范与开发约定文档（`docs/ENGINEERING_STANDARDS.md`：已对齐 **同 package lib+bin 可见性**、**sqlx 嵌入迁移 / Postgres DDL 单一来源 / advisory lock 注意点**、**§13.4 本地脚本基线**；合并前可对照该文档与 `README.md` 验证命令）
 - [x] PR / Code Review 检查清单（`docs/PR_REVIEW_CHECKLIST.md`）
 - [x] `dmsx-agent` 首轮模块化拆分（`config` / `api` / `telemetry` / `rustdesk` / `command_runner` / `desktop`）
 - [x] `dmsx-agent` 第二轮模块化拆分（`app` / `device` / `platform`，`main.rs` 仅保留入口）
 - [x] `dmsx-agent` 第三轮模块化拆分（`desktop` 细分为 `capture` / `input` / `session`，停止逻辑收口为方法）
+- [x] `dmsx-agent` 远程桌面输入注入稳态增强（坐标按 `remoteWidth/remoteHeight` 缩放 + clamp；修饰键状态同步防粘住；普通按键/鼠标按钮丢释放的超时兜底；滚轮支持 `deltaX` 水平滚动并对超大 delta 归一化；超时阈值可通过 `DMSX_AGENT_DESKTOP_STUCK_KEY_TIMEOUT_SECONDS` / `DMSX_AGENT_DESKTOP_STUCK_MOUSE_TIMEOUT_SECONDS` 调优；`cargo test -p dmsx-agent --lib`、`cargo check -p dmsx-agent` 已通过）
 - [x] `dmsx-agent` 首批测试用例已补充（`device` 注册/心跳 + `script` 参数分支，`cargo test -p dmsx-agent --lib` 已通过）
 - [x] `dmsx-api` 轻量测试入口已建立（`lib.rs` / `app.rs` / `error.rs`，`cargo test -p dmsx-api --lib` 已通过）
 - [x] `dmsx-api` handlers 纯逻辑已下沉到 `helpers` 并补测试（影子 delta / 命令结果状态，`cargo test -p dmsx-api --lib` 已通过 10 项）
@@ -121,6 +122,8 @@
 
 ## 3. 数据库迁移
 
+- [x] **Postgres DDL 单一来源**：由 `dmsx-api` 启动时 `sqlx`（`crates/dmsx-api/src/migrate_embedded.rs`）应用 `migrations/*.sql`；`deploy/docker-compose.yml` **勿**将同一套 Postgres SQL 再挂到 `docker-entrypoint-initdb.d`（与 `ENGINEERING_STANDARDS.md` §7.3 一致；ClickHouse 的 `migrations/ch` initdb 挂载另计）
+
 ### Postgres（`migrations/001_init.sql` + `003_shadow_and_results.sql`）
 
 - [x] `tenants` / `orgs` / `sites` / `groups` 表
@@ -133,7 +136,7 @@
 - [x] `device_shadows` 表（设备影子 — reported/desired/version 乐观并发控制）
 - [x] `command_results` 表（命令执行结果 — exit_code/stdout/stderr）
 - [x] 所有枚举类型（`device_platform` / `enroll_status` 等）
-- [ ] RLS（Row Level Security）策略
+- [x] RLS（Row Level Security）策略（迁移 `migrations/005_rls_tenant_isolation.sql`；`dmsx-api` 在每条写读业务 SQL 上使用 `BEGIN` + `set_config(..., true)` 绑定 `dmsx.tenant_id` / `dmsx.is_platform_admin`，与连接池复用兼容。**验证**：`cargo test -p dmsx-api`；有 Postgres 且已跑迁移时 `DMSX_TEST_DATABASE_URL=... cargo test -p dmsx-api --test rls_tenant_session`）
 - [ ] 按 `tenant_id` HASH 分区
 - [ ] 数据库版本迁移工具（sqlx-migrate / refinery）
 
@@ -189,8 +192,8 @@
 - [~] JWT / OIDC 认证实现（JWT `issuer` / `audience` 校验已支持；可选 **`allowed_tenant_ids`** 与 **`tenant_id`** 并集作为路径租户白名单；可选 **`tenant_roles`** 按活动租户覆盖 RBAC（无键回退 **`roles`**）；OIDC discovery -> `jwks_uri` 加载、JWKS 校验、后台 TTL 刷新、未知 `kid` 强制刷新、刷新失败 stale fallback、最大陈旧窗口、启动首刷失败可配置策略已接入；`/ready` 已暴露认证/JWKS 就绪状态；外部 IdP 实机联调与告警/指标后端集成待补）
 - [x] RBAC 权限校验（已细化到资源级：全局配置 / devices / policies / commands / shadow / artifacts / compliance / desktop / AI；`TenantAdmin` 与 `PlatformAdmin` 非租户路由权限已区分）
 - [x] 路径 `{tenant_id}` 与 JWT 许可集合及 RBAC（`tenant_id` ∪ `allowed_tenant_ids`；`tenant_roles` 按活动租户覆盖 `roles`；见 [`API.md`](API.md)）
-- [ ] 速率限制（per-tenant）
-- [ ] 请求体大小限制
+- [x] 速率限制（per-tenant：可通过 `DMSX_API_RATE_LIMIT_ENABLED` / `DMSX_API_RATE_LIMIT_PER_SECOND` / `DMSX_API_RATE_LIMIT_BURST` 配置，超限返回 429 ProblemDetails）
+- [x] 请求体大小限制（`DMSX_API_REQUEST_BODY_LIMIT_BYTES`，超限返回 413 ProblemDetails）
 - [ ] CORS 生产配置
 
 ### 持久化

@@ -282,6 +282,10 @@ impl AuthContext {
             roles: effective_roles,
         }
     }
+
+    pub fn is_platform_admin(&self) -> bool {
+        self.roles.iter().any(|r| r == "PlatformAdmin")
+    }
 }
 
 fn jwt_permitted_tenant_ids(claims: &JwtClaims) -> HashSet<Uuid> {
@@ -300,12 +304,34 @@ fn effective_roles_for_tenant(claims: &JwtClaims, active_tenant: Uuid) -> Vec<St
     claims.roles.clone()
 }
 
+fn disabled_auth_context(path: &str) -> AuthContext {
+    match tenant_id_from_path(path) {
+        Some(tid) => AuthContext {
+            subject: "auth-disabled".into(),
+            tenant_id: tid,
+            roles: vec!["TenantAdmin".to_string()],
+        },
+        None => AuthContext {
+            subject: "auth-disabled".into(),
+            tenant_id: Uuid::nil(),
+            roles: vec!["PlatformAdmin".to_string()],
+        },
+    }
+}
+
 pub async fn auth_middleware(
     State(st): State<AppState>,
     mut request: Request,
     next: Next,
 ) -> Response {
-    if is_public_path(request.uri().path()) || st.auth.mode == AuthMode::Disabled {
+    if is_public_path(request.uri().path()) {
+        return next.run(request).await;
+    }
+    if st.auth.mode == AuthMode::Disabled {
+        let path = request.uri().path().to_string();
+        request
+            .extensions_mut()
+            .insert(disabled_auth_context(&path));
         return next.run(request).await;
     }
 

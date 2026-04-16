@@ -69,6 +69,12 @@ chmod +x scripts/internal-beta-verify.sh   # 首次
 ./scripts/internal-beta-verify.sh
 ```
 
+**Postgres RLS 会话绑定**（可选；需已应用迁移的 `DATABASE_URL` 指向的库）：
+
+```bash
+DMSX_TEST_DATABASE_URL="postgres://dmsx:dmsx@127.0.0.1:5432/dmsx" cargo test -p dmsx-api --test rls_tenant_session
+```
+
 **主链路 HTTP 冒烟**（需 **curl**、**python3**；`docker compose` 已起 Postgres 且本机已跑 `dmsx-api`；默认 `DMSX_API_AUTH_MODE=disabled`；若启用 `jwt` 请设置 `DMSX_SMOKE_BEARER`）：
 
 ```bash
@@ -114,6 +120,10 @@ DATABASE_URL="postgres://dmsx:dmsx@127.0.0.1:5432/dmsx" \
 LIVEKIT_URL="ws://127.0.0.1:7880" \
 LIVEKIT_API_KEY="dmsx-api-key" \
 LIVEKIT_API_SECRET="dmsx-api-secret-that-is-at-least-32-chars" \
+DMSX_API_REQUEST_BODY_LIMIT_BYTES="1048576" \
+DMSX_API_RATE_LIMIT_ENABLED="false" \
+DMSX_API_RATE_LIMIT_PER_SECOND="50" \
+DMSX_API_RATE_LIMIT_BURST="100" \
 cargo run -p dmsx-api
 
 # 数据面 gRPC 网关（当前为演进骨架，默认可不启动）

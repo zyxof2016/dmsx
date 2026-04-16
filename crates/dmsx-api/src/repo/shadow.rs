@@ -1,9 +1,9 @@
 use dmsx_core::DeviceShadow;
-use sqlx::PgPool;
+use sqlx::PgConnection;
 use uuid::Uuid;
 
 pub async fn get_or_create_shadow(
-    pool: &PgPool,
+    conn: &mut PgConnection,
     tid: Uuid,
     did: Uuid,
 ) -> Result<DeviceShadow, sqlx::Error> {
@@ -13,18 +13,18 @@ pub async fn get_or_create_shadow(
     )
     .bind(did)
     .bind(tid)
-    .execute(pool)
+    .execute(&mut *conn)
     .await?;
 
     sqlx::query_as("SELECT * FROM device_shadows WHERE device_id = $1 AND tenant_id = $2")
         .bind(did)
         .bind(tid)
-        .fetch_one(pool)
+        .fetch_one(&mut *conn)
         .await
 }
 
 pub async fn update_shadow_desired(
-    pool: &PgPool,
+    conn: &mut PgConnection,
     tid: Uuid,
     did: Uuid,
     desired: &serde_json::Value,
@@ -39,12 +39,12 @@ pub async fn update_shadow_desired(
     .bind(did)
     .bind(tid)
     .bind(desired)
-    .fetch_one(pool)
+    .fetch_one(&mut *conn)
     .await
 }
 
 pub async fn update_shadow_reported(
-    pool: &PgPool,
+    conn: &mut PgConnection,
     tid: Uuid,
     did: Uuid,
     reported: &serde_json::Value,
@@ -59,6 +59,6 @@ pub async fn update_shadow_reported(
     .bind(did)
     .bind(tid)
     .bind(reported)
-    .fetch_one(pool)
+    .fetch_one(&mut *conn)
     .await
 }

@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Extension, Path, Query, State},
     http::StatusCode,
     response::{IntoResponse, Response},
     Json,
@@ -8,6 +8,7 @@ use dmsx_core::*;
 use serde_json::json;
 use uuid::Uuid;
 
+use crate::auth::AuthContext;
 use crate::dto::*;
 use crate::services::{
     artifacts, commands, compliance, devices, hierarchy, policies, shadow, stats,
@@ -47,9 +48,10 @@ pub async fn ready(State(st): State<AppState>) -> impl IntoResponse {
 
 pub async fn stats(
     State(st): State<AppState>,
+    Extension(ctx): Extension<AuthContext>,
     Path(tenant_id): Path<Uuid>,
 ) -> ApiResult<Json<DashboardStats>> {
-    Ok(Json(stats::get_stats(&st, tenant_id).await?))
+    Ok(Json(stats::get_stats(&st, &ctx, tenant_id).await?))
 }
 
 // ---------------------------------------------------------------------------
@@ -58,36 +60,40 @@ pub async fn stats(
 
 pub async fn tenants_create(
     State(st): State<AppState>,
+    Extension(ctx): Extension<AuthContext>,
     Json(body): Json<CreateTenantReq>,
 ) -> ApiResult<Response> {
-    let tenant = hierarchy::create_tenant(&st, &body).await?;
+    let tenant = hierarchy::create_tenant(&st, &ctx, &body).await?;
     Ok((StatusCode::CREATED, Json(tenant)).into_response())
 }
 
 pub async fn orgs_create(
     State(st): State<AppState>,
+    Extension(ctx): Extension<AuthContext>,
     Path(tenant_id): Path<Uuid>,
     Json(body): Json<CreateOrgReq>,
 ) -> ApiResult<Response> {
-    let org = hierarchy::create_org(&st, tenant_id, &body).await?;
+    let org = hierarchy::create_org(&st, &ctx, tenant_id, &body).await?;
     Ok((StatusCode::CREATED, Json(org)).into_response())
 }
 
 pub async fn sites_create(
     State(st): State<AppState>,
+    Extension(ctx): Extension<AuthContext>,
     Path((tenant_id, org_id)): Path<(Uuid, Uuid)>,
     Json(body): Json<CreateSiteReq>,
 ) -> ApiResult<Response> {
-    let site = hierarchy::create_site(&st, tenant_id, org_id, &body).await?;
+    let site = hierarchy::create_site(&st, &ctx, tenant_id, org_id, &body).await?;
     Ok((StatusCode::CREATED, Json(site)).into_response())
 }
 
 pub async fn groups_create(
     State(st): State<AppState>,
+    Extension(ctx): Extension<AuthContext>,
     Path((tenant_id, site_id)): Path<(Uuid, Uuid)>,
     Json(body): Json<CreateGroupReq>,
 ) -> ApiResult<Response> {
-    let group = hierarchy::create_group(&st, tenant_id, site_id, &body).await?;
+    let group = hierarchy::create_group(&st, &ctx, tenant_id, site_id, &body).await?;
     Ok((StatusCode::CREATED, Json(group)).into_response())
 }
 
@@ -97,41 +103,46 @@ pub async fn groups_create(
 
 pub async fn devices_list(
     State(st): State<AppState>,
+    Extension(ctx): Extension<AuthContext>,
     Path(tid): Path<Uuid>,
     Query(params): Query<DeviceListParams>,
 ) -> ApiResult<Json<ListResponse<Device>>> {
-    Ok(Json(devices::list_devices(&st, tid, &params).await?))
+    Ok(Json(devices::list_devices(&st, &ctx, tid, &params).await?))
 }
 
 pub async fn devices_create(
     State(st): State<AppState>,
+    Extension(ctx): Extension<AuthContext>,
     Path(tid): Path<Uuid>,
     Json(body): Json<CreateDeviceReq>,
 ) -> ApiResult<Response> {
-    let device = devices::create_device(&st, tid, &body).await?;
+    let device = devices::create_device(&st, &ctx, tid, &body).await?;
     Ok((StatusCode::CREATED, Json(device)).into_response())
 }
 
 pub async fn devices_get(
     State(st): State<AppState>,
+    Extension(ctx): Extension<AuthContext>,
     Path((tid, did)): Path<(Uuid, Uuid)>,
 ) -> ApiResult<Json<Device>> {
-    Ok(Json(devices::get_device(&st, tid, did).await?))
+    Ok(Json(devices::get_device(&st, &ctx, tid, did).await?))
 }
 
 pub async fn devices_patch(
     State(st): State<AppState>,
+    Extension(ctx): Extension<AuthContext>,
     Path((tid, did)): Path<(Uuid, Uuid)>,
     Json(body): Json<UpdateDeviceReq>,
 ) -> ApiResult<Json<Device>> {
-    Ok(Json(devices::update_device(&st, tid, did, &body).await?))
+    Ok(Json(devices::update_device(&st, &ctx, tid, did, &body).await?))
 }
 
 pub async fn devices_delete(
     State(st): State<AppState>,
+    Extension(ctx): Extension<AuthContext>,
     Path((tid, did)): Path<(Uuid, Uuid)>,
 ) -> ApiResult<StatusCode> {
-    devices::delete_device(&st, tid, did).await?;
+    devices::delete_device(&st, &ctx, tid, did).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -141,50 +152,56 @@ pub async fn devices_delete(
 
 pub async fn policies_list(
     State(st): State<AppState>,
+    Extension(ctx): Extension<AuthContext>,
     Path(tid): Path<Uuid>,
     Query(params): Query<PolicyListParams>,
 ) -> ApiResult<Json<ListResponse<Policy>>> {
-    Ok(Json(policies::list_policies(&st, tid, &params).await?))
+    Ok(Json(policies::list_policies(&st, &ctx, tid, &params).await?))
 }
 
 pub async fn policies_create(
     State(st): State<AppState>,
+    Extension(ctx): Extension<AuthContext>,
     Path(tid): Path<Uuid>,
     Json(body): Json<CreatePolicyReq>,
 ) -> ApiResult<Response> {
-    let policy = policies::create_policy(&st, tid, &body).await?;
+    let policy = policies::create_policy(&st, &ctx, tid, &body).await?;
     Ok((StatusCode::CREATED, Json(policy)).into_response())
 }
 
 pub async fn policies_get(
     State(st): State<AppState>,
+    Extension(ctx): Extension<AuthContext>,
     Path((tid, pid)): Path<(Uuid, Uuid)>,
 ) -> ApiResult<Json<Policy>> {
-    Ok(Json(policies::get_policy(&st, tid, pid).await?))
+    Ok(Json(policies::get_policy(&st, &ctx, tid, pid).await?))
 }
 
 pub async fn policies_patch(
     State(st): State<AppState>,
+    Extension(ctx): Extension<AuthContext>,
     Path((tid, pid)): Path<(Uuid, Uuid)>,
     Json(body): Json<UpdatePolicyReq>,
 ) -> ApiResult<Json<Policy>> {
-    Ok(Json(policies::update_policy(&st, tid, pid, &body).await?))
+    Ok(Json(policies::update_policy(&st, &ctx, tid, pid, &body).await?))
 }
 
 pub async fn policies_delete(
     State(st): State<AppState>,
+    Extension(ctx): Extension<AuthContext>,
     Path((tid, pid)): Path<(Uuid, Uuid)>,
 ) -> ApiResult<StatusCode> {
-    policies::delete_policy(&st, tid, pid).await?;
+    policies::delete_policy(&st, &ctx, tid, pid).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
 pub async fn policy_publish(
     State(st): State<AppState>,
+    Extension(ctx): Extension<AuthContext>,
     Path((tid, pid)): Path<(Uuid, Uuid)>,
     Json(body): Json<PublishPolicyReq>,
 ) -> ApiResult<Response> {
-    let revision = policies::publish_policy(&st, tid, pid, body).await?;
+    let revision = policies::publish_policy(&st, &ctx, tid, pid, body).await?;
     Ok((StatusCode::CREATED, Json(revision)).into_response())
 }
 
@@ -194,26 +211,29 @@ pub async fn policy_publish(
 
 pub async fn commands_list(
     State(st): State<AppState>,
+    Extension(ctx): Extension<AuthContext>,
     Path(tid): Path<Uuid>,
     Query(params): Query<CommandListParams>,
 ) -> ApiResult<Json<ListResponse<Command>>> {
-    Ok(Json(commands::list_commands(&st, tid, &params).await?))
+    Ok(Json(commands::list_commands(&st, &ctx, tid, &params).await?))
 }
 
 pub async fn commands_create(
     State(st): State<AppState>,
+    Extension(ctx): Extension<AuthContext>,
     Path(tid): Path<Uuid>,
     Json(body): Json<CreateCommandReq>,
 ) -> ApiResult<Response> {
-    let command = commands::create_command(&st, tid, &body).await?;
+    let command = commands::create_command(&st, &ctx, tid, &body).await?;
     Ok((StatusCode::ACCEPTED, Json(command)).into_response())
 }
 
 pub async fn commands_get(
     State(st): State<AppState>,
+    Extension(ctx): Extension<AuthContext>,
     Path((tid, cid)): Path<(Uuid, Uuid)>,
 ) -> ApiResult<Json<Command>> {
-    Ok(Json(commands::get_command(&st, tid, cid).await?))
+    Ok(Json(commands::get_command(&st, &ctx, tid, cid).await?))
 }
 
 // ---------------------------------------------------------------------------
@@ -222,28 +242,31 @@ pub async fn commands_get(
 
 pub async fn shadow_get(
     State(st): State<AppState>,
+    Extension(ctx): Extension<AuthContext>,
     Path((tid, did)): Path<(Uuid, Uuid)>,
 ) -> ApiResult<Json<ShadowResponse>> {
-    Ok(Json(shadow::get_shadow(&st, tid, did).await?))
+    Ok(Json(shadow::get_shadow(&st, &ctx, tid, did).await?))
 }
 
 pub async fn shadow_update_desired(
     State(st): State<AppState>,
+    Extension(ctx): Extension<AuthContext>,
     Path((tid, did)): Path<(Uuid, Uuid)>,
     Json(body): Json<UpdateShadowDesiredReq>,
 ) -> ApiResult<Json<ShadowResponse>> {
     Ok(Json(
-        shadow::update_shadow_desired(&st, tid, did, &body).await?,
+        shadow::update_shadow_desired(&st, &ctx, tid, did, &body).await?,
     ))
 }
 
 pub async fn shadow_update_reported(
     State(st): State<AppState>,
+    Extension(ctx): Extension<AuthContext>,
     Path((tid, did)): Path<(Uuid, Uuid)>,
     Json(body): Json<UpdateShadowReportedReq>,
 ) -> ApiResult<Json<ShadowResponse>> {
     Ok(Json(
-        shadow::update_shadow_reported(&st, tid, did, &body).await?,
+        shadow::update_shadow_reported(&st, &ctx, tid, did, &body).await?,
     ))
 }
 
@@ -253,10 +276,11 @@ pub async fn shadow_update_reported(
 
 pub async fn device_action(
     State(st): State<AppState>,
+    Extension(ctx): Extension<AuthContext>,
     Path((tid, did)): Path<(Uuid, Uuid)>,
     Json(body): Json<DeviceActionReq>,
 ) -> ApiResult<Response> {
-    let command = commands::create_device_action_command(&st, tid, did, &body).await?;
+    let command = commands::create_device_action_command(&st, &ctx, tid, did, &body).await?;
     Ok((StatusCode::ACCEPTED, Json(command)).into_response())
 }
 
@@ -266,10 +290,13 @@ pub async fn device_action(
 
 pub async fn device_commands_list(
     State(st): State<AppState>,
+    Extension(ctx): Extension<AuthContext>,
     Path((tid, did)): Path<(Uuid, Uuid)>,
     Query(params): Query<CommandListParams>,
 ) -> ApiResult<Json<ListResponse<Command>>> {
-    Ok(Json(commands::list_device_commands(&st, tid, did, &params).await?))
+    Ok(Json(
+        commands::list_device_commands(&st, &ctx, tid, did, &params).await?,
+    ))
 }
 
 // ---------------------------------------------------------------------------
@@ -278,9 +305,10 @@ pub async fn device_commands_list(
 
 pub async fn command_result_get(
     State(st): State<AppState>,
+    Extension(ctx): Extension<AuthContext>,
     Path((tid, cid)): Path<(Uuid, Uuid)>,
 ) -> ApiResult<Json<dmsx_core::CommandResult>> {
-    Ok(Json(commands::get_command_result(&st, tid, cid).await?))
+    Ok(Json(commands::get_command_result(&st, &ctx, tid, cid).await?))
 }
 
 // ---------------------------------------------------------------------------
@@ -289,20 +317,22 @@ pub async fn command_result_get(
 
 pub async fn command_status_update(
     State(st): State<AppState>,
+    Extension(ctx): Extension<AuthContext>,
     Path((tid, cid)): Path<(Uuid, Uuid)>,
     Json(body): Json<UpdateCommandStatusReq>,
 ) -> ApiResult<Json<Command>> {
     Ok(Json(
-        commands::update_command_status(&st, tid, cid, &body).await?,
+        commands::update_command_status(&st, &ctx, tid, cid, &body).await?,
     ))
 }
 
 pub async fn command_result_submit(
     State(st): State<AppState>,
+    Extension(ctx): Extension<AuthContext>,
     Path((tid, cid)): Path<(Uuid, Uuid)>,
     Json(body): Json<SubmitCommandResultReq>,
 ) -> ApiResult<Response> {
-    let result = commands::submit_command_result(&st, tid, cid, &body).await?;
+    let result = commands::submit_command_result(&st, &ctx, tid, cid, &body).await?;
     Ok((StatusCode::CREATED, Json(result)).into_response())
 }
 
@@ -312,18 +342,20 @@ pub async fn command_result_submit(
 
 pub async fn artifacts_list(
     State(st): State<AppState>,
+    Extension(ctx): Extension<AuthContext>,
     Path(tid): Path<Uuid>,
     Query(params): Query<ArtifactListParams>,
 ) -> ApiResult<Json<ListResponse<Artifact>>> {
-    Ok(Json(artifacts::list_artifacts(&st, tid, &params).await?))
+    Ok(Json(artifacts::list_artifacts(&st, &ctx, tid, &params).await?))
 }
 
 pub async fn artifacts_create(
     State(st): State<AppState>,
+    Extension(ctx): Extension<AuthContext>,
     Path(tid): Path<Uuid>,
     Json(body): Json<CreateArtifactReq>,
 ) -> ApiResult<Response> {
-    let artifact = artifacts::create_artifact(&st, tid, &body).await?;
+    let artifact = artifacts::create_artifact(&st, &ctx, tid, &body).await?;
     Ok((StatusCode::CREATED, Json(artifact)).into_response())
 }
 
@@ -333,10 +365,11 @@ pub async fn artifacts_create(
 
 pub async fn compliance_list(
     State(st): State<AppState>,
+    Extension(ctx): Extension<AuthContext>,
     Path(tid): Path<Uuid>,
     Query(params): Query<FindingListParams>,
 ) -> ApiResult<Json<ListResponse<ComplianceFinding>>> {
-    Ok(Json(compliance::list_findings(&st, tid, &params).await?))
+    Ok(Json(compliance::list_findings(&st, &ctx, tid, &params).await?))
 }
 
 // ---------------------------------------------------------------------------
@@ -344,6 +377,7 @@ pub async fn compliance_list(
 // ---------------------------------------------------------------------------
 
 pub async fn ai_anomaly_detect(
+    Extension(_ctx): Extension<AuthContext>,
     Path(tenant_id): Path<Uuid>,
     Json(body): Json<dmsx_ai::AnomalyDetectionRequest>,
 ) -> ApiResult<Json<serde_json::Value>> {
@@ -358,6 +392,7 @@ pub async fn ai_anomaly_detect(
 }
 
 pub async fn ai_recommend_policies(
+    Extension(_ctx): Extension<AuthContext>,
     Path(tenant_id): Path<Uuid>,
     Json(body): Json<dmsx_ai::PolicyRecommendationRequest>,
 ) -> ApiResult<Json<serde_json::Value>> {
@@ -372,6 +407,7 @@ pub async fn ai_recommend_policies(
 }
 
 pub async fn ai_chat(
+    Extension(_ctx): Extension<AuthContext>,
     Path(tenant_id): Path<Uuid>,
     Json(body): Json<dmsx_ai::AssistantChatRequest>,
 ) -> ApiResult<Json<serde_json::Value>> {
@@ -387,6 +423,7 @@ pub async fn ai_chat(
 }
 
 pub async fn ai_predict_maintenance(
+    Extension(_ctx): Extension<AuthContext>,
     Path(tenant_id): Path<Uuid>,
     Json(body): Json<dmsx_ai::PredictionRequest>,
 ) -> ApiResult<Json<serde_json::Value>> {

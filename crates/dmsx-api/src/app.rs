@@ -15,6 +15,7 @@ use tower_http::{
 use crate::{
     auth::{load_auth_config_from_env, spawn_jwks_refresh_task},
     desktop, handlers, migrate_embedded,
+    limits,
     services::bootstrap,
     state::AppState,
 };
@@ -67,9 +68,14 @@ pub fn build_router(st: AppState) -> Router {
         .allow_methods(Any)
         .allow_headers(Any);
 
-    Router::new()
+    let rate_limit_layer = limits::tenant_rate_limit_layer_from_env();
+
+    let public = Router::new()
         .route("/health", get(handlers::health))
         .route("/ready", get(handlers::ready))
+        .with_state(st.clone());
+
+    let mut api = Router::new()
         .route("/v1/tenants", post(handlers::tenants_create))
         .route(
             "/v1/tenants/{tenant_id}/orgs/{org_id}/sites",
@@ -171,9 +177,16 @@ pub fn build_router(st: AppState) -> Router {
             st.clone(),
             crate::auth::auth_middleware,
         ))
+        .layer(middleware::from_fn(limits::request_body_limit_middleware))
         .layer(cors)
         .layer(TraceLayer::new_for_http())
-        .with_state(st)
+        .with_state(st);
+
+    if let Some(layer) = rate_limit_layer {
+        api = api.layer(layer);
+    }
+
+    public.merge(api)
 }
 
 #[cfg(test)]
@@ -326,6 +339,58 @@ mod tests {
         assert_eq!(body["status"], "not_ready");
         assert_eq!(body["auth"]["ready"], false);
         assert_eq!(body["auth"]["jwks"]["startup_degraded"], true);
+    }
+
+    #[tokio::test]
+    async fn request_body_limit_returns_problem_details_413() {
+        std::env::set_var("DMSX_API_REQUEST_BODY_LIMIT_BYTES", "10");
+        let router = build_router(test_state(AuthMode::Disabled));
+        let request = Request::builder()
+            .method("POST")
+            .uri("/v1/tenants")
+            .header("content-length", "25")
+            .header("content-type", "application/json")
+            .body(Body::from(r#"{"name":"this-is-long"}"#))
+            .expect("request");
+
+        let response = router.oneshot(request).await.expect("response");
+        let status = response.status();
+        let body = response_body(response).await;
+
+        assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
+        assert_eq!(body["title"], "Payload Too Large");
+        std::env::remove_var("DMSX_API_REQUEST_BODY_LIMIT_BYTES");
+    }
+
+    #[tokio::test]
+    async fn rate_limit_returns_problem_details_429() {
+        std::env::set_var("DMSX_API_RATE_LIMIT_ENABLED", "true");
+        std::env::set_var("DMSX_API_RATE_LIMIT_PER_SECOND", "1");
+        std::env::set_var("DMSX_API_RATE_LIMIT_BURST", "1");
+
+        let router = build_router(test_state(AuthMode::Disabled));
+
+        let request1 = Request::builder()
+            .uri("/v1/config/livekit")
+            .body(Body::empty())
+            .expect("request1");
+        let response1 = router.clone().oneshot(request1).await.expect("response1");
+        assert_eq!(response1.status(), StatusCode::OK);
+
+        let request2 = Request::builder()
+            .uri("/v1/config/livekit")
+            .body(Body::empty())
+            .expect("request2");
+        let response2 = router.oneshot(request2).await.expect("response2");
+        let status2 = response2.status();
+        let body2 = response_body(response2).await;
+
+        assert_eq!(status2, StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(body2["title"], "Too Many Requests");
+
+        std::env::remove_var("DMSX_API_RATE_LIMIT_ENABLED");
+        std::env::remove_var("DMSX_API_RATE_LIMIT_PER_SECOND");
+        std::env::remove_var("DMSX_API_RATE_LIMIT_BURST");
     }
 
     #[tokio::test]
