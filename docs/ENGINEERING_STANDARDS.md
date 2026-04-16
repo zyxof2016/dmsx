@@ -536,6 +536,7 @@ src/
 
 在合并或打内测标签前，除 `cargo test` 外，建议至少跑通仓库内 **可复现脚本**（详见 `README.md`）：
 
+- `scripts/internal-beta-dod.sh`：**内测 DoD 一键校验（推荐默认入口）**。串联 `internal-beta-verify.sh`（库级回归）+ `internal-beta-smoke-http.sh`（主链路 HTTP 冒烟）。若当前变更与主链路无关或环境不具备（未启动 `dmsx-api`），可用 `DMSX_DOD_SKIP_SMOKE=1` 暂时跳过冒烟，但必须在发版/演示前补跑完整链路。
 - `scripts/internal-beta-verify.sh`：库级回归（`dmsx-api` / `dmsx-agent`）。
 - `scripts/internal-beta-smoke-http.sh`：控制面主链路 HTTP 冒烟（需已起 Postgres + `dmsx-api`）。
 - `scripts/reproduce-dev-env.sh`：依赖服务 / 主机 **5432** 可达性校验（与 `DATABASE_URL` 约定一致）。
