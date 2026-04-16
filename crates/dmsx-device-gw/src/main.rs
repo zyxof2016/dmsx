@@ -28,6 +28,8 @@ use agent::{
 use grpc_health::health_server::{Health, HealthServer};
 use grpc_health::{HealthCheckRequest, HealthCheckResponse};
 
+mod telemetry;
+
 // ---------------------------------------------------------------------------
 // gRPC Health Check (grpc.health.v1)
 // ---------------------------------------------------------------------------
@@ -160,12 +162,7 @@ impl AgentService for AgentServiceImpl {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "dmsx_device_gw=info".into()),
-        )
-        .init();
+    let _telemetry = telemetry::init_tracing("dmsx-device-gw");
 
     let bind_addr = std::env::var("DMSX_GW_BIND").unwrap_or_else(|_| "0.0.0.0:50051".to_string());
     let addr = bind_addr.parse()?;

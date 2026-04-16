@@ -45,6 +45,11 @@ spec:
               value: dmsx_device_gw=info
             - name: DMSX_GW_BIND
               value: "0.0.0.0:50051"
+            # OpenTelemetry (optional): set OTLP endpoint to export traces
+            # - name: OTEL_EXPORTER_OTLP_ENDPOINT
+            #   value: "http://otel-collector.monitoring:4317"
+            # - name: OTEL_SERVICE_NAME
+            #   value: "dmsx-device-gw"
           readinessProbe:
             grpc:
               port: 50051

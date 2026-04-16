@@ -281,6 +281,8 @@ cargo run -p dmsx-api
 
 随后观察 `otel-collector` 日志，应能看到 traces/metrics/logs 的 debug 输出。
 
+`dmsx-device-gw` 同样支持：设置 `OTEL_EXPORTER_OTLP_ENDPOINT` 后会导出 traces；K8s 示例见 `deploy/kubernetes/dmsx-device-gw.yaml` 的可选 env 段落。
+
 ## 本地与 CI
 
 本地开发：**Docker Compose**（`deploy/docker-compose.yml`）拉起全套基础设施：
