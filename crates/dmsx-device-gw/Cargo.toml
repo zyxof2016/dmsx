@@ -32,6 +32,7 @@ base64 = "0.22"
 hmac = "0.12"
 sha2 = "0.10"
 governor = "0.8"
+prometheus-client = "0.22"
 
 [build-dependencies]
 tonic-build.workspace = true

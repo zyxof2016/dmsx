@@ -1054,6 +1054,7 @@ dependencies = [
  "opentelemetry",
  "opentelemetry-otlp",
  "opentelemetry_sdk",
+ "prometheus-client",
  "prost 0.13.5",
  "rcgen",
  "serde",

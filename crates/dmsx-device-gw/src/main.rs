@@ -41,6 +41,7 @@ mod client_identity;
 mod command_stream;
 mod enroll;
 mod enroll_token;
+mod metrics_http;
 mod rate_limit;
 mod result_publish;
 mod telemetry;
@@ -404,6 +405,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     let nats_js = result_publish::connect_jetstream_from_env().await;
     let svc_impl = AgentServiceImpl::new(require_mtls_identity, nats_js);
+
+    if metrics_http::enabled_from_env() {
+        let st = metrics_http::MetricsState {
+            active_stream_commands: svc_impl.active_stream_commands.clone(),
+            active_uploads: svc_impl.active_uploads.clone(),
+        };
+        tokio::spawn(async move {
+            if let Err(e) = metrics_http::serve_http(st).await {
+                tracing::error!(error = %e, "metrics server exited");
+            }
+        });
+    }
 
     {
         let streams = svc_impl.active_stream_commands.clone();
