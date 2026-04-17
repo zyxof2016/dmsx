@@ -39,6 +39,8 @@ use grpc_health::{HealthCheckRequest, HealthCheckResponse};
 
 mod client_identity;
 mod command_stream;
+mod enroll;
+mod enroll_token;
 mod result_publish;
 mod telemetry;
 
@@ -79,6 +81,8 @@ struct AgentServiceImpl {
     /// 已配置客户端 CA 且未设置 `DMSX_GW_TLS_CLIENT_AUTH_OPTIONAL=1`。
     require_mtls_identity: bool,
     nats_js: Option<Arc<async_nats::jetstream::Context>>,
+    active_stream_commands: Arc<std::sync::atomic::AtomicU64>,
+    active_uploads: Arc<std::sync::atomic::AtomicU64>,
 }
 
 impl AgentServiceImpl {
@@ -86,6 +90,8 @@ impl AgentServiceImpl {
         Self {
             require_mtls_identity,
             nats_js,
+            active_stream_commands: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            active_uploads: Arc::new(std::sync::atomic::AtomicU64::new(0)),
         }
     }
 }
@@ -106,6 +112,14 @@ fn client_auth_optional_from_env() -> bool {
             .as_str(),
         "1" | "true" | "yes" | "on"
     )
+}
+
+fn concurrency_per_connection_from_env() -> usize {
+    std::env::var("DMSX_GW_CONCURRENCY_PER_CONNECTION")
+        .ok()
+        .and_then(|v| v.trim().parse::<usize>().ok())
+        .unwrap_or(64)
+        .max(1)
 }
 
 async fn load_server_tls() -> Result<Option<ServerTlsConfig>, std::io::Error> {
@@ -152,12 +166,22 @@ async fn load_server_tls() -> Result<Option<ServerTlsConfig>, std::io::Error> {
 impl AgentService for AgentServiceImpl {
     async fn enroll(
         &self,
-        _request: Request<EnrollRequest>,
+        request: Request<EnrollRequest>,
     ) -> Result<Response<EnrollResponse>, Status> {
-        tracing::info!("enroll (stub)");
-        Err(Status::unimplemented(
-            "enroll: 接入 CA + enrollment 服务后实现",
-        ))
+        let inner = request.into_inner();
+        let (device_id, issued_cert_pem, ca_cert_pem, cert_expires_unix, tenant_id) =
+            enroll::issue_device_cert(&inner.enrollment_token, &inner.public_key_pem).await?;
+        tracing::info!(
+            tenant_id = %tenant_id,
+            device_id = %device_id,
+            "enroll: issued device certificate"
+        );
+        Ok(Response::new(EnrollResponse {
+            device_id: device_id.to_string(),
+            issued_cert_pem,
+            ca_cert_pem,
+            cert_expires_unix,
+        }))
     }
 
     async fn heartbeat(
@@ -201,6 +225,16 @@ impl AgentService for AgentServiceImpl {
         &self,
         request: Request<StreamCommandsRequest>,
     ) -> Result<Response<Self::StreamCommandsStream>, Status> {
+        self.active_stream_commands
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        struct Guard(Arc<std::sync::atomic::AtomicU64>);
+        impl Drop for Guard {
+            fn drop(&mut self) {
+                self.0.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+            }
+        }
+        let _guard = Guard(self.active_stream_commands.clone());
+
         let (tid, did) = client_identity::resolve_tenant_device(
             &request,
             self.require_mtls_identity,
@@ -275,6 +309,16 @@ impl AgentService for AgentServiceImpl {
         &self,
         request: Request<Streaming<UploadEvidenceRequest>>,
     ) -> Result<Response<UploadEvidenceResponse>, Status> {
+        self.active_uploads
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        struct Guard(Arc<std::sync::atomic::AtomicU64>);
+        impl Drop for Guard {
+            fn drop(&mut self) {
+                self.0.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+            }
+        }
+        let _guard = Guard(self.active_uploads.clone());
+
         let require_mtls_identity = self.require_mtls_identity;
         let peer_certs = request.peer_certs();
         let mut stream = request.into_inner();
@@ -334,6 +378,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let nats_js = result_publish::connect_jetstream_from_env().await;
     let svc_impl = AgentServiceImpl::new(require_mtls_identity, nats_js);
 
+    {
+        let streams = svc_impl.active_stream_commands.clone();
+        let uploads = svc_impl.active_uploads.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
+            loop {
+                interval.tick().await;
+                let s = streams.load(std::sync::atomic::Ordering::Relaxed);
+                let u = uploads.load(std::sync::atomic::Ordering::Relaxed);
+                tracing::info!(active_stream_commands = s, active_uploads = u, "gw.activity");
+            }
+        });
+    }
+
     tracing::info!(
         "dmsx-device-gw listening on grpc://{} (tls={}, require_mtls_identity={})",
         addr,
@@ -345,6 +403,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     if let Some(tls) = tls_cfg {
         server = server.tls_config(tls)?;
     }
+    server = server.concurrency_limit_per_connection(concurrency_per_connection_from_env());
 
     server
         .add_service(HealthServer::new(HealthService))
