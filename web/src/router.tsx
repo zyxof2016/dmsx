@@ -15,6 +15,10 @@ import { ArtifactsPage } from "./pages/Artifacts";
 import { CompliancePage } from "./pages/Compliance";
 import { NetworkPage } from "./pages/Network";
 import { AiCenterPage } from "./pages/AiCenter";
+import { SystemSettingsPage } from "./pages/SystemSettings";
+import { PolicyEditorPage } from "./pages/PolicyEditor";
+import { AuditLogsPage } from "./pages/AuditLogs";
+import { UsersRolesPage } from "./pages/UsersRoles";
 
 const rootRoute = createRootRoute({ component: AppLayout });
 
@@ -97,6 +101,30 @@ const aiRoute = createRoute({
   component: AiCenterPage,
 });
 
+const systemSettingsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/settings",
+  component: SystemSettingsPage,
+});
+
+const policyEditorRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/policy-editor",
+  component: PolicyEditorPage,
+});
+
+const auditLogsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/audit-logs",
+  component: AuditLogsPage,
+});
+
+const usersRolesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/users",
+  component: UsersRolesPage,
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   devicesRoute.addChildren([devicesIndexRoute, deviceDetailRoute]),
@@ -106,6 +134,10 @@ const routeTree = rootRoute.addChildren([
   complianceRoute,
   networkRoute,
   aiRoute,
+  systemSettingsRoute,
+  policyEditorRoute,
+  auditLogsRoute,
+  usersRolesRoute,
 ]);
 
 export const router = createRouter({ routeTree });

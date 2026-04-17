@@ -220,6 +220,57 @@ export interface LivekitConfigResponse {
   url: string;
 }
 
+// ---- Admin / Config / Auditing ----
+
+export interface AuditLog {
+  id: string;
+  created_at: string;
+  actor_user_id: string | null;
+  action: string;
+  resource_type: string;
+  resource_id: string;
+  payload: Record<string, unknown>;
+}
+
+export interface AuditLogListParams {
+  limit?: number;
+  offset?: number;
+  action?: string;
+  resource_type?: string;
+}
+
+export interface SystemSetting {
+  key: string;
+  value: Record<string, unknown>;
+  updated_at: string;
+}
+
+export interface SystemSettingUpsertReq {
+  value: Record<string, unknown>;
+}
+
+export interface RbacRole {
+  name: string;
+}
+
+export interface PolicyRevision {
+  id: string;
+  policy_id: string;
+  tenant_id: string;
+  version: number;
+  spec: Record<string, unknown>;
+  rollout: Record<string, unknown>;
+  published_at: string;
+  published_by: string | null;
+}
+
+export interface PolicyEditorPublishReq {
+  name: string;
+  description?: string | null;
+  scope_kind: Policy["scope_kind"];
+  scope_expr: string;
+}
+
 // ---- Query params for list endpoints ----
 
 export type ListParams = Record<string, string | number | undefined>;

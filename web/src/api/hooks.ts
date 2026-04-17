@@ -16,6 +16,8 @@ import type {
   ListParams,
   CreateDeviceReq,
   CreatePolicyReq,
+  PolicyEditorPublishReq,
+  PolicyRevision,
   CreateCommandReq,
   CreateArtifactReq,
   ShadowResponse,
@@ -27,6 +29,11 @@ import type {
   DesktopSessionResponse,
   DesktopSessionCreateReq,
   LivekitConfigResponse,
+  AuditLog,
+  AuditLogListParams,
+  SystemSetting,
+  SystemSettingUpsertReq,
+  RbacRole,
 } from "./types";
 
 // ---- Dashboard ----
@@ -334,6 +341,67 @@ export function useLivekitConfig() {
     queryKey: ["livekitConfig"],
     queryFn: () => api.get<LivekitConfigResponse>("/v1/config/livekit"),
     staleTime: 60_000,
+  });
+}
+
+// ---- Admin / Config / Auditing ----
+
+export function useSystemSetting(key: string | undefined) {
+  return useQuery({
+    queryKey: ["systemSetting", key],
+    queryFn: () =>
+      api.get<SystemSetting>(`/v1/config/settings/${encodeURIComponent(String(key))}`),
+    enabled: !!key,
+    retry: false,
+  });
+}
+
+export function useUpsertSystemSetting(key: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: SystemSettingUpsertReq) =>
+      api.put<SystemSetting>(`/v1/config/settings/${encodeURIComponent(key)}`, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["systemSetting", key] });
+    },
+  });
+}
+
+export function useAuditLogs(params?: AuditLogListParams) {
+  const q: Record<string, string | number | undefined> = {
+    limit: params?.limit,
+    offset: params?.offset,
+    action: params?.action,
+    resource_type: params?.resource_type,
+  };
+  return useQuery({
+    queryKey: ["auditLogs", params ?? {}],
+    queryFn: () =>
+      api.get<ListResponse<AuditLog>>(
+        tenantPath(`/audit-logs${buildQuery(q)}`),
+      ),
+    placeholderData: keepPreviousData,
+    retry: false,
+  });
+}
+
+export function useRbacRoles() {
+  return useQuery({
+    queryKey: ["rbacRoles"],
+    queryFn: () => api.get<RbacRole[]>("/v1/config/rbac/roles"),
+    retry: false,
+  });
+}
+
+export function usePolicyEditorPublish() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: PolicyEditorPublishReq) =>
+      api.post<PolicyRevision>(tenantPath(`/policies/editor`), body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["policies"] });
+      qc.invalidateQueries({ queryKey: ["stats"] });
+    },
   });
 }
 

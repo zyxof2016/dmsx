@@ -8,6 +8,12 @@ import {
   Space,
   Badge,
   FloatButton,
+  Select,
+  Switch,
+  Modal,
+  Input,
+  theme as antdTheme,
+  message,
 } from "antd";
 import {
   DashboardOutlined,
@@ -27,18 +33,9 @@ import {
   useRouterState,
 } from "@tanstack/react-router";
 
-const { Header, Sider, Content } = Layout;
+import { useAppI18n, useThemeMode, type Lang } from "./appProviders";
 
-const menuItems = [
-  { key: "dashboard", icon: <DashboardOutlined />, label: "态势总览" },
-  { key: "devices", icon: <DesktopOutlined />, label: "设备管理" },
-  { key: "policies", icon: <SafetyOutlined />, label: "策略中心" },
-  { key: "commands", icon: <CloudServerOutlined />, label: "远程命令" },
-  { key: "artifacts", icon: <AppstoreOutlined />, label: "应用分发" },
-  { key: "compliance", icon: <AuditOutlined />, label: "安全合规" },
-  { key: "network", icon: <GlobalOutlined />, label: "网络管控" },
-  { key: "ai", icon: <RobotOutlined />, label: "AI 智慧中心" },
-];
+const { Header, Sider, Content } = Layout;
 
 const keyToPath: Record<string, string> = {
   dashboard: "/",
@@ -49,21 +46,16 @@ const keyToPath: Record<string, string> = {
   compliance: "/compliance",
   network: "/network",
   ai: "/ai",
-};
-
-const pathToLabel: Record<string, string> = {
-  "/": "态势总览",
-  "/devices": "设备管理",
-  "/policies": "策略中心",
-  "/commands": "远程命令",
-  "/artifacts": "应用分发",
-  "/compliance": "安全合规",
-  "/network": "网络管控",
-  "/ai": "AI 智慧中心",
+  settings: "/settings",
+  policyEditor: "/policy-editor",
+  auditLogs: "/audit-logs",
+  usersRoles: "/users",
 };
 
 export const AppLayout: React.FC = () => {
   const [collapsed, setCollapsed] = React.useState(false);
+  const [jwtModalOpen, setJwtModalOpen] = React.useState(false);
+  const [jwtDraft, setJwtDraft] = React.useState("");
   const navigate = useNavigate();
   const pathname = useRouterState({
     select: (s) => s.location.pathname,
@@ -74,13 +66,44 @@ export const AppLayout: React.FC = () => {
     Object.entries(keyToPath).find(([, v]) => v === topSegment)?.[0] ??
     "dashboard";
 
-  const breadcrumbLabel = pathToLabel[topSegment] ?? selectedKey;
+  const { t, lang, setLang } = useAppI18n();
+  const { themeMode, setThemeMode } = useThemeMode();
+  const { token } = antdTheme.useToken();
+
+  const breadcrumbLabel = t(`nav.${selectedKey}`);
+
+  const menuItems = [
+    { key: "dashboard", icon: <DashboardOutlined />, label: t("nav.dashboard") },
+    { key: "devices", icon: <DesktopOutlined />, label: t("nav.devices") },
+    { key: "policies", icon: <SafetyOutlined />, label: t("nav.policies") },
+    { key: "commands", icon: <CloudServerOutlined />, label: t("nav.commands") },
+    { key: "artifacts", icon: <AppstoreOutlined />, label: t("nav.artifacts") },
+    { key: "compliance", icon: <AuditOutlined />, label: t("nav.compliance") },
+    { key: "network", icon: <GlobalOutlined />, label: t("nav.network") },
+    { key: "ai", icon: <RobotOutlined />, label: t("nav.ai") },
+    { key: "settings", icon: <SafetyOutlined />, label: t("nav.settings") },
+    { key: "policyEditor", icon: <SafetyOutlined />, label: t("nav.policyEditor") },
+    { key: "auditLogs", icon: <AuditOutlined />, label: t("nav.auditLogs") },
+    { key: "usersRoles", icon: <UserOutlined />, label: t("nav.usersRoles") },
+  ];
 
   const userMenu = {
     items: [
-      { key: "profile", label: "个人中心" },
-      { key: "logout", label: "退出登录" },
+      { key: "profile", label: t("user.profile") },
+      { key: "set_jwt", label: "设置 JWT（用于 jwt 模式联调）" },
+      { key: "clear_jwt", label: "清除 JWT" },
+      { key: "logout", label: t("user.logout") },
     ],
+    onClick: ({ key }: { key: string }) => {
+      if (key === "set_jwt") {
+        const existing = localStorage.getItem("dmsx.jwt") ?? "";
+        setJwtDraft(existing);
+        setJwtModalOpen(true);
+      } else if (key === "clear_jwt") {
+        localStorage.removeItem("dmsx.jwt");
+        message.success("已清除 JWT");
+      }
+    },
   };
 
   return (
@@ -89,7 +112,7 @@ export const AppLayout: React.FC = () => {
         collapsible
         collapsed={collapsed}
         onCollapse={setCollapsed}
-        theme="dark"
+        theme={themeMode === "dark" ? "dark" : "light"}
         width={220}
       >
         <div
@@ -98,17 +121,17 @@ export const AppLayout: React.FC = () => {
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            color: "#fff",
+            color: token.colorText,
             fontWeight: 700,
             fontSize: collapsed ? 16 : 20,
             letterSpacing: 2,
             margin: "8px 0",
           }}
         >
-          {collapsed ? "DX" : "DMSX 集控"}
+          {collapsed ? "DX" : t("brand.full")}
         </div>
         <Menu
-          theme="dark"
+          theme={themeMode === "dark" ? "dark" : "light"}
           mode="inline"
           selectedKeys={[selectedKey]}
           items={menuItems}
@@ -122,25 +145,42 @@ export const AppLayout: React.FC = () => {
       <Layout>
         <Header
           style={{
-            background: "#fff",
+            background: token.colorBgElevated,
             padding: "0 24px",
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            borderBottom: "1px solid #f0f0f0",
+            borderBottom: `1px solid ${token.colorBorderSecondary}`,
           }}
         >
           <Breadcrumb
-            items={[{ title: "DMSX" }, { title: breadcrumbLabel }]}
+            items={[{ title: t("brand") }, { title: breadcrumbLabel }]}
           />
           <Space size="large">
+            <Select
+              size="small"
+              value={lang}
+              onChange={(v) => setLang(v as Lang)}
+              options={[
+                { value: "zh", label: "中文" },
+                { value: "en", label: "English" },
+              ]}
+              style={{ width: 120 }}
+            />
+            <Switch
+              size="small"
+              checked={themeMode === "dark"}
+              onChange={(checked) => setThemeMode(checked ? "dark" : "light")}
+              checkedChildren={t("theme.dark")}
+              unCheckedChildren={t("theme.light")}
+            />
             <Badge count={0} size="small">
               <BellOutlined style={{ fontSize: 18, cursor: "pointer" }} />
             </Badge>
             <Dropdown menu={userMenu}>
               <Space style={{ cursor: "pointer" }}>
                 <Avatar size="small" icon={<UserOutlined />} />
-                管理员
+                {t("user.admin")}
               </Space>
             </Dropdown>
           </Space>
@@ -150,7 +190,7 @@ export const AppLayout: React.FC = () => {
           <div
             style={{
               padding: 24,
-              background: "#fff",
+              background: token.colorBgContainer,
               borderRadius: 8,
               minHeight: 600,
             }}
@@ -163,10 +203,36 @@ export const AppLayout: React.FC = () => {
       <FloatButton
         icon={<RobotOutlined />}
         type="primary"
-        tooltip="AI 助手"
+        tooltip={t("ai.assistant")}
         onClick={() => navigate({ to: "/ai" })}
         style={{ insetInlineEnd: 32, insetBlockEnd: 32 }}
       />
+
+      <Modal
+        title="设置 JWT"
+        open={jwtModalOpen}
+        onCancel={() => setJwtModalOpen(false)}
+        onOk={() => {
+          const v = jwtDraft.trim();
+          if (!v) {
+            message.error("JWT 不能为空");
+            return;
+          }
+          localStorage.setItem("dmsx.jwt", v);
+          setJwtModalOpen(false);
+          message.success("JWT 已保存");
+        }}
+        okText="保存"
+        cancelText="取消"
+        destroyOnClose
+      >
+        <Input.TextArea
+          value={jwtDraft}
+          onChange={(e) => setJwtDraft(e.target.value)}
+          rows={6}
+          placeholder="粘贴形如：xxxx.yyyy.zzzz 的 JWT（可带或不带 Bearer 前缀）"
+        />
+      </Modal>
     </Layout>
   );
 };
