@@ -45,6 +45,20 @@ spec:
               value: dmsx_device_gw=info
             - name: DMSX_GW_BIND
               value: "0.0.0.0:50051"
+            # JetStream (same env as dmsx-api). When unset, StreamCommands stays empty and ReportResult returns accepted=false.
+            # - name: DMSX_NATS_URL
+            #   value: "nats://nats.dmsx.svc.cluster.local:4222"
+            # - name: DMSX_NATS_JETSTREAM_ENABLED
+            #   value: "true"
+            # - name: DMSX_NATS_COMMAND_STREAM
+            #   value: "DMSX_COMMANDS"
+            # gRPC TLS / mTLS（挂载 Secret 后启用；需同时设置 CERT+KEY，CLIENT_CA 用于校验设备证书）
+            # - name: DMSX_GW_TLS_CERT
+            #   value: "/etc/dmsx-gw-tls/tls.crt"
+            # - name: DMSX_GW_TLS_KEY
+            #   value: "/etc/dmsx-gw-tls/tls.key"
+            # - name: DMSX_GW_TLS_CLIENT_CA
+            #   value: "/etc/dmsx-gw-tls/ca.crt"
             # OpenTelemetry (optional): set OTLP endpoint to export traces
             # - name: OTEL_EXPORTER_OTLP_ENDPOINT
             #   value: "http://otel-collector.monitoring:4317"

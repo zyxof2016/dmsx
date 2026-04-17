@@ -4,10 +4,9 @@ package dmsx.agent.v1;
 
 // 数据面 Agent 契约（与 docs/API.md 数据面章节一致）。
 //
-// **多租户隔离约定**：消息体不含 tenant_id。
-// 设备身份通过 mTLS 客户端证书绑定到唯一 device_id，
-// 而 device_id → tenant_id 的映射在服务端 enrollment 时建立，
-// 网关根据证书自动填充 tenant_id——不信任客户端传入。
+// **多租户与身份**：`ReportResult` / `StreamCommands` 可携带可选 `tenant_id`（明文/过渡）。
+// 生产启用 mTLS（网关 `DMSX_GW_TLS_CLIENT_CA`）时，客户端证书 SAN 须含 URI
+// `urn:dmsx:tenant:{uuid}:device:{uuid}`，并与 RPC 中的 `device_id`（及显式 `tenant_id`）一致。
 
 message Empty {}
 
@@ -89,6 +88,8 @@ message ReportResultRequest {
   string stdout_snippet       = 5;
   string stderr_snippet       = 6;
   string evidence_object_key  = 7;
+  // 明文/过渡场景可由客户端显式携带；启用 mTLS 且证书 SAN 含 urn 时，须与证书解析结果一致。
+  string tenant_id            = 8;
 }
 
 message ReportResultResponse {
@@ -110,6 +111,8 @@ message UploadEvidenceResponse {
 message StreamCommandsRequest {
   string device_id = 1;
   string cursor    = 2;
+  // 可选；启用 mTLS 且证书 SAN 含 urn 时，须与证书解析结果一致（用于 JetStream filter 精确到租户）。
+  string tenant_id = 3;
 }
 
 // --- Service ---

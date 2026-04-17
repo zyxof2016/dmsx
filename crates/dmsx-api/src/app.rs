@@ -11,7 +11,7 @@ use tokio::sync::RwLock;
 use tower::ServiceBuilder;
 use tower::limit::ConcurrencyLimitLayer;
 use tower_http::{
-    cors::{Any, CorsLayer},
+    cors::{AllowOrigin, Any, CorsLayer},
     request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
     trace::{DefaultOnResponse, TraceLayer},
 };
@@ -73,6 +73,61 @@ fn concurrency_limit_from_env() -> Option<usize> {
     Some(limit.max(1))
 }
 
+fn cors_layer_from_env() -> CorsLayer {
+    // Production CORS policy:
+    // - Set `DMSX_API_CORS_ALLOWED_ORIGINS` to a comma-separated list of origins, e.g.
+    //   `https://admin.example.com,https://ops.example.com`
+    // - Or set `DMSX_API_CORS_ALLOW_ALL=1` to allow all origins (dev-like).
+    // - If unset and not allowing all:
+    //   - in `dev` we allow all to avoid breaking local development
+    //   - otherwise we allow none (browser will block cross-origin calls)
+    let allow_all = truthy_env("DMSX_API_CORS_ALLOW_ALL");
+    if allow_all {
+        return CorsLayer::new()
+            .allow_origin(Any)
+            .allow_methods(Any)
+            .allow_headers(Any);
+    }
+
+    let allowed = std::env::var("DMSX_API_CORS_ALLOWED_ORIGINS")
+        .ok()
+        .map(|s| s.trim().to_string());
+    if let Some(s) = allowed {
+        if s == "*" {
+            return CorsLayer::new()
+                .allow_origin(Any)
+                .allow_methods(Any)
+                .allow_headers(Any);
+        }
+
+        let origins: Vec<axum::http::HeaderValue> = s
+            .split(',')
+            .map(|o| o.trim())
+            .filter(|o| !o.is_empty())
+            .map(|o| o.parse::<axum::http::HeaderValue>())
+            .filter_map(Result::ok)
+            .collect();
+
+        return CorsLayer::new()
+            .allow_origin(AllowOrigin::list(origins))
+            .allow_methods(Any)
+            .allow_headers(Any);
+    }
+
+    let env = dmsx_api_env();
+    if env == "dev" {
+        CorsLayer::new()
+            .allow_origin(Any)
+            .allow_methods(Any)
+            .allow_headers(Any)
+    } else {
+        CorsLayer::new()
+            .allow_origin(AllowOrigin::list(Vec::new()))
+            .allow_methods(Any)
+            .allow_headers(Any)
+    }
+}
+
 async fn timeout_middleware(
     req: axum::extract::Request,
     next: axum::middleware::Next,
@@ -124,8 +179,17 @@ pub async fn build_state_from_env() -> AppState {
     let livekit_api_secret = std::env::var("LIVEKIT_API_SECRET")
         .unwrap_or_else(|_| "dmsx-api-secret-that-is-at-least-32-chars".to_string());
 
+    let redis_url = std::env::var("DMSX_REDIS_URL")
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+
+    let command_jetstream = crate::command_jetstream::CommandJetStream::try_from_env().await;
+
     let state = AppState {
         db: pool,
+        redis_url,
+        command_jetstream,
         livekit_url,
         livekit_api_key,
         livekit_api_secret,
@@ -141,14 +205,13 @@ pub async fn build_state_from_env() -> AppState {
     spawn_jwks_refresh_task(state.auth.clone());
     bootstrap::ensure_default_tenant(&state, dev_tenant, "默认租户").await;
 
+    crate::result_jetstream_ingest::spawn_background(state.clone());
+
     state
 }
 
 pub fn build_router(st: AppState) -> Router {
-    let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(Any)
-        .allow_headers(Any);
+    let cors = cors_layer_from_env();
 
     let rate_limit_layer = limits::tenant_rate_limit_layer_from_env();
     let set_request_id = SetRequestIdLayer::x_request_id(MakeRequestUuid);
@@ -221,6 +284,10 @@ pub fn build_router(st: AppState) -> Router {
             post(handlers::policy_publish),
         )
         .route(
+            "/v1/tenants/{tenant_id}/policies/editor",
+            post(handlers::policy_editor_create_and_publish),
+        )
+        .route(
             "/v1/tenants/{tenant_id}/devices/{device_id}/shadow",
             get(handlers::shadow_get),
         )
@@ -265,10 +332,22 @@ pub fn build_router(st: AppState) -> Router {
             get(handlers::compliance_list),
         )
         .route(
+            "/v1/tenants/{tenant_id}/audit-logs",
+            get(handlers::audit_logs_list),
+        )
+        .route(
             "/v1/tenants/{tenant_id}/devices/{device_id}/desktop/session",
             post(desktop::session_create).delete(desktop::session_delete),
         )
         .route("/v1/config/livekit", get(desktop::livekit_config))
+        .route(
+            "/v1/config/settings/{key}",
+            get(handlers::system_settings_get).put(handlers::system_settings_put),
+        )
+        .route(
+            "/v1/config/rbac/roles",
+            get(handlers::rbac_roles_list),
+        )
         .route(
             "/v1/tenants/{tenant_id}/ai/anomalies",
             post(handlers::ai_anomaly_detect),
@@ -347,6 +426,8 @@ mod tests {
             db: PgPoolOptions::new()
                 .connect_lazy("postgres://dmsx:dmsx@127.0.0.1:5432/dmsx")
                 .expect("lazy pool"),
+            redis_url: None,
+            command_jetstream: None,
             livekit_url: "ws://127.0.0.1:7880".to_string(),
             livekit_api_key: "test-livekit-key".to_string(),
             livekit_api_secret: "test-livekit-secret".to_string(),

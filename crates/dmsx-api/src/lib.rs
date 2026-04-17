@@ -1,5 +1,7 @@
 pub mod auth;
 
+mod command_jetstream;
+mod result_jetstream_ingest;
 mod db_rls;
 mod desktop;
 mod handlers;

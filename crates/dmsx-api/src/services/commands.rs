@@ -61,6 +61,9 @@ pub async fn create_command(
     .await
     .ok();
     tx.commit().await.map_err(map_db_error)?;
+    if let Some(js) = &st.command_jetstream {
+        js.publish_command_created(&command);
+    }
     Ok(command)
 }
 
@@ -118,6 +121,9 @@ pub async fn create_device_action_command(
     .await
     .ok();
     tx.commit().await.map_err(map_db_error)?;
+    if let Some(js) = &st.command_jetstream {
+        js.publish_command_created(&command);
+    }
     Ok(command)
 }
 

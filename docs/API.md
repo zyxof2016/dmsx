@@ -6,7 +6,7 @@
 
 **远程桌面**：音视频与键鼠控制走 **LiveKit WebRTC**（浏览器 `livekit-client` 订阅、Agent SDK 发布）；`dmsx-api` 负责会话创建、LiveKit JWT 签发，并通过命令队列触发 Agent `start_desktop` / `stop_desktop`。**不再提供**经 `dmsx-api` 的桌面 JPEG WebSocket 中继端点。
 
-**认证**：除 `/health`、`/ready` 外，管理接口需 `Authorization: Bearer <JWT>`（路径 `{tenant_id}` 须被该 JWT 允许；`GET /v1/config/livekit` 需 **PlatformAdmin**）。OpenAPI 根级 **`security: [bearerAuth]`**，并在各操作中声明 **`401` / `403`**；资源类接口另声明 **`404`**；各操作另声明 **`500`**（内部错误）。上述错误均复用 `components.responses` 与 **`ProblemDetails`**（见 `openapi/dmsx-control-plane.yaml`）。
+**认证**：除 `/health`、`/ready` 外，管理接口需 `Authorization: Bearer <JWT>`（路径 `{tenant_id}` 须被该 JWT 允许；`GET /v1/config/livekit`、`GET/PUT /v1/config/settings/{key}`、`GET /v1/config/rbac/roles` 需 **PlatformAdmin**）。OpenAPI 根级 **`security: [bearerAuth]`**，并在各操作中声明 **`401` / `403`**；资源类接口另声明 **`404`**；各操作另声明 **`500`**（内部错误）。上述错误均复用 `components.responses` 与 **`ProblemDetails`**（见 `openapi/dmsx-control-plane.yaml`）。
 
 **请求关联**：服务端会为每个请求生成或透传 `X-Request-Id`，并在响应中返回同名 header，便于排障时将客户端错误与服务端日志关联。
 
@@ -50,7 +50,7 @@
 
 ### 租户与组织结构
 
-> **实现状态**：下列 **POST** 已在 `dmsx-api` 注册并与 **OpenAPI** 对齐。`POST /v1/tenants` 与 `GET /v1/config/livekit` 同级 RBAC：**仅 `PlatformAdmin`**（`jwt` 模式；`disabled` 不校验）。其余创建路径在 **`jwt` 模式**下需 **`TenantAdmin`**（或更高）且路径 `{tid}` 属于 JWT 许可租户集合；请求体字段 **`name`** 长度 1–200。站点创建要求 **`org_id`** 属于该租户；设备组创建要求 **`site_id`** 属于该租户（否则 **400**）。名称在同一父级下违反唯一约束时 **409**。
+> **实现状态**：下列 **POST** 已在 `dmsx-api` 注册并与 **OpenAPI** 对齐。`POST /v1/tenants`、`GET /v1/config/livekit`、`GET/PUT /v1/config/settings/{key}`、`GET /v1/config/rbac/roles` 同级 RBAC：**仅 `PlatformAdmin`**（`jwt` 模式；`disabled` 不校验）。其余创建路径在 **`jwt` 模式**下需 **`TenantAdmin`**（或更高）且路径 `{tid}` 属于 JWT 许可租户集合；请求体字段 **`name`** 长度 1–200。站点创建要求 **`org_id`** 属于该租户；设备组创建要求 **`site_id`** 属于该租户（否则 **400**）。名称在同一父级下违反唯一约束时 **409**。
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
@@ -97,6 +97,7 @@
 | GET/POST | `/v1/tenants/{tid}/policies` | 列表 / 创建策略 |
 | GET/PATCH/DELETE | `/v1/tenants/{tid}/policies/{pid}` | 查询 / 更新 / 删除单条策略 |
 | POST | `/v1/tenants/{tid}/policies/{pid}/revisions` | 发布新版本（body 仅 `spec` 对象会写入 revision；`rollout` 由库表默认值或后续扩展填充，当前请求体可不传） |
+| POST | `/v1/tenants/{tid}/policies/editor` | 创建策略并发布新版本（由 `{scope_kind, scope_expr}` 直接生成 revision `spec`） |
 
 ### 命令管理
 
@@ -107,12 +108,35 @@
 | PATCH | `/v1/tenants/{tid}/commands/{cid}/status` | 更新命令状态（Agent 回报） |
 | GET/POST | `/v1/tenants/{tid}/commands/{cid}/result` | 查询 / 提交命令执行结果（exit_code / stdout / stderr） |
 
+当配置了 **`DMSX_NATS_URL`** 且未关闭 **`DMSX_NATS_JETSTREAM_ENABLED`** 时，`dmsx-api` 在命令行成功写入 Postgres 并提交事务后，会将完整 `Command` JSON **异步**发布到 NATS JetStream：subject **`dmsx.command.{tenant_id}.{target_device_id}`**，stream 默认 **`DMSX_COMMANDS`**（subjects **`dmsx.command.>`**）。发布失败不影响 HTTP 成功语义（仅记日志）；环境变量见 [`DEPLOYMENT.md`](DEPLOYMENT.md)。
+
+同一条件下，控制面还会启动 **命令回执 JetStream ingest**：消费 subject **`dmsx.command.result.{tenant_id}.{target_device_id}`** 上的 JSON（字段与 `POST .../commands/{cid}/result` 请求体对齐：`tenant_id`、`device_id`、`command_id`、`exit_code`、`stdout`、`stderr`、`evidence_key`），在校验 `commands` 行与消息中的租户/设备一致后，调用与 HTTP 相同的入库路径。恶意/不匹配消息 **TERM** 丢弃；瞬时 DB 失败 **NAK** 重试。可选环境变量 **`DMSX_NATS_RESULT_CONSUMER`**（默认 `dmsx-api-result-ingest`）指定 durable consumer 名称。
+
 ### 制品与合规
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET/POST | `/v1/tenants/{tid}/artifacts` | 制品列表（分页）/ 创建元数据（**201** 返回完整 `Artifact` 行；非预签名上传 URL） |
 | GET | `/v1/tenants/{tid}/compliance/findings` | 合规发现列表（分页；支持 `search` / `severity` / `status`） |
+
+### 审计日志
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/v1/tenants/{tid}/audit-logs` | 审计日志列表（分页；支持 `action` / `resource_type` 筛选） |
+
+### 系统设置
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/v1/config/settings/{key}` | 获取平台全局 `system_settings`（JSON） |
+| PUT | `/v1/config/settings/{key}` | 更新平台全局 `system_settings`（JSON） |
+
+### RBAC 角色清单
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/v1/config/rbac/roles` | 返回后端内置 RBAC 角色定义（仅 `PlatformAdmin`） |
 
 ### AI 智慧管控
 
@@ -215,13 +239,13 @@ Content-Type: application/json
 | `Enroll` | unary | enrollment token + 设备公钥 → 签发证书 |
 | `Heartbeat` | unary | 存活与轻量遥测 |
 | `FetchDesiredState` | unary | 拉取当前策略 revision 与 `spec_json` |
-| `StreamCommands` | server stream | 服务端推送 `CommandEnvelope` |
-| `ReportResult` | unary | 命令执行结果与证据指针 |
-| `UploadEvidence` | client stream | 分块上传证据到对象存储（网关签发 `upload_token`） |
+| `StreamCommands` | server stream | 服务端推送 `CommandEnvelope`；当网关配置 **`DMSX_NATS_URL`** 且启用 JetStream 时，从与 `dmsx-api` 相同的 stream（默认 **`DMSX_COMMANDS`**）按 **`dmsx.command.{tenant_id}.{device_id}`** 拉取 `Command` JSON 并映射为 `CommandEnvelope`（未配置 NATS 时流为空，与旧 stub 一致） |
+| `ReportResult` | unary | 将执行结果发布到 JetStream **`dmsx.command.result.{tenant_id}.{device_id}`** 供 `dmsx-api` 入库；未配置 NATS 时响应 **`accepted=false`** |
+| `UploadEvidence` | client stream | 分块上传证据到对象存储（网关签发 `upload_token`）；首个 chunk 的 `device_id` 在 **mTLS 严格模式**下必须与客户端证书一致 |
 
 认证：**mTLS**（设备证书）+ 可选 per-RPC metadata `authorization: Bearer <session>`。
 
-**多租户隔离约定**：gRPC 消息体不含 `tenant_id`。设备身份通过 mTLS 客户端证书绑定到唯一 `device_id`，`device_id → tenant_id` 映射在 enrollment 时建立并存储在服务端。网关根据证书自动填充 `tenant_id`，不信任客户端传入。
+**多租户与身份**：`ReportResultRequest` / `StreamCommandsRequest` 含可选 **`tenant_id`**。在 **mTLS 严格模式**（网关配置 **`DMSX_GW_TLS_CLIENT_CA`** 且未设置 **`DMSX_GW_TLS_CLIENT_AUTH_OPTIONAL`**）下，客户端证书 SAN 必须包含 URI **`urn:dmsx:tenant:{uuid}:device:{uuid}`**；服务端以证书为准校验 RPC 中的 **`device_id`**（及显式 **`tenant_id`**，若携带）与证书一致。**未启用 mTLS 时**须在 RPC 中显式提供合法 **`tenant_id` UUID**（开发/过渡场景；生产应走 mTLS）。
 
 ---
 

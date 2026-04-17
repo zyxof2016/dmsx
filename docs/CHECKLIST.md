@@ -202,7 +202,7 @@
 - [x] 路径 `{tenant_id}` 与 JWT 许可集合及 RBAC（`tenant_id` ∪ `allowed_tenant_ids`；`tenant_roles` 按活动租户覆盖 `roles`；见 [`API.md`](API.md)）
 - [x] 速率限制（per-tenant：可通过 `DMSX_API_RATE_LIMIT_ENABLED` / `DMSX_API_RATE_LIMIT_PER_SECOND` / `DMSX_API_RATE_LIMIT_BURST` 配置，超限返回 429 ProblemDetails）
 - [x] 请求体大小限制（`DMSX_API_REQUEST_BODY_LIMIT_BYTES`，超限返回 413 ProblemDetails）
-- [ ] CORS 生产配置
+- [x] CORS 生产配置（按 `DMSX_API_CORS_ALLOWED_ORIGINS`/`DMSX_API_CORS_ALLOW_ALL` 配置 `tower-http CorsLayer`；非 `dev` 且未配置来源将拒绝跨域）
 
 ### 持久化
 
@@ -211,9 +211,9 @@
 - [x] AppState 注入 + 环境变量配置（`DATABASE_URL` / `LIVEKIT_URL` / `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET`）
 - [x] 启动时自动运行 sqlx migrations
 - [x] CORS 中间件（`tower-http CorsLayer`）
-- [ ] ClickHouse 客户端接入（审计/遥测写入）
-- [ ] Redis 接入（缓存 / 在线状态 / 分布式锁）
-- [ ] NATS JetStream 接入（命令投递 / 回执流）
+- [~] ClickHouse 客户端接入（审计写入 `audit_events`：当配置 `DMSX_CLICKHOUSE_HTTP_URL` 时每次 `audit_logs` 写入会异步写入；遥测/心跳/命令回执明细待补）
+- [~] Redis 接入（当前用于桌面会话映射持久化：`session_id → {tenant_id, device_id}` + `device_id → session_id`；缓存/在线状态/分布式锁待扩展）
+- [~] NATS JetStream 接入（**API**：命令在 Postgres 提交成功后异步发布 `dmsx.command.{tenant_id}.{device_id}`；**回执 ingest**：消费 `dmsx.command.result.>`（durable consumer，默认名见 `DMSX_NATS_RESULT_CONSUMER`）并与 HTTP `submit_command_result` 对齐写库，跨租户伪造消息 **TERM**；**网关**：`StreamCommands` pull 过滤 `dmsx.command.{tenant_id}.{device_id}`；`ReportResult` 发布 `dmsx.command.result.{tenant_id}.{device_id}`；**验证**：compose 起 NATS 后配置 `DMSX_NATS_URL`，`cargo check -p dmsx-api -p dmsx-device-gw`，联调 `nats sub 'dmsx.command.>'` / `nats sub 'dmsx.command.result.>'`）
 - [ ] S3 / MinIO 接入（制品上传预签名）
 
 ---
@@ -224,19 +224,19 @@
 
 - [~] `Enroll` — 返回 `UNIMPLEMENTED`（待接 CA）
 - [x] `Heartbeat` — 返回服务器时间
-- [~] `FetchDesiredState` — 返回空策略（stub）
-- [~] `StreamCommands` — 返回空流（stub）
-- [x] `ReportResult` — 接收并记录日志
-- [~] `UploadEvidence` — 消费流 + 256 MiB 限制（未持久化）
+- [~] `FetchDesiredState` — 返回空策略（stub；已做 mTLS device_id 校验）
+- [~] `StreamCommands` — JetStream pull，`filter_subject=dmsx.command.{tenant_id}.{device_id}`；mTLS SAN 与 RPC 对齐（见 `docs/DEPLOYMENT.md`）；背压/有序投递待补
+- [x] `ReportResult` — 发布 JetStream `dmsx.command.result.{tenant_id}.{device_id}`（无 NATS 时 `accepted=false`）
+- [~] `UploadEvidence` — 消费流 + 256 MiB 限制 + 首包 `device_id` mTLS 校验（未持久化）
 - [x] gRPC Health Check（`grpc.health.v1.Health`）
 
 ### 基础设施
 
 - [x] 监听地址可配置（`DMSX_GW_BIND` 环境变量）
-- [ ] mTLS 启用
+- [x] mTLS 启用（`DMSX_GW_TLS_CERT`/`KEY`/`CLIENT_CA` + tonic `ServerTlsConfig`；可选 `DMSX_GW_TLS_CLIENT_AUTH_OPTIONAL`）
 - [ ] 连接限流 / 背压
-- [ ] 设备身份校验（证书 → device_id → tenant_id）
-- [ ] NATS JetStream 接入（命令推送 / 回执转发）
+- [x] 设备身份校验（客户端证书 SAN `urn:dmsx:tenant:{uuid}:device:{uuid}` 与 RPC `device_id`/`tenant_id` 交叉校验）
+- [~] NATS JetStream 接入（命令 + 回执 subject 已贯通；观测/重放策略与其它 RPC 待补）
 - [ ] OpenTelemetry 追踪注入
 
 ---
@@ -245,7 +245,7 @@
 
 - [x] `proto/dmsx/agent.proto` — Agent 服务定义（6 RPC）
 - [x] `CommandStatusProto` / `DevicePlatformProto` 枚举（与 `dmsx-core` 对齐）
-- [x] 多租户隔离约定注释（`device_id → tenant_id` 服务端映射）
+- [x] 多租户隔离约定注释（`tenant_id` 可选字段 + mTLS SAN `urn:dmsx:tenant:…:device:…` 说明）
 - [x] `proto/grpc/health/v1/health.proto` — 标准 gRPC 健康检查
 
 ---
@@ -330,10 +330,10 @@
 - [x] 远程桌面面板（RemoteDesktop — LiveKit WebRTC 订阅 + Data Channel 键鼠 + 状态反馈 / 重连 + RustDesk 备选）
 - [x] 策略详情抽屉（完整信息 + 作用域字段）
 - [x] 命令详情抽屉（payload JSON 高亮、状态标签、目标设备信息 + 执行结果展示 exit_code/stdout/stderr）
-- [ ] 系统设置页面
-- [ ] 策略编辑器（JSON Schema 表单 / Monaco Editor）
-- [ ] 审计日志查看页
-- [ ] 用户 / 角色管理页
+- [x] 系统设置页面（已接入后端：`GET/PUT /v1/config/settings/{key}`；前端支持在 `localStorage['dmsx.jwt']` 注入 `Authorization`）
+- [x] 策略编辑器（已接入后端保存：`POST /v1/tenants/{tid}/policies/editor`；前端支持在 `localStorage['dmsx.jwt']` 注入 `Authorization`）
+- [x] 审计日志查看页（已接入后端：`GET /v1/tenants/{tid}/audit-logs`；前端支持在 `localStorage['dmsx.jwt']` 注入 `Authorization`）
+- [~] 用户 / 角色管理页（UI 框架 + 表格渲染；后端仅提供 RBAC 角色清单：`GET /v1/config/rbac/roles`；用户/角色管理（CRUD）仍未接入）
 
 ---
 
@@ -341,6 +341,7 @@
 
 - [x] OpenAPI `paths` 与 `dmsx-api` 已注册路由对齐（已移除未实现的租户/组织/站点/组 POST 占位路径）
 - [x] `GET /v1/config/livekit`、`POST/DELETE .../devices/{did}/desktop/session`（与当前远程桌面主链路一致）
+- [x] `GET /v1/tenants/{tid}/audit-logs`、`POST /v1/tenants/{tid}/policies/editor`、`GET/PUT /v1/config/settings/{key}`、`GET /v1/config/rbac/roles` 已写入 OpenAPI
 - [x] `ProblemDetails` 错误 schema
 - [x] `CommandCreate` / `ListResponseDevice` / `Device` / `Command` / `ShadowResponse` / `Policy` / `PolicyRevision` / `ListResponsePolicy` 等核心 schema（OpenAPI）
 - [x] 设备影子、远控动作、设备/租户命令列表、命令状态与结果、统计、策略 CRUD + revision、AI 请求体等已写入 OpenAPI

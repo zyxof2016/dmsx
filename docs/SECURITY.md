@@ -24,6 +24,13 @@
 - 东西向：服务网格 **mTLS**（Istio/Linkerd）或自签 SPIFFE/SVID。
 - gRPC：禁止明文；设备网关独立 LB，**按租户速率限制**。
 
+## 消息总线（NATS JetStream）
+
+- `dmsx-api` 在命令行成功提交 Postgres 后，可将完整 **`Command` JSON** 异步发布到 JetStream（subject **`dmsx.command.{tenant_id}.{target_device_id}`**）；设备网关可将命令回执发布到 **`dmsx.command.result.{tenant_id}.{target_device_id}`**，由控制面 **durable consumer** 消费并写入 Postgres（入库前校验命令行所属租户/设备与消息一致）。载荷可能包含运维动作参数，应视为**敏感控制面数据**。
+- **部署**：NATS 放在受控 VPC/内网；对跨节点流量启用 **TLS**（`tls://` 或 sidecar 终止）与 **认证/授权**（NATS Accounts、JWT、NKeys 等，按你平台标准选择）。
+- **网络**：通过 **NetworkPolicy / 安全组** 限制仅 `dmsx-api`、`dmsx-device-gw`、观测与运维工具可访问 JetStream 端口；避免将 4222 暴露到公网。
+- **网关**：生产应启用 **gRPC TLS + 客户端 CA（mTLS）**；证书 SAN URI（`urn:dmsx:tenant:…:device:…`）与 RPC `device_id` / `tenant_id` 由服务端交叉校验；JetStream subject 使用解析后的租户与设备 UUID，避免仅凭不可信字符串订阅或发布。
+
 ## 审计与不可篡改
 
 - 所有管理 API 写操作产生 **AuditLog**（Postgres 权威）。

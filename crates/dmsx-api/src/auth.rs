@@ -313,6 +313,15 @@ impl AuthContext {
     pub fn is_platform_admin(&self) -> bool {
         self.roles.iter().any(|r| r == "PlatformAdmin")
     }
+
+    /// NATS JetStream 命令回执入库：固定 subject，租户来自消息体；用于 RLS 会话变量与审计 actor。
+    pub fn nats_jetstream_command_result(tenant_id: Uuid) -> Self {
+        Self {
+            subject: "nats-jetstream:command-result".to_string(),
+            tenant_id,
+            roles: vec!["TenantAdmin".to_string()],
+        }
+    }
 }
 
 fn jwt_permitted_tenant_ids(claims: &JwtClaims) -> HashSet<Uuid> {
@@ -448,7 +457,7 @@ fn is_read_request(method: &Method) -> bool {
 }
 
 fn classify_resource(path: &str) -> ResourceKind {
-    if path == "/v1/config/livekit" || path == "/v1/tenants" {
+    if path == "/v1/tenants" || path.starts_with("/v1/config/") {
         return ResourceKind::GlobalConfig;
     }
     if path.ends_with("/stats") {
@@ -858,6 +867,8 @@ mod tests {
             db: PgPoolOptions::new()
                 .connect_lazy("postgres://dmsx:dmsx@127.0.0.1:5432/dmsx")
                 .expect("lazy pool"),
+            redis_url: None,
+            command_jetstream: None,
             livekit_url: "ws://127.0.0.1:7880".to_string(),
             livekit_api_key: "key".to_string(),
             livekit_api_secret: "secret".to_string(),

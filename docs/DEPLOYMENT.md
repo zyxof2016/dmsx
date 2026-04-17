@@ -230,12 +230,37 @@ spec:
 | `DMSX_API_REQUEST_TIMEOUT_SECONDS` | `30` | 全局请求超时（秒）；用于防止下游卡死导致资源耗尽 |
 | `DMSX_API_CONCURRENCY_LIMIT_ENABLED` | `false` | 是否启用全局并发上限（建议在公网/大流量入口开启） |
 | `DMSX_API_CONCURRENCY_LIMIT` | `1024` | 全局并发上限（启用时生效；下限 1） |
+| `DMSX_API_CORS_ALLOWED_ORIGINS` | （未设置） | 允许的 CORS 来源（逗号分隔，完整 scheme+host+port，如 `https://admin.example.com,http://localhost:3000`）。未设置且非 `dev` 环境将拒绝所有跨域请求（浏览器侧阻断）。 |
+| `DMSX_API_CORS_ALLOW_ALL` | `false` | 是否放开所有 CORS 来源（dev-like）；设置为 `1/true/yes` 时 `DMSX_API_CORS_ALLOWED_ORIGINS` 将被忽略。 |
+| `DMSX_CLICKHOUSE_HTTP_URL` | （未设置） | ClickHouse HTTP 接口地址（未设置则不写入 CH）。示例：`http://127.0.0.1:8123` |
+| `DMSX_CLICKHOUSE_HTTP_USER` / `DMSX_CLICKHOUSE_HTTP_PASSWORD` | （可选） | ClickHouse HTTP Basic Auth 用户名/密码；仅当上述 URL 配置了且两项都存在时才启用 |
+| `DMSX_REDIS_URL` | （未设置） | Redis URL（未设置则不使用缓存/持久化）。当前用于桌面会话映射持久化：`session_id → {tenant_id, device_id}` 与 `device_id → session_id` |
+| `DMSX_NATS_URL` | （未设置） | NATS 服务端地址（未设置则不发布命令到 JetStream）。示例：`nats://127.0.0.1:4222` |
+| `DMSX_NATS_JETSTREAM_ENABLED` | `true` | 是否启用 JetStream 命令发布；`0`/`false`/`no`/`off` 为关闭 |
+| `DMSX_NATS_COMMAND_STREAM` | `DMSX_COMMANDS` | JetStream stream 名称；启动时 `get_or_create`，subjects 固定为 `dmsx.command.>` |
+| `DMSX_NATS_RESULT_CONSUMER` | `dmsx-api-result-ingest` | 命令回执 JetStream **durable pull** consumer 名称（`filter_subject=dmsx.command.result.>`）；多副本 `dmsx-api` 共享同一 consumer 时分摊消费 |
 | `DMSX_API_METRICS_ENABLED` | `true` | 是否启用 `GET /metrics`（关闭时返回 **404**） |
 | `DMSX_API_METRICS_BEARER` | （可选） | 若设置，则访问 `GET /metrics` 必须携带完全匹配的 `Authorization: Bearer ...`（不匹配返回 **401**）；建议配合 Ingress/NetworkPolicy 仅集群内暴露 |
 
 当启用了 OIDC/JWKS（设置了 `DMSX_API_OIDC_DISCOVERY_URL` 或 `DMSX_API_JWKS_URL`）时，`dmsx-api` 会要求同时配置 **`DMSX_API_JWT_ISSUER` 与 `DMSX_API_JWT_AUDIENCE`**，避免接受来自非预期签发方/受众的令牌。
 
 启用 `jwt` 时，管理台或 BFF 签发的访问令牌须与 **OpenAPI `bearerAuth`** 及 **[`API.md`](API.md)** 中的多租户 / 按租户 RBAC 约定一致，否则路径租户或写操作将返回 **403**。
+
+## 环境变量（dmsx-device-gw）
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `DMSX_GW_BIND` | `0.0.0.0:50051` | gRPC 监听地址 |
+| `DMSX_GW_TLS_CERT` / `DMSX_GW_TLS_KEY` | （未设置） | 服务端证书与私钥 PEM 路径；**均设置**时启用 gRPC **TLS**（HTTP/2 over TLS） |
+| `DMSX_GW_TLS_CLIENT_CA` | （未设置） | 校验客户端证书的 CA PEM 路径；设置后默认 **要求** 客户端证书（mTLS）；与 `DMSX_GW_TLS_CLIENT_AUTH_OPTIONAL` 联用 |
+| `DMSX_GW_TLS_CLIENT_AUTH_OPTIONAL` | `false` | `1`/`true`/`yes`/`on` 时：在已配置 `DMSX_GW_TLS_CLIENT_CA` 的前提下仍允许匿名客户端（**不推荐生产**） |
+| `DMSX_NATS_URL` | （未设置） | 与 `dmsx-api` 相同的 NATS 地址；**未设置**时 `StreamCommands` 仍返回空流；`ReportResult` 返回 **`accepted=false`**（不落库） |
+| `DMSX_NATS_JETSTREAM_ENABLED` | `true` | 与 API 一致；关闭时不从 JetStream 拉命令、不发布回执 |
+| `DMSX_NATS_COMMAND_STREAM` | `DMSX_COMMANDS` | 与 API 相同的 stream 名；网关会 `get_or_create_stream`（与 API 幂等） |
+
+`StreamCommands`：对每个 gRPC 流创建 **ephemeral pull consumer**，在解析出 **`tenant_id` + `device_id`** 后使用 **`filter_subject=dmsx.command.{tenant_id}.{device_id}`**（租户在 **mTLS 严格模式**下可由证书 SAN 推出，否则须在 `StreamCommandsRequest.tenant_id` 中显式携带 UUID）；`deliver_policy=new`，消息体为 `dmsx-api` 发布的 **`Command` JSON**；成功推送到 gRPC 客户端后再 **ACK**；客户端断开则 **NAK** 以便重投。
+
+`ReportResult`：在 NATS/JetStream 可用时将 JSON 发布到 **`dmsx.command.result.{tenant_id}.{device_id}`**（与 `dmsx-api` 后台 ingest 约定一致）。**mTLS 严格模式**（已配置 `DMSX_GW_TLS_CLIENT_CA` 且未开启 `DMSX_GW_TLS_CLIENT_AUTH_OPTIONAL`）下，客户端证书 SAN 须含 URI **`urn:dmsx:tenant:{uuid}:device:{uuid}`**，且与 RPC 中的 `tenant_id` / `device_id` 一致。
 
 ## 环境变量（dmsx-agent）
 
