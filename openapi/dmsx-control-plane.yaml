@@ -7,6 +7,18 @@ info:
 
     已覆盖：健康检查、**租户创建**、**组织/站点/设备组创建**、租户统计、设备 CRUD 与列表筛选、设备影子、远控动作、设备维度命令历史、租户命令列表与生命周期、策略 CRUD 与发布 revision、**制品列表/创建**、**合规发现列表**、LiveKit 配置、远程桌面会话、AI 四类接口。
 
+    ---
+
+    ## 数据面 gRPC（说明）
+
+    本 OpenAPI 仅描述**控制面 HTTP**（`dmsx-api`）契约；设备长连接数据面由 `dmsx-device-gw` 提供 **gRPC**（`proto/dmsx/agent.proto`，包名 `dmsx.agent.v1`，服务 `AgentService`），不在本 OpenAPI 的 `paths` 中展开。
+
+    **认证与身份**：生产建议启用 **mTLS**（网关配置 `DMSX_GW_TLS_CLIENT_CA`）。在 mTLS 严格模式下，客户端证书 SAN 必须包含 URI `urn:dmsx:tenant:{uuid}:device:{uuid}`，网关以证书为准校验每个 RPC 中的 `device_id`（及显式 `tenant_id`，若携带）与证书一致。
+
+    **JetStream 命令与回执**：
+    - 命令下发：控制面在命令写入 Postgres 并提交后异步发布到 NATS JetStream，subject `dmsx.command.{tenant_id}.{device_id}`（stream 默认 `DMSX_COMMANDS`，subjects `dmsx.command.>`）。
+    - 回执入库：网关将命令执行结果发布到 `dmsx.command.result.{tenant_id}.{device_id}`；控制面以 durable pull consumer 消费（默认 `DMSX_NATS_RESULT_CONSUMER=dmsx-api-result-ingest`）并与 `POST /v1/tenants/{tid}/commands/{cid}/result` 语义对齐写库。
+
     **认证**：根级 `security: [bearerAuth]`；`/health` 与 `/ready` 使用 `security: []`。JWT 可选 **`allowed_tenant_ids`**（路径租户白名单）与可选 **`tenant_roles`**（按租户覆盖 RBAC，见 `components.securitySchemes.bearerAuth`）。开发环境可将 `DMSX_API_AUTH_MODE=disabled` 关闭校验。
 
     **错误**：多数操作声明 `401` / `403`；资源不存在声明 `404`。带请求体的写操作声明 **`400`**（`DmsxError::Validation` → HTTP 400，Problem Details 的 title 为 **Bad Request**；**当前实现不使用 422**）。部分创建类 POST 另声明 **`409`**（`DmsxError::Conflict`）。**`500`**（`DmsxError::Internal` 等未预期故障）在各操作声明。上述响应均复用 `ProblemDetails` schema。
