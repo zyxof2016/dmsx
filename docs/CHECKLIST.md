@@ -235,6 +235,7 @@
 - [x] 监听地址可配置（`DMSX_GW_BIND` 环境变量）
 - [x] mTLS 启用（`DMSX_GW_TLS_CERT`/`KEY`/`CLIENT_CA` + tonic `ServerTlsConfig`；可选 `DMSX_GW_TLS_CLIENT_AUTH_OPTIONAL`）
 - [~] 连接限流 / 背压（已接 `concurrency_limit_per_connection`：`DMSX_GW_CONCURRENCY_PER_CONNECTION`；更细粒度背压/速率限制待补）
+- [~] 按租户速率限制（`DMSX_GW_RATE_LIMIT_*`，内存内 keyed limiter；多副本按 Pod 分摊）
 - [x] 设备身份校验（客户端证书 SAN `urn:dmsx:tenant:{uuid}:device:{uuid}` 与 RPC `device_id`/`tenant_id` 交叉校验）
 - [~] NATS JetStream 接入（命令 + 回执 subject 已贯通；观测/重放策略与其它 RPC 待补）
 - [ ] OpenTelemetry 追踪注入

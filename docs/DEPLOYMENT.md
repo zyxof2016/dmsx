@@ -255,6 +255,9 @@ spec:
 | `DMSX_GW_TLS_CERT` / `DMSX_GW_TLS_KEY` | （未设置） | 服务端证书与私钥 PEM 路径；**均设置**时启用 gRPC **TLS**（HTTP/2 over TLS） |
 | `DMSX_GW_TLS_CLIENT_CA` | （未设置） | 校验客户端证书的 CA PEM 路径；设置后默认 **要求** 客户端证书（mTLS）；与 `DMSX_GW_TLS_CLIENT_AUTH_OPTIONAL` 联用 |
 | `DMSX_GW_TLS_CLIENT_AUTH_OPTIONAL` | `false` | `1`/`true`/`yes`/`on` 时：在已配置 `DMSX_GW_TLS_CLIENT_CA` 的前提下仍允许匿名客户端（**不推荐生产**） |
+| `DMSX_GW_RATE_LIMIT_ENABLED` | `false` | 是否启用**按租户**的 gRPC 速率限制（内存内实现；多副本按 Pod 分摊） |
+| `DMSX_GW_RATE_LIMIT_PER_SECOND` | `100` | 每租户每秒允许的请求起始配额（下限 1） |
+| `DMSX_GW_RATE_LIMIT_BURST` | `200` | 每租户突发容量（下限 1） |
 | `DMSX_NATS_URL` | （未设置） | 与 `dmsx-api` 相同的 NATS 地址；**未设置**时 `StreamCommands` 仍返回空流；`ReportResult` 返回 **`accepted=false`**（不落库） |
 | `DMSX_NATS_JETSTREAM_ENABLED` | `true` | 与 API 一致；关闭时不从 JetStream 拉命令、不发布回执 |
 | `DMSX_NATS_COMMAND_STREAM` | `DMSX_COMMANDS` | 与 API 相同的 stream 名；网关会 `get_or_create_stream`（与 API 幂等） |
