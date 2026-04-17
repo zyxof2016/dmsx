@@ -251,16 +251,22 @@ spec:
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
 | `DMSX_GW_BIND` | `0.0.0.0:50051` | gRPC 监听地址 |
+| `DMSX_GW_CONCURRENCY_PER_CONNECTION` | `64` | 每个 gRPC 连接的并发请求上限（tonic `concurrency_limit_per_connection`） |
 | `DMSX_GW_TLS_CERT` / `DMSX_GW_TLS_KEY` | （未设置） | 服务端证书与私钥 PEM 路径；**均设置**时启用 gRPC **TLS**（HTTP/2 over TLS） |
 | `DMSX_GW_TLS_CLIENT_CA` | （未设置） | 校验客户端证书的 CA PEM 路径；设置后默认 **要求** 客户端证书（mTLS）；与 `DMSX_GW_TLS_CLIENT_AUTH_OPTIONAL` 联用 |
 | `DMSX_GW_TLS_CLIENT_AUTH_OPTIONAL` | `false` | `1`/`true`/`yes`/`on` 时：在已配置 `DMSX_GW_TLS_CLIENT_CA` 的前提下仍允许匿名客户端（**不推荐生产**） |
 | `DMSX_NATS_URL` | （未设置） | 与 `dmsx-api` 相同的 NATS 地址；**未设置**时 `StreamCommands` 仍返回空流；`ReportResult` 返回 **`accepted=false`**（不落库） |
 | `DMSX_NATS_JETSTREAM_ENABLED` | `true` | 与 API 一致；关闭时不从 JetStream 拉命令、不发布回执 |
 | `DMSX_NATS_COMMAND_STREAM` | `DMSX_COMMANDS` | 与 API 相同的 stream 名；网关会 `get_or_create_stream`（与 API 幂等） |
+| `DMSX_GW_ENROLL_HMAC_SECRET` | （未设置） | **内测 Enroll**：HMAC secret（启用 enrollment token 验证）；未设置则 `Enroll` 返回失败（failed_precondition） |
+| `DMSX_GW_ENROLL_CA_CERT` / `DMSX_GW_ENROLL_CA_KEY` | （未设置） | **内测 Enroll**：CA 证书/私钥 PEM 路径；用于签发设备客户端证书（`EnrollRequest.public_key_pem` 需为 **CSR PEM**） |
+| `DMSX_GW_ENROLL_CERT_TTL_DAYS` | `30` | **内测 Enroll**：签发证书有效期（天，1–3650） |
 
 `StreamCommands`：对每个 gRPC 流创建 **ephemeral pull consumer**，在解析出 **`tenant_id` + `device_id`** 后使用 **`filter_subject=dmsx.command.{tenant_id}.{device_id}`**（租户在 **mTLS 严格模式**下可由证书 SAN 推出，否则须在 `StreamCommandsRequest.tenant_id` 中显式携带 UUID）；`deliver_policy=new`，消息体为 `dmsx-api` 发布的 **`Command` JSON**；成功推送到 gRPC 客户端后再 **ACK**；客户端断开则 **NAK** 以便重投。
 
 `ReportResult`：在 NATS/JetStream 可用时将 JSON 发布到 **`dmsx.command.result.{tenant_id}.{device_id}`**（与 `dmsx-api` 后台 ingest 约定一致）。**mTLS 严格模式**（已配置 `DMSX_GW_TLS_CLIENT_CA` 且未开启 `DMSX_GW_TLS_CLIENT_AUTH_OPTIONAL`）下，客户端证书 SAN 须含 URI **`urn:dmsx:tenant:{uuid}:device:{uuid}`**，且与 RPC 中的 `tenant_id` / `device_id` 一致。
+
+`Enroll`（内测实现）：验证 enrollment token（`v1.<payload_b64url>.<sig_b64url>`，HMAC-SHA256 over `payload_b64url`），并使用 CA 签发设备客户端证书；证书 SAN 写入 `urn:dmsx:tenant:{tenant_id}:device:{device_id}`。当前 `EnrollRequest.public_key_pem` 在内测实现中要求为 **PKCS#10 CSR PEM**（历史字段名保留，后续可协议升级为 `csr_pem`）。
 
 ## 环境变量（dmsx-agent）
 

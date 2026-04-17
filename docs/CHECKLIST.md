@@ -222,7 +222,7 @@
 
 ### RPC
 
-- [~] `Enroll` — 返回 `UNIMPLEMENTED`（待接 CA）
+- [~] `Enroll` — 内测 CA 签发证书（HMAC enrollment token + CSR；SAN `urn:dmsx:tenant:{tid}:device:{did}`）；生产级 CA 集成/吊销待补
 - [x] `Heartbeat` — 返回服务器时间
 - [~] `FetchDesiredState` — 返回空策略（stub；已做 mTLS device_id 校验）
 - [~] `StreamCommands` — JetStream pull，`filter_subject=dmsx.command.{tenant_id}.{device_id}`；mTLS SAN 与 RPC 对齐（见 `docs/DEPLOYMENT.md`）；背压/有序投递待补
@@ -234,7 +234,7 @@
 
 - [x] 监听地址可配置（`DMSX_GW_BIND` 环境变量）
 - [x] mTLS 启用（`DMSX_GW_TLS_CERT`/`KEY`/`CLIENT_CA` + tonic `ServerTlsConfig`；可选 `DMSX_GW_TLS_CLIENT_AUTH_OPTIONAL`）
-- [ ] 连接限流 / 背压
+- [~] 连接限流 / 背压（已接 `concurrency_limit_per_connection`：`DMSX_GW_CONCURRENCY_PER_CONNECTION`；更细粒度背压/速率限制待补）
 - [x] 设备身份校验（客户端证书 SAN `urn:dmsx:tenant:{uuid}:device:{uuid}` 与 RPC `device_id`/`tenant_id` 交叉校验）
 - [~] NATS JetStream 接入（命令 + 回执 subject 已贯通；观测/重放策略与其它 RPC 待补）
 - [ ] OpenTelemetry 追踪注入
