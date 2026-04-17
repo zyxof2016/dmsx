@@ -11,7 +11,8 @@ use uuid::Uuid;
 use crate::auth::AuthContext;
 use crate::dto::*;
 use crate::services::{
-    artifacts, commands, compliance, devices, hierarchy, policies, shadow, stats,
+    artifacts, audit, commands, compliance, devices, hierarchy, policies, shadow, stats,
+    system_settings,
 };
 use crate::state::AppState;
 
@@ -370,6 +371,108 @@ pub async fn compliance_list(
     Query(params): Query<FindingListParams>,
 ) -> ApiResult<Json<ListResponse<ComplianceFinding>>> {
     Ok(Json(compliance::list_findings(&st, &ctx, tid, &params).await?))
+}
+
+// ---------------------------------------------------------------------------
+// Admin / Observability / Config
+// ---------------------------------------------------------------------------
+
+pub async fn audit_logs_list(
+    State(st): State<AppState>,
+    Extension(ctx): Extension<AuthContext>,
+    Path(tid): Path<Uuid>,
+    Query(params): Query<AuditLogListParams>,
+) -> ApiResult<Json<ListResponse<crate::dto::AuditLog>>> {
+    Ok(Json(audit::list_audit_logs(&st, &ctx, tid, &params).await?))
+}
+
+pub async fn system_settings_get(
+    State(st): State<AppState>,
+    Extension(ctx): Extension<AuthContext>,
+    Path(key): Path<String>,
+) -> ApiResult<Json<SystemSetting>> {
+    let setting = system_settings::get_global_setting(&st, &ctx, &key)
+        .await?
+        .ok_or_else(|| DmsxError::NotFound(format!("system setting '{key}'")))?;
+    Ok(Json(setting))
+}
+
+pub async fn system_settings_put(
+    State(st): State<AppState>,
+    Extension(ctx): Extension<AuthContext>,
+    Path(key): Path<String>,
+    Json(body): Json<SystemSettingUpsertReq>,
+) -> ApiResult<Json<SystemSetting>> {
+    Ok(Json(
+        system_settings::upsert_global_setting(&st, &ctx, &key, body).await?,
+    ))
+}
+
+pub async fn rbac_roles_list(
+    Extension(_ctx): Extension<AuthContext>,
+) -> ApiResult<Json<Vec<RbacRole>>> {
+    Ok(Json(vec![
+        RbacRole {
+            name: "PlatformAdmin".to_string(),
+        },
+        RbacRole {
+            name: "TenantAdmin".to_string(),
+        },
+        RbacRole {
+            name: "SiteAdmin".to_string(),
+        },
+        RbacRole {
+            name: "Operator".to_string(),
+        },
+        RbacRole {
+            name: "Auditor".to_string(),
+        },
+        RbacRole {
+            name: "ReadOnly".to_string(),
+        },
+    ]))
+}
+
+pub async fn policy_editor_create_and_publish(
+    State(st): State<AppState>,
+    Extension(ctx): Extension<AuthContext>,
+    Path(tid): Path<Uuid>,
+    Json(body): Json<PolicyEditorPublishReq>,
+) -> ApiResult<Response> {
+    body.validate()?;
+
+    let PolicyEditorPublishReq {
+        name,
+        description,
+        scope_kind,
+        scope_expr,
+    } = body;
+
+    let create_req = CreatePolicyReq {
+        name,
+        description,
+        scope_kind,
+    };
+
+    let policy = policies::create_policy(&st, &ctx, tid, &create_req).await?;
+
+    // Persist the full `scope_expr` into the revision `spec` so downstream evaluation
+    // can be enabled later without requiring additional schema changes.
+    let spec = json!({
+        "scope_kind": policy.scope_kind,
+        "scope_expr": scope_expr,
+    });
+
+    let revision = policies::publish_policy(
+        &st,
+        &ctx,
+        tid,
+        policy.id.0,
+        PublishPolicyReq { spec },
+    )
+    .await?;
+
+    Ok((StatusCode::CREATED, Json(revision)).into_response())
 }
 
 // ---------------------------------------------------------------------------

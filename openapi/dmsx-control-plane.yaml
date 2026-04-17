@@ -683,6 +683,35 @@ paths:
           $ref: '#/components/responses/Conflict'
         '500':
           $ref: '#/components/responses/InternalServerError'
+  /v1/tenants/{tenant_id}/policies/editor:
+    post:
+      summary: Create policy + publish revision from editor payload
+      operationId: createPolicyFromEditor
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PolicyEditorPublishReq'
+      responses:
+        '201':
+          description: Created — new policy revision row
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PolicyRevision'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
   /v1/tenants/{tenant_id}/commands:
     get:
       summary: List commands in tenant
@@ -970,6 +999,46 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '500':
           $ref: '#/components/responses/InternalServerError'
+  /v1/tenants/{tenant_id}/audit-logs:
+    get:
+      summary: List audit logs
+      operationId: listAuditLogs
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - name: limit
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 200
+          default: 50
+      - name: offset
+        in: query
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+      - name: action
+        in: query
+        schema:
+          type: string
+      - name: resource_type
+        in: query
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListResponseAuditLog'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
   /v1/tenants/{tenant_id}/ai/anomalies:
     post:
       summary: Run anomaly detection (stub / rule engine)
@@ -1094,6 +1163,61 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /v1/config/settings/{key}:
+    get:
+      summary: Get system setting (global)
+      operationId: getSystemSetting
+      parameters:
+      - name: key
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemSetting'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    put:
+      summary: Upsert system setting (global)
+      operationId: putSystemSetting
+      parameters:
+      - name: key
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SystemSettingUpsertReq'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemSetting'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '500':
           $ref: '#/components/responses/InternalServerError'
   /v1/tenants/{tenant_id}/devices/{device_id}/desktop/session:
@@ -1566,6 +1690,95 @@ components:
         offset:
           type: integer
           format: int64
+    AuditLog:
+      type: object
+      required:
+      - id
+      - created_at
+      - action
+      - resource_type
+      - resource_id
+      - payload
+      properties:
+        id:
+          type: string
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+        actor_user_id:
+          type: string
+          format: uuid
+          nullable: true
+        action:
+          type: string
+        resource_type:
+          type: string
+        resource_id:
+          type: string
+        payload:
+          type: object
+          additionalProperties: true
+    ListResponseAuditLog:
+      type: object
+      required:
+      - items
+      - total
+      - limit
+      - offset
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditLog'
+        total:
+          type: integer
+          format: int64
+        limit:
+          type: integer
+          format: int64
+        offset:
+          type: integer
+          format: int64
+    SystemSettingUpsertReq:
+      type: object
+      required:
+      - value
+      properties:
+        value:
+          type: object
+          additionalProperties: true
+    SystemSetting:
+      type: object
+      required:
+      - key
+      - value
+      - updated_at
+      properties:
+        key:
+          type: string
+        value:
+          type: object
+          additionalProperties: true
+        updated_at:
+          type: string
+          format: date-time
+    PolicyEditorPublishReq:
+      type: object
+      required:
+      - name
+      - scope_kind
+      - scope_expr
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        scope_kind:
+          $ref: '#/components/schemas/PolicyScopeKind'
+        scope_expr:
+          type: string
     ShadowResponse:
       type: object
       required:

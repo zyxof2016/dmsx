@@ -8,5 +8,6 @@ pub mod orgs;
 pub mod policies;
 pub mod shadow;
 pub mod sites;
+pub mod system_settings;
 pub mod stats;
 pub mod tenants;

@@ -91,6 +91,14 @@ spec:
             #     secretKeyRef:
             #       name: dmsx-api-secrets
             #       key: metrics_bearer
+            # Optional: JetStream — after a command row is committed, API publishes JSON to
+            # subject `dmsx.command.{tenant_id}.{device_id}` (stream default `DMSX_COMMANDS`, subjects `dmsx.command.>`).
+            # - name: DMSX_NATS_URL
+            #   value: "nats://nats.dmsx.svc.cluster.local:4222"
+            # - name: DMSX_NATS_JETSTREAM_ENABLED
+            #   value: "true"
+            # - name: DMSX_NATS_COMMAND_STREAM
+            #   value: "DMSX_COMMANDS"
           readinessProbe:
             httpGet:
               path: /ready

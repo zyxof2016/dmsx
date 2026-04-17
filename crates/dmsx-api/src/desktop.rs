@@ -17,6 +17,89 @@ use crate::desktop_helpers::{
 use crate::error::map_db_error;
 use crate::repo::commands as command_repo;
 use crate::state::{AppState, DesktopSession};
+use redis::AsyncCommands;
+
+fn desktop_session_key(session_id: &str) -> String {
+    format!("dmsx:desktop_sessions:{session_id}")
+}
+
+fn device_session_key(device_id: Uuid) -> String {
+    format!("dmsx:device_sessions:{device_id}")
+}
+
+async fn redis_set_session(
+    st: &AppState,
+    tenant_id: Uuid,
+    device_id: Uuid,
+    session_id: &str,
+) {
+    let Some(redis_url) = st.redis_url.as_deref() else {
+        return;
+    };
+
+    let client = match redis::Client::open(redis_url) {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::warn!(error = %e, "redis client open failed");
+            return;
+        }
+    };
+
+    let ds = DesktopSession {
+        tenant_id,
+        device_id,
+    };
+    let ds_json = match serde_json::to_string(&ds) {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::warn!(error = %e, "redis desktop session json serialize failed");
+            return;
+        }
+    };
+
+    // If Redis isn't reachable we intentionally ignore errors; PG + in-memory behavior stays intact.
+    if let Ok(mut conn) = client.get_multiplexed_async_connection().await {
+        let _: redis::RedisResult<()> = conn
+            .set(desktop_session_key(session_id), ds_json)
+            .await;
+        let _: redis::RedisResult<()> = conn
+            .set(device_session_key(device_id), session_id)
+            .await;
+    }
+}
+
+async fn redis_get_session(st: &AppState, session_id: &str) -> Option<DesktopSession> {
+    let Some(redis_url) = st.redis_url.as_deref() else {
+        return None;
+    };
+
+    let client = redis::Client::open(redis_url).ok()?;
+    let mut conn = client.get_multiplexed_async_connection().await.ok()?;
+
+    let key = desktop_session_key(session_id);
+    let json: Option<String> = conn.get(key).await.ok()?;
+    let ds: DesktopSession = serde_json::from_str(&json?).ok()?;
+    Some(ds)
+}
+
+async fn redis_delete_session(st: &AppState, session_id: &str, device_id: Uuid) {
+    let Some(redis_url) = st.redis_url.as_deref() else {
+        return;
+    };
+
+    let client = match redis::Client::open(redis_url) {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::warn!(error = %e, "redis client open failed");
+            return;
+        }
+    };
+
+    if let Ok(mut conn) = client.get_multiplexed_async_connection().await {
+        let _: redis::RedisResult<usize> = conn.del(desktop_session_key(session_id)).await;
+        let _: redis::RedisResult<usize> = conn.del(device_session_key(device_id)).await;
+    }
+}
 
 // ---------------------------------------------------------------------------
 // DTOs
@@ -86,6 +169,7 @@ pub async fn session_create(
 
     if let Some(old_session_id) = &stale_session_id {
         st.desktop_sessions.write().await.remove(old_session_id);
+        redis_delete_session(&st, old_session_id, did).await;
         enqueue_stop_command(&st, &ctx, tid, did, old_session_id.clone(), Some(5)).await?;
     }
 
@@ -122,6 +206,8 @@ pub async fn session_create(
             },
         );
 
+    redis_set_session(&st, tid, did, &session_id).await;
+
     enqueue_start_command(
         &st,
         &ctx,
@@ -156,14 +242,28 @@ pub async fn session_delete(
     Path((tid, did)): Path<(Uuid, Uuid)>,
     Query(query): Query<SessionDeleteQuery>,
 ) -> Result<impl IntoResponse, DmsxError> {
+    let session = {
+        let mut sessions = st.desktop_sessions.write().await;
+        if let Some(s) = sessions.get(&query.session_id).cloned() {
+            Some(s)
+        } else {
+            // Multi-instance / restart recovery: fall back to Redis mapping.
+            let s_opt = redis_get_session(&st, &query.session_id).await;
+            if let Some(ds) = s_opt.clone() {
+                sessions.insert(query.session_id.clone(), ds);
+            }
+            s_opt
+        }
+    }
+    .ok_or_else(|| DmsxError::NotFound("desktop session not found".into()))?;
+
+    // Tenant/device mismatch should not leak which sessions exist.
+    if session.tenant_id != tid || session.device_id != did {
+        return Err(DmsxError::NotFound("desktop session not found".into()));
+    }
+
     {
         let mut sessions = st.desktop_sessions.write().await;
-        let session = sessions
-            .get(&query.session_id)
-            .ok_or_else(|| DmsxError::NotFound("desktop session not found".into()))?;
-        if session.tenant_id != tid || session.device_id != did {
-            return Err(DmsxError::NotFound("desktop session not found".into()));
-        }
         sessions.remove(&query.session_id);
     }
 
@@ -171,6 +271,8 @@ pub async fn session_delete(
     if device_sessions.get(&did) == Some(&query.session_id) {
         device_sessions.remove(&did);
     }
+
+    redis_delete_session(&st, &query.session_id, did).await;
 
     enqueue_stop_command(&st, &ctx, tid, did, query.session_id, Some(10)).await?;
     Ok(StatusCode::NO_CONTENT)
@@ -231,10 +333,13 @@ async fn enqueue_start_command(
     let mut tx = db_rls::begin_rls_tx(&st.db, Some(tenant_id), ctx)
         .await
         .map_err(map_db_error)?;
-    command_repo::create_command(&mut *tx, tenant_id, &cmd)
+    let command = command_repo::create_command(&mut *tx, tenant_id, &cmd)
         .await
         .map_err(map_db_error)?;
     tx.commit().await.map_err(map_db_error)?;
+    if let Some(js) = &st.command_jetstream {
+        js.publish_command_created(&command);
+    }
     Ok(())
 }
 
@@ -251,9 +356,12 @@ async fn enqueue_stop_command(
     let mut tx = db_rls::begin_rls_tx(&st.db, Some(tenant_id), ctx)
         .await
         .map_err(map_db_error)?;
-    command_repo::create_command(&mut *tx, tenant_id, &cmd)
+    let command = command_repo::create_command(&mut *tx, tenant_id, &cmd)
         .await
         .map_err(map_db_error)?;
     tx.commit().await.map_err(map_db_error)?;
+    if let Some(js) = &st.command_jetstream {
+        js.publish_command_created(&command);
+    }
     Ok(())
 }

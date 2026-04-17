@@ -3,10 +3,12 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use uuid::Uuid;
+use serde::{Deserialize, Serialize};
 
 use crate::auth::AuthConfig;
+use crate::command_jetstream::CommandJetStream;
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct DesktopSession {
     pub tenant_id: Uuid,
     pub device_id: Uuid,
@@ -15,6 +17,8 @@ pub struct DesktopSession {
 #[derive(Clone)]
 pub struct AppState {
     pub db: PgPool,
+    pub redis_url: Option<String>,
+    pub command_jetstream: Option<Arc<CommandJetStream>>,
     pub livekit_url: String,
     pub livekit_api_key: String,
     pub livekit_api_secret: String,

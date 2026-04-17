@@ -1,5 +1,6 @@
 use dmsx_core::*;
 use serde::{Deserialize, Serialize};
+use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 // ---------------------------------------------------------------------------
@@ -491,6 +492,75 @@ pub struct SubmitCommandResultReq {
 // ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Admin / Observability / Config
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Serialize)]
+pub struct AuditLog {
+    pub id: Uuid,
+    pub created_at: DateTime<Utc>,
+    pub actor_user_id: Option<Uuid>,
+    pub action: String,
+    pub resource_type: String,
+    pub resource_id: String,
+    pub payload: serde_json::Value,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AuditLogListParams {
+    pub limit: Option<i64>,
+    pub offset: Option<i64>,
+    pub action: Option<String>,
+    pub resource_type: Option<String>,
+}
+
+impl AuditLogListParams {
+    pub fn limit(&self) -> i64 {
+        clamp_limit(self.limit)
+    }
+    pub fn offset(&self) -> i64 {
+        clamp_offset(self.offset)
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SystemSettingUpsertReq {
+    pub value: serde_json::Value,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SystemSetting {
+    pub key: String,
+    pub value: serde_json::Value,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RbacRole {
+    pub name: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PolicyEditorPublishReq {
+    pub name: String,
+    pub description: Option<String>,
+    pub scope_kind: PolicyScopeKind,
+    pub scope_expr: String,
+}
+
+impl PolicyEditorPublishReq {
+    pub fn validate(&self) -> Result<(), DmsxError> {
+        // Keep validation consistent with CreatePolicyReq for name/description.
+        check_len("name", &self.name, 1, 200)?;
+        if let Some(d) = &self.description {
+            check_len("description", d, 0, 2000)?;
+        }
+        check_len("scope_expr", &self.scope_expr, 1, 5000)?;
+        Ok(())
+    }
+}
 
 fn default_json_obj() -> serde_json::Value {
     serde_json::json!({})
