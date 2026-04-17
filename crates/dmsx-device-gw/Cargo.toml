@@ -31,6 +31,7 @@ rcgen = { version = "0.13", features = ["pem", "x509-parser"] }
 base64 = "0.22"
 hmac = "0.12"
 sha2 = "0.10"
+governor = "0.8"
 
 [build-dependencies]
 tonic-build.workspace = true

@@ -41,6 +41,7 @@ mod client_identity;
 mod command_stream;
 mod enroll;
 mod enroll_token;
+mod rate_limit;
 mod result_publish;
 mod telemetry;
 
@@ -83,6 +84,7 @@ struct AgentServiceImpl {
     nats_js: Option<Arc<async_nats::jetstream::Context>>,
     active_stream_commands: Arc<std::sync::atomic::AtomicU64>,
     active_uploads: Arc<std::sync::atomic::AtomicU64>,
+    tenant_rate_limiter: Option<Arc<rate_limit::TenantLimiter>>,
 }
 
 impl AgentServiceImpl {
@@ -92,6 +94,7 @@ impl AgentServiceImpl {
             nats_js,
             active_stream_commands: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             active_uploads: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            tenant_rate_limiter: rate_limit::from_env(),
         }
     }
 }
@@ -171,6 +174,7 @@ impl AgentService for AgentServiceImpl {
         let inner = request.into_inner();
         let (device_id, issued_cert_pem, ca_cert_pem, cert_expires_unix, tenant_id) =
             enroll::issue_device_cert(&inner.enrollment_token, &inner.public_key_pem).await?;
+        rate_limit::check(&self.tenant_rate_limiter, tenant_id)?;
         tracing::info!(
             tenant_id = %tenant_id,
             device_id = %device_id,
@@ -189,11 +193,21 @@ impl AgentService for AgentServiceImpl {
         request: Request<HeartbeatRequest>,
     ) -> Result<Response<HeartbeatResponse>, Status> {
         let inner = request.get_ref();
-        client_identity::resolve_device_only(
+        let did = client_identity::resolve_device_only(
             &request,
             self.require_mtls_identity,
             &inner.device_id,
         )?;
+        if self.require_mtls_identity {
+            let certs = request
+                .peer_certs()
+                .ok_or_else(|| Status::unauthenticated("mTLS: peer certificates not available"))?;
+            let id = client_identity::identity_from_peer_certs_der(certs.as_ref().as_slice())?;
+            rate_limit::check(&self.tenant_rate_limiter, id.tenant_id)?;
+            if id.device_id != did {
+                return Err(Status::permission_denied("device_id does not match client certificate"));
+            }
+        }
         tracing::debug!(device_id = %inner.device_id, "heartbeat");
         Ok(Response::new(HeartbeatResponse {
             server_time_unix: now_unix(),
@@ -205,11 +219,21 @@ impl AgentService for AgentServiceImpl {
         request: Request<FetchDesiredStateRequest>,
     ) -> Result<Response<FetchDesiredStateResponse>, Status> {
         let inner = request.get_ref();
-        client_identity::resolve_device_only(
+        let did = client_identity::resolve_device_only(
             &request,
             self.require_mtls_identity,
             &inner.device_id,
         )?;
+        if self.require_mtls_identity {
+            let certs = request
+                .peer_certs()
+                .ok_or_else(|| Status::unauthenticated("mTLS: peer certificates not available"))?;
+            let id = client_identity::identity_from_peer_certs_der(certs.as_ref().as_slice())?;
+            rate_limit::check(&self.tenant_rate_limiter, id.tenant_id)?;
+            if id.device_id != did {
+                return Err(Status::permission_denied("device_id does not match client certificate"));
+            }
+        }
         tracing::debug!(device_id = %inner.device_id, "fetch_desired_state");
         Ok(Response::new(FetchDesiredStateResponse {
             policy_revision_id: String::new(),
@@ -241,6 +265,7 @@ impl AgentService for AgentServiceImpl {
             &request.get_ref().tenant_id,
             &request.get_ref().device_id,
         )?;
+        rate_limit::check(&self.tenant_rate_limiter, tid)?;
         tracing::info!(tenant_id = %tid, device_id = %did, "stream_commands");
         let s: Self::StreamCommandsStream =
             command_stream::stream_commands(did.to_string(), Some(tid));
@@ -257,6 +282,7 @@ impl AgentService for AgentServiceImpl {
             &request.get_ref().tenant_id,
             &request.get_ref().device_id,
         )?;
+        rate_limit::check(&self.tenant_rate_limiter, tid)?;
         let inner = request.into_inner();
         let command_id = uuid::Uuid::parse_str(inner.command_id.trim()).map_err(|_| {
             Status::invalid_argument("command_id must be a UUID")
@@ -336,6 +362,7 @@ impl AgentService for AgentServiceImpl {
                             Status::unauthenticated("mTLS: peer certificates not available")
                         })?;
                     let id = client_identity::identity_from_peer_certs_der(certs.as_ref().as_slice())?;
+                    rate_limit::check(&self.tenant_rate_limiter, id.tenant_id)?;
                     if id.device_id != did {
                         return Err(Status::permission_denied(
                             "device_id does not match client certificate",
