@@ -251,6 +251,8 @@ spec:
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
 | `DMSX_GW_BIND` | `0.0.0.0:50051` | gRPC 监听地址 |
+| `DMSX_GW_METRICS_ENABLED` | `false` | 是否启用网关 Prometheus 指标（HTTP `/metrics`） |
+| `DMSX_GW_METRICS_BIND` | `0.0.0.0:9090` | 指标 HTTP 监听地址（启用时生效） |
 | `DMSX_GW_CONCURRENCY_PER_CONNECTION` | `64` | 每个 gRPC 连接的并发请求上限（tonic `concurrency_limit_per_connection`） |
 | `DMSX_GW_TLS_CERT` / `DMSX_GW_TLS_KEY` | （未设置） | 服务端证书与私钥 PEM 路径；**均设置**时启用 gRPC **TLS**（HTTP/2 over TLS） |
 | `DMSX_GW_TLS_CLIENT_CA` | （未设置） | 校验客户端证书的 CA PEM 路径；设置后默认 **要求** 客户端证书（mTLS）；与 `DMSX_GW_TLS_CLIENT_AUTH_OPTIONAL` 联用 |

@@ -238,7 +238,7 @@
 - [~] 按租户速率限制（`DMSX_GW_RATE_LIMIT_*`，内存内 keyed limiter；多副本按 Pod 分摊）
 - [x] 设备身份校验（客户端证书 SAN `urn:dmsx:tenant:{uuid}:device:{uuid}` 与 RPC `device_id`/`tenant_id` 交叉校验）
 - [~] NATS JetStream 接入（命令 + 回执 subject 已贯通；观测/重放策略与其它 RPC 待补）
-- [ ] OpenTelemetry 追踪注入
+- [~] 指标 / 追踪（已提供 Prometheus `/metrics`：`DMSX_GW_METRICS_*`；OpenTelemetry 追踪注入待补）
 
 ---
 
