@@ -21,7 +21,7 @@ type HmacSha256 = Hmac<Sha256>;
 #[derive(Debug, Deserialize)]
 pub struct EnrollTokenClaims {
     pub tenant_id: Uuid,
-    pub device_id: Option<Uuid>,
+    pub device_id: Uuid,
     pub exp: i64,
 }
 

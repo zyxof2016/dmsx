@@ -236,16 +236,16 @@ Content-Type: application/json
 
 | RPC | 类型 | 说明 |
 |-----|------|------|
-| `Enroll` | unary | enrollment token + 设备公钥 → 签发证书 |
+| `Enroll` | unary | enrollment token + CSR → 签发证书（当前内测实现要求 token **显式绑定 `device_id`**，且 `public_key_pem` 实际上传 **PKCS#10 CSR PEM**） |
 | `Heartbeat` | unary | 存活与轻量遥测 |
 | `FetchDesiredState` | unary | 拉取当前策略 revision 与 `spec_json` |
 | `StreamCommands` | server stream | 服务端推送 `CommandEnvelope`；当网关配置 **`DMSX_NATS_URL`** 且启用 JetStream 时，从与 `dmsx-api` 相同的 stream（默认 **`DMSX_COMMANDS`**）按 **`dmsx.command.{tenant_id}.{device_id}`** 拉取 `Command` JSON 并映射为 `CommandEnvelope`（未配置 NATS 时流为空，与旧 stub 一致） |
-| `ReportResult` | unary | 将执行结果发布到 JetStream **`dmsx.command.result.{tenant_id}.{device_id}`** 供 `dmsx-api` 入库；未配置 NATS 时响应 **`accepted=false`** |
+| `ReportResult` | unary | 将执行结果发布到 JetStream **`dmsx.command.result.{tenant_id}.{device_id}`** 供 `dmsx-api` 入库；控制面入库时优先使用消息中的 `status` 更新命令状态，`exit_code` 仅用于结果详情；未配置 NATS 时响应 **`accepted=false`** |
 | `UploadEvidence` | client stream | 分块上传证据到对象存储（网关签发 `upload_token`）；首个 chunk 的 `device_id` 在 **mTLS 严格模式**下必须与客户端证书一致 |
 
 认证：**mTLS**（设备证书）+ 可选 per-RPC metadata `authorization: Bearer <session>`。
 
-**多租户与身份**：`ReportResultRequest` / `StreamCommandsRequest` 含可选 **`tenant_id`**。在 **mTLS 严格模式**（网关配置 **`DMSX_GW_TLS_CLIENT_CA`** 且未设置 **`DMSX_GW_TLS_CLIENT_AUTH_OPTIONAL`**）下，客户端证书 SAN 必须包含 URI **`urn:dmsx:tenant:{uuid}:device:{uuid}`**；服务端以证书为准校验 RPC 中的 **`device_id`**（及显式 **`tenant_id`**，若携带）与证书一致。**未启用 mTLS 时**须在 RPC 中显式提供合法 **`tenant_id` UUID**（开发/过渡场景；生产应走 mTLS）。
+**多租户与身份**：`ReportResultRequest` / `StreamCommandsRequest` 含可选 **`tenant_id`**。在 **mTLS 严格模式**（网关配置 **`DMSX_GW_TLS_CLIENT_CA`** 且未设置 **`DMSX_GW_TLS_CLIENT_AUTH_OPTIONAL`**）下，客户端证书 SAN 必须包含 URI **`urn:dmsx:tenant:{uuid}:device:{uuid}`**；服务端以证书为准校验 RPC 中的 **`device_id`**（及显式 **`tenant_id`**，若携带）与证书一致。**未启用 mTLS 时**须在 RPC 中显式提供合法 **`tenant_id` UUID**（开发/过渡场景；生产应走 mTLS）。`Enroll` 的 enrollment token 当前内测实现也要求显式携带 **`device_id`**，避免同一 token 重放生成多个设备身份。
 
 ---
 

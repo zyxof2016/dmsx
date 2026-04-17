@@ -12,15 +12,15 @@ set -euo pipefail
 # - GW_ADDR (default 127.0.0.1:50051)
 # - TENANT_ID (required)
 # - ENROLL_SECRET (required) -> maps to DMSX_GW_ENROLL_HMAC_SECRET on server
-# - DEVICE_ID (optional; if set, token pins the device_id)
+# - DEVICE_ID (required; token pins the device_id)
 
 GW_ADDR="${GW_ADDR:-127.0.0.1:50051}"
 TENANT_ID="${TENANT_ID:-}"
 ENROLL_SECRET="${ENROLL_SECRET:-}"
 DEVICE_ID="${DEVICE_ID:-}"
 
-if [[ -z "${TENANT_ID}" || -z "${ENROLL_SECRET}" ]]; then
-  echo "usage: TENANT_ID=<uuid> ENROLL_SECRET=<secret> [DEVICE_ID=<uuid>] $0" >&2
+if [[ -z "${TENANT_ID}" || -z "${ENROLL_SECRET}" || -z "${DEVICE_ID}" ]]; then
+  echo "usage: TENANT_ID=<uuid> DEVICE_ID=<uuid> ENROLL_SECRET=<secret> $0" >&2
   exit 2
 fi
 
@@ -42,7 +42,7 @@ import base64, hashlib, hmac, json, os, time, uuid
 
 tenant_id=os.environ["TENANT_ID"].strip()
 secret=os.environ["ENROLL_SECRET"].encode()
-device_id=os.environ.get("DEVICE_ID","").strip() or None
+device_id=os.environ["DEVICE_ID"].strip()
 
 payload={
   "tenant_id": tenant_id,

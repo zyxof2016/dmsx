@@ -269,9 +269,9 @@ spec:
 
 `StreamCommands`：对每个 gRPC 流创建 **ephemeral pull consumer**，在解析出 **`tenant_id` + `device_id`** 后使用 **`filter_subject=dmsx.command.{tenant_id}.{device_id}`**（租户在 **mTLS 严格模式**下可由证书 SAN 推出，否则须在 `StreamCommandsRequest.tenant_id` 中显式携带 UUID）；`deliver_policy=new`，消息体为 `dmsx-api` 发布的 **`Command` JSON**；成功推送到 gRPC 客户端后再 **ACK**；客户端断开则 **NAK** 以便重投。
 
-`ReportResult`：在 NATS/JetStream 可用时将 JSON 发布到 **`dmsx.command.result.{tenant_id}.{device_id}`**（与 `dmsx-api` 后台 ingest 约定一致）。**mTLS 严格模式**（已配置 `DMSX_GW_TLS_CLIENT_CA` 且未开启 `DMSX_GW_TLS_CLIENT_AUTH_OPTIONAL`）下，客户端证书 SAN 须含 URI **`urn:dmsx:tenant:{uuid}:device:{uuid}`**，且与 RPC 中的 `tenant_id` / `device_id` 一致。
+`ReportResult`：在 NATS/JetStream 可用时将 JSON 发布到 **`dmsx.command.result.{tenant_id}.{device_id}`**（与 `dmsx-api` 后台 ingest 约定一致）。控制面入库时以消息中的 **`status`** 为准更新 `commands.status`，`exit_code/stdout/stderr/evidence_key` 写入 `command_results`。**mTLS 严格模式**（已配置 `DMSX_GW_TLS_CLIENT_CA` 且未开启 `DMSX_GW_TLS_CLIENT_AUTH_OPTIONAL`）下，客户端证书 SAN 须含 URI **`urn:dmsx:tenant:{uuid}:device:{uuid}`**，且与 RPC 中的 `tenant_id` / `device_id` 一致。
 
-`Enroll`（内测实现）：验证 enrollment token（`v1.<payload_b64url>.<sig_b64url>`，HMAC-SHA256 over `payload_b64url`），并使用 CA 签发设备客户端证书；证书 SAN 写入 `urn:dmsx:tenant:{tenant_id}:device:{device_id}`。当前 `EnrollRequest.public_key_pem` 在内测实现中要求为 **PKCS#10 CSR PEM**（历史字段名保留，后续可协议升级为 `csr_pem`）。
+`Enroll`（内测实现）：验证 enrollment token（`v1.<payload_b64url>.<sig_b64url>`，HMAC-SHA256 over `payload_b64url`），并使用 CA 签发设备客户端证书；证书 SAN 写入 `urn:dmsx:tenant:{tenant_id}:device:{device_id}`。当前 enrollment token **必须显式绑定 `device_id`**，避免同一 token 重放生成多个设备身份；`EnrollRequest.public_key_pem` 在内测实现中要求为 **PKCS#10 CSR PEM**（历史字段名保留，后续可协议升级为 `csr_pem`）。
 
 ## 环境变量（dmsx-agent）
 

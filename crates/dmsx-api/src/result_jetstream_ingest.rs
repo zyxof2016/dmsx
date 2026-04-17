@@ -19,19 +19,37 @@ use crate::services::commands;
 use crate::state::AppState;
 use crate::repo::commands as command_repo;
 use crate::db_rls;
-use dmsx_core::DmsxError;
+use dmsx_core::{CommandStatus, DmsxError};
 
 #[derive(Debug, Deserialize)]
 struct CommandResultNatsEvent {
     tenant_id: Uuid,
     device_id: Uuid,
     command_id: Uuid,
+    status: i32,
     exit_code: Option<i32>,
     #[serde(default)]
     stdout: String,
     #[serde(default)]
     stderr: String,
     evidence_key: Option<String>,
+}
+
+fn command_status_from_proto(status: i32) -> Result<CommandStatus, DmsxError> {
+    match status {
+        1 => Ok(CommandStatus::Queued),
+        2 => Ok(CommandStatus::Delivered),
+        3 => Ok(CommandStatus::Acked),
+        4 => Ok(CommandStatus::Running),
+        5 => Ok(CommandStatus::Succeeded),
+        6 => Ok(CommandStatus::Failed),
+        7 => Ok(CommandStatus::Expired),
+        8 => Ok(CommandStatus::Cancelled),
+        _ => Err(DmsxError::Validation(format!(
+            "unsupported command result status {}",
+            status
+        ))),
+    }
 }
 
 fn jetstream_enabled_from_env() -> bool {
@@ -196,8 +214,24 @@ async fn run_loop(st: AppState, url: String) -> Result<(), String> {
             continue;
         }
 
-        match commands::submit_command_result(&st, &ctx, ev.tenant_id, ev.command_id, &body).await
-        {
+        let explicit_status = match command_status_from_proto(ev.status) {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::warn!(error = %e, command_id = %ev.command_id, status = ev.status, "result ingest: invalid status");
+                let _ = msg.ack_with(AckKind::Term).await;
+                continue;
+            }
+        };
+
+        match commands::submit_command_result_with_status(
+            &st,
+            &ctx,
+            ev.tenant_id,
+            ev.command_id,
+            &body,
+            Some(explicit_status),
+        )
+        .await {
             Ok(_) => {
                 if let Err(e) = msg.ack().await {
                     tracing::warn!(error = %e, "result ingest: ack failed");

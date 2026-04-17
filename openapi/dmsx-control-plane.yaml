@@ -75,6 +75,23 @@ paths:
           description: Not ready
         '500':
           $ref: '#/components/responses/InternalServerError'
+  /metrics:
+    get:
+      summary: Prometheus metrics
+      operationId: metrics
+      responses:
+        '200':
+          description: OK
+          content:
+            text/plain:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
   /v1/tenants:
     post:
       summary: Create tenant (platform)
@@ -1165,6 +1182,25 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '500':
           $ref: '#/components/responses/InternalServerError'
+  /v1/config/rbac/roles:
+    get:
+      summary: List built-in RBAC roles
+      operationId: listRbacRoles
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RbacRole'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
   /v1/config/settings/{key}:
     get:
       summary: Get system setting (global)
@@ -1763,6 +1799,13 @@ components:
         updated_at:
           type: string
           format: date-time
+    RbacRole:
+      type: object
+      required:
+      - name
+      properties:
+        name:
+          type: string
     PolicyEditorPublishReq:
       type: object
       required:

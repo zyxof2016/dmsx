@@ -173,9 +173,10 @@ impl AgentService for AgentServiceImpl {
         request: Request<EnrollRequest>,
     ) -> Result<Response<EnrollResponse>, Status> {
         let inner = request.into_inner();
+        let claims = enroll_token::verify(&inner.enrollment_token, now_unix())?;
+        rate_limit::check(&self.tenant_rate_limiter, claims.tenant_id)?;
         let (device_id, issued_cert_pem, ca_cert_pem, cert_expires_unix, tenant_id) =
-            enroll::issue_device_cert(&inner.enrollment_token, &inner.public_key_pem).await?;
-        rate_limit::check(&self.tenant_rate_limiter, tenant_id)?;
+            enroll::issue_device_cert(&claims, &inner.public_key_pem).await?;
         tracing::info!(
             tenant_id = %tenant_id,
             device_id = %device_id,

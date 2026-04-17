@@ -1,4 +1,4 @@
-use dmsx_core::{Command, CommandResult, DmsxError};
+use dmsx_core::{Command, CommandResult, CommandStatus, DmsxError};
 use serde_json::json;
 use uuid::Uuid;
 
@@ -203,6 +203,17 @@ pub async fn submit_command_result(
     cid: Uuid,
     body: &SubmitCommandResultReq,
 ) -> ServiceResult<CommandResult> {
+    submit_command_result_with_status(st, ctx, tid, cid, body, None).await
+}
+
+pub async fn submit_command_result_with_status(
+    st: &AppState,
+    ctx: &AuthContext,
+    tid: Uuid,
+    cid: Uuid,
+    body: &SubmitCommandResultReq,
+    explicit_status: Option<CommandStatus>,
+) -> ServiceResult<CommandResult> {
     let mut tx = db_rls::begin_rls_tx(&st.db, Some(tid), ctx)
         .await
         .map_err(map_db_error)?;
@@ -218,7 +229,7 @@ pub async fn submit_command_result(
     .await
     .map_err(map_db_error)?;
 
-    let new_status = command_status_from_exit_code(body.exit_code);
+    let new_status = explicit_status.unwrap_or_else(|| command_status_from_exit_code(body.exit_code));
     let _ = command_repo::update_command_status(&mut *tx, tid, cid, new_status)
         .await
         .map_err(map_db_error);
@@ -228,7 +239,7 @@ pub async fn submit_command_result(
         "submit_result",
         "command",
         &cid.to_string(),
-        json!({"exit_code": body.exit_code}),
+        json!({"exit_code": body.exit_code, "status": format!("{:?}", new_status)}),
     )
     .await
     .ok();

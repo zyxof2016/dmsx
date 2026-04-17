@@ -14,7 +14,7 @@ use rcgen::{
 use tonic::Status;
 use uuid::Uuid;
 
-use crate::enroll_token;
+use crate::enroll_token::EnrollTokenClaims;
 
 fn now_unix() -> i64 {
     SystemTime::now()
@@ -43,12 +43,11 @@ async fn read_pem_from_path_env(var: &str) -> Result<String, Status> {
 }
 
 pub async fn issue_device_cert(
-    enrollment_token: &str,
+    claims: &EnrollTokenClaims,
     csr_pem: &str,
 ) -> Result<(Uuid, String, String, i64, Uuid), Status> {
-    let claims = enroll_token::verify(enrollment_token, now_unix())?;
     let tenant_id = claims.tenant_id;
-    let device_id = claims.device_id.unwrap_or_else(Uuid::new_v4);
+    let device_id = claims.device_id;
 
     let ca_cert_pem = read_pem_from_path_env("DMSX_GW_ENROLL_CA_CERT").await?;
     let ca_key_pem = read_pem_from_path_env("DMSX_GW_ENROLL_CA_KEY").await?;

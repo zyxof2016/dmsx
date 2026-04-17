@@ -213,7 +213,7 @@
 - [x] CORS 中间件（`tower-http CorsLayer`）
 - [~] ClickHouse 客户端接入（审计写入 `audit_events`：当配置 `DMSX_CLICKHOUSE_HTTP_URL` 时每次 `audit_logs` 写入会异步写入；遥测/心跳/命令回执明细待补）
 - [~] Redis 接入（当前用于桌面会话映射持久化：`session_id → {tenant_id, device_id}` + `device_id → session_id`；缓存/在线状态/分布式锁待扩展）
-- [~] NATS JetStream 接入（**API**：命令在 Postgres 提交成功后异步发布 `dmsx.command.{tenant_id}.{device_id}`；**回执 ingest**：消费 `dmsx.command.result.>`（durable consumer，默认名见 `DMSX_NATS_RESULT_CONSUMER`）并与 HTTP `submit_command_result` 对齐写库，跨租户伪造消息 **TERM**；**网关**：`StreamCommands` pull 过滤 `dmsx.command.{tenant_id}.{device_id}`；`ReportResult` 发布 `dmsx.command.result.{tenant_id}.{device_id}`；**验证**：compose 起 NATS 后配置 `DMSX_NATS_URL`，`cargo check -p dmsx-api -p dmsx-device-gw`，联调 `nats sub 'dmsx.command.>'` / `nats sub 'dmsx.command.result.>'`）
+- [~] NATS JetStream 接入（**API**：命令在 Postgres 提交成功后异步发布 `dmsx.command.{tenant_id}.{device_id}`；**回执 ingest**：消费 `dmsx.command.result.>`（durable consumer，默认名见 `DMSX_NATS_RESULT_CONSUMER`）并与 HTTP `submit_command_result` 对齐写库，**以消息 `status` 为准**更新命令状态，跨租户伪造消息 **TERM**；**网关**：`StreamCommands` pull 过滤 `dmsx.command.{tenant_id}.{device_id}`；`ReportResult` 发布 `dmsx.command.result.{tenant_id}.{device_id}`；**验证**：compose 起 NATS 后配置 `DMSX_NATS_URL`，`cargo check -p dmsx-api -p dmsx-device-gw`，联调 `nats sub 'dmsx.command.>'` / `nats sub 'dmsx.command.result.>'`）
 - [ ] S3 / MinIO 接入（制品上传预签名）
 
 ---
@@ -222,7 +222,7 @@
 
 ### RPC
 
-- [~] `Enroll` — 内测 CA 签发证书（HMAC enrollment token + CSR；SAN `urn:dmsx:tenant:{tid}:device:{did}`）；生产级 CA 集成/吊销待补
+- [~] `Enroll` — 内测 CA 签发证书（HMAC enrollment token + **固定 device_id** + CSR；SAN `urn:dmsx:tenant:{tid}:device:{did}`）；生产级 CA 集成/吊销待补
 - [x] `Heartbeat` — 返回服务器时间
 - [~] `FetchDesiredState` — 返回空策略（stub；已做 mTLS device_id 校验）
 - [~] `StreamCommands` — JetStream pull，`filter_subject=dmsx.command.{tenant_id}.{device_id}`；mTLS SAN 与 RPC 对齐（见 `docs/DEPLOYMENT.md`）；背压/有序投递待补
