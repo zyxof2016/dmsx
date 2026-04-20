@@ -118,6 +118,22 @@ fn client_auth_optional_from_env() -> bool {
     )
 }
 
+fn enroll_enabled_from_env() -> bool {
+    let has_secret = std::env::var("DMSX_GW_ENROLL_HMAC_SECRET")
+        .ok()
+        .map(|s| !s.trim().is_empty())
+        .unwrap_or(false);
+    let has_ca_cert = std::env::var("DMSX_GW_ENROLL_CA_CERT")
+        .ok()
+        .map(|s| !s.trim().is_empty())
+        .unwrap_or(false);
+    let has_ca_key = std::env::var("DMSX_GW_ENROLL_CA_KEY")
+        .ok()
+        .map(|s| !s.trim().is_empty())
+        .unwrap_or(false);
+    has_secret && has_ca_cert && has_ca_key
+}
+
 fn concurrency_per_connection_from_env() -> usize {
     std::env::var("DMSX_GW_CONCURRENCY_PER_CONNECTION")
         .ok()
@@ -160,7 +176,9 @@ async fn load_server_tls() -> Result<Option<ServerTlsConfig>, std::io::Error> {
     if let Some(ca) = ca_path {
         let ca_pem = tokio::fs::read_to_string(ca).await?;
         cfg = cfg.client_ca_root(Certificate::from_pem(ca_pem.as_bytes()));
-        cfg = cfg.client_auth_optional(client_auth_optional_from_env());
+        // Allow unauthenticated handshake when Enroll is enabled so new devices can enroll
+        // before obtaining a client certificate; non-Enroll RPCs still enforce identity in code.
+        cfg = cfg.client_auth_optional(client_auth_optional_from_env() || enroll_enabled_from_env());
     }
 
     Ok(Some(cfg))
@@ -405,8 +423,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .ok()
         .map(|s| !s.trim().is_empty())
         .unwrap_or(false);
-    let require_mtls_identity =
-        tls_cfg.is_some() && client_ca_configured && !client_auth_optional_from_env();
+    let require_mtls_identity = tls_cfg.is_some() && client_ca_configured;
 
     let nats_js = result_publish::connect_jetstream_from_env().await;
     let svc_impl = AgentServiceImpl::new(require_mtls_identity, nats_js);

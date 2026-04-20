@@ -255,7 +255,7 @@ spec:
 | `DMSX_GW_METRICS_BIND` | `0.0.0.0:9090` | 指标 HTTP 监听地址（启用时生效） |
 | `DMSX_GW_CONCURRENCY_PER_CONNECTION` | `64` | 每个 gRPC 连接的并发请求上限（tonic `concurrency_limit_per_connection`） |
 | `DMSX_GW_TLS_CERT` / `DMSX_GW_TLS_KEY` | （未设置） | 服务端证书与私钥 PEM 路径；**均设置**时启用 gRPC **TLS**（HTTP/2 over TLS） |
-| `DMSX_GW_TLS_CLIENT_CA` | （未设置） | 校验客户端证书的 CA PEM 路径；设置后默认 **要求** 客户端证书（mTLS）；与 `DMSX_GW_TLS_CLIENT_AUTH_OPTIONAL` 联用 |
+| `DMSX_GW_TLS_CLIENT_CA` | （未设置） | 校验客户端证书的 CA PEM 路径；设置后默认 **要求** 客户端证书（mTLS）；与 `DMSX_GW_TLS_CLIENT_AUTH_OPTIONAL` 联用。若同时配置 Enroll 所需 HMAC/CA，网关会自动允许**无证书客户端仅用于 `Enroll`** |
 | `DMSX_GW_TLS_CLIENT_AUTH_OPTIONAL` | `false` | `1`/`true`/`yes`/`on` 时：在已配置 `DMSX_GW_TLS_CLIENT_CA` 的前提下仍允许匿名客户端（**不推荐生产**） |
 | `DMSX_GW_RATE_LIMIT_ENABLED` | `false` | 是否启用**按租户**的 gRPC 速率限制（内存内实现；多副本按 Pod 分摊） |
 | `DMSX_GW_RATE_LIMIT_PER_SECOND` | `100` | 每租户每秒允许的请求起始配额（下限 1） |
@@ -271,7 +271,9 @@ spec:
 
 `ReportResult`：在 NATS/JetStream 可用时将 JSON 发布到 **`dmsx.command.result.{tenant_id}.{device_id}`**（与 `dmsx-api` 后台 ingest 约定一致）。控制面入库时以消息中的 **`status`** 为准更新 `commands.status`，`exit_code/stdout/stderr/evidence_key` 写入 `command_results`。**mTLS 严格模式**（已配置 `DMSX_GW_TLS_CLIENT_CA` 且未开启 `DMSX_GW_TLS_CLIENT_AUTH_OPTIONAL`）下，客户端证书 SAN 须含 URI **`urn:dmsx:tenant:{uuid}:device:{uuid}`**，且与 RPC 中的 `tenant_id` / `device_id` 一致。
 
-`Enroll`（内测实现）：验证 enrollment token（`v1.<payload_b64url>.<sig_b64url>`，HMAC-SHA256 over `payload_b64url`），并使用 CA 签发设备客户端证书；证书 SAN 写入 `urn:dmsx:tenant:{tenant_id}:device:{device_id}`。当前 enrollment token **必须显式绑定 `device_id`**，避免同一 token 重放生成多个设备身份；`EnrollRequest.public_key_pem` 在内测实现中要求为 **PKCS#10 CSR PEM**（历史字段名保留，后续可协议升级为 `csr_pem`）。
+`Enroll`（内测实现）：验证 enrollment token（`v1.<payload_b64url>.<sig_b64url>`，HMAC-SHA256 over `payload_b64url`），并使用 CA 签发设备客户端证书；证书 SAN 写入 `urn:dmsx:tenant:{tenant_id}:device:{device_id}`。当前 enrollment token **必须显式绑定 `device_id`**，避免同一 token 重放生成多个设备身份；`EnrollRequest.public_key_pem` 在内测实现中要求为 **PKCS#10 CSR PEM**（历史字段名保留，后续可协议升级为 `csr_pem`）。若同时配置了 `DMSX_GW_TLS_CLIENT_CA` 与 Enroll 所需 HMAC/CA，握手层会允许匿名新设备连入并调用 `Enroll`，但其他 RPC 仍要求设备证书。
+
+数据面最小闭环联调可使用 `scripts/internal-beta-data-plane-e2e.sh`：脚本会串起**创建设备 -> Enroll -> FetchDesiredState -> StreamCommands -> ReportResult -> 控制面查结果**，默认按 `GW_GRPC_MODE=tls` 运行；若为自签名服务端证书，可配 `GW_TLS_CA_CERT` 或直接 `GW_TLS_INSECURE=1`。
 
 ## 环境变量（dmsx-agent）
 
