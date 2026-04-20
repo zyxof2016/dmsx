@@ -175,7 +175,7 @@ Content-Type: application/json
 
 控制面只负责创建会话并投递 `start_desktop`。设备侧命令结果语义为：**只有 Agent 真正连上 LiveKit 并成功发布屏幕轨后，`start_desktop` 才应回报成功**；若 LiveKit 不可达或发布轨失败，命令结果应为失败。
 
-当前删除语义依赖后续投递 `stop_desktop` 收敛会话：若某设备在 `POST /desktop/session` 后立刻收到删除请求，控制面会先清理会话映射并再下发 `stop_desktop`，但**不保证设备永远不会短暂执行到先前已下发的 `start_desktop`**。当前最小保证是最终会收敛到停止状态，而不是建立额外的“撤销未消费命令”协议。
+当前删除语义依赖后续投递 `stop_desktop` 收敛会话：若某设备在 `POST /desktop/session` 后立刻收到删除请求，控制面会先清理会话映射并再下发 `stop_desktop`。Agent 当前会按设备命令的创建顺序执行排队命令，因此 `stop_desktop` 不会反向抢在对应 `start_desktop` 之前执行；但**仍不保证设备永远不会短暂执行到先前已下发的 `start_desktop`**。当前最小保证是最终会收敛到停止状态，而不是建立额外的“撤销未消费命令”协议。
 
 ### 终止远程桌面会话
 

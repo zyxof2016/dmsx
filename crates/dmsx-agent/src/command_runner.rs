@@ -18,11 +18,15 @@ pub(crate) async fn poll_and_execute(
     let url = cfg.tenant_url(&format!("/devices/{device_id}/commands?limit=10"));
     let resp: ListResponse<CommandItem> = client.get(&url).send().await?.json().await?;
 
-    let queued: Vec<&CommandItem> = resp.items.iter().filter(|c| c.status == "queued").collect();
+    let mut queued: Vec<&CommandItem> = resp.items.iter().filter(|c| c.status == "queued").collect();
 
     if queued.is_empty() {
         return Ok(());
     }
+
+    // API returns newest-first; execute oldest-first so compensating commands like
+    // stop_desktop can naturally run after the start_desktop they are intended to cancel.
+    queued.reverse();
 
     info!(count = queued.len(), "found queued commands");
 
