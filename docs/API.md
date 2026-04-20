@@ -241,11 +241,11 @@ Content-Type: application/json
 | `FetchDesiredState` | unary | 拉取当前策略 revision 与 `spec_json` |
 | `StreamCommands` | server stream | 服务端推送 `CommandEnvelope`；当网关配置 **`DMSX_NATS_URL`** 且启用 JetStream 时，从与 `dmsx-api` 相同的 stream（默认 **`DMSX_COMMANDS`**）按 **`dmsx.command.{tenant_id}.{device_id}`** 拉取 `Command` JSON 并映射为 `CommandEnvelope`。当前实现使用按租户/设备稳定命名的 **durable pull consumer**；**同一租户/设备仅允许一个活跃流**，并按“**发出一条 -> 等对应 `ReportResult` 成功 -> ACK JetStream -> 再发下一条**”串行推进，保证单设备有序交付与断线可重投。若 `cursor` 提供 **JetStream stream sequence**，则首次创建 consumer 时会从该序号恢复（未配置 NATS 时流为空，与旧 stub 一致） |
 | `ReportResult` | unary | 将执行结果发布到 JetStream **`dmsx.command.result.{tenant_id}.{device_id}`** 供 `dmsx-api` 入库；控制面入库时优先使用消息中的 `status` 更新命令状态，`exit_code` 仅用于结果详情。若该 `command_id` 正是当前活跃 `StreamCommands` 已下发但尚未提交的命令，则网关会在发布成功后推进对应 JetStream ACK；未配置 NATS 时响应 **`accepted=false`** |
-| `UploadEvidence` | client stream | 分块上传证据到对象存储（网关签发 `upload_token`）；首个 chunk 的 `device_id` 在 **mTLS 严格模式**下必须与客户端证书一致 |
+| `UploadEvidence` | client stream | 分块上传证据到对象存储（当前实现写入 **S3 / MinIO 兼容桶**）；首个 chunk 必须提供 `device_id`，并满足“**mTLS 设备证书**或**有效 `upload_token`**”至少其一；若二者同时提供，则 `tenant_id` / `device_id` / 可选 `content_type` 必须一致 |
 
 认证：**mTLS**（设备证书）+ 可选 per-RPC metadata `authorization: Bearer <session>`。
 
-**多租户与身份**：`ReportResultRequest` / `StreamCommandsRequest` 含可选 **`tenant_id`**。在 **mTLS 严格模式**（网关配置 **`DMSX_GW_TLS_CLIENT_CA`** 且未设置 **`DMSX_GW_TLS_CLIENT_AUTH_OPTIONAL`**）下，客户端证书 SAN 必须包含 URI **`urn:dmsx:tenant:{uuid}:device:{uuid}`**；服务端以证书为准校验 RPC 中的 **`device_id`**（及显式 **`tenant_id`**，若携带）与证书一致。为支持首证签发，若同时配置了 Enroll 所需 HMAC/CA，网关会在 **TLS 握手层**对 `Enroll` 放开“无客户端证书也可连入”，但**应用层**仍仅允许该匿名连接调用 `Enroll`；其余 RPC 必须带证书并完成同样的身份绑定校验。**未启用 mTLS 时**须在 RPC 中显式提供合法 **`tenant_id` UUID**（开发/过渡场景；生产应走 mTLS）。`Enroll` 的 enrollment token 当前内测实现也要求显式携带 **`device_id`**，避免同一 token 重放生成多个设备身份。
+**多租户与身份**：`ReportResultRequest` / `StreamCommandsRequest` 含可选 **`tenant_id`**。在 **mTLS 严格模式**（网关配置 **`DMSX_GW_TLS_CLIENT_CA`** 且未设置 **`DMSX_GW_TLS_CLIENT_AUTH_OPTIONAL`**）下，客户端证书 SAN 必须包含 URI **`urn:dmsx:tenant:{uuid}:device:{uuid}`**；服务端以证书为准校验 RPC 中的 **`device_id`**（及显式 **`tenant_id`**，若携带）与证书一致。为支持首证签发，若同时配置了 Enroll 所需 HMAC/CA，网关会在 **TLS 握手层**对 `Enroll` 放开“无客户端证书也可连入”，但**应用层**仍仅允许该匿名连接调用 `Enroll`；其余 RPC 必须带证书并完成同样的身份绑定校验。`UploadEvidence` 没有显式 `tenant_id` 字段，因此当前实现要求通过**设备证书**或 **`upload_token`** 推导租户；若两者都没有则拒绝落盘。**未启用 mTLS 时**须在 RPC 中显式提供合法 **`tenant_id` UUID**（开发/过渡场景；生产应走 mTLS）。`Enroll` 的 enrollment token 当前内测实现也要求显式携带 **`device_id`**，避免同一 token 重放生成多个设备身份。
 
 ---
 

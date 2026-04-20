@@ -39,12 +39,14 @@ use grpc_health::{HealthCheckRequest, HealthCheckResponse};
 
 mod client_identity;
 mod command_stream;
+mod evidence_store;
 mod enroll;
 mod enroll_token;
 mod metrics_http;
 mod rate_limit;
 mod result_publish;
 mod telemetry;
+mod upload_token;
 
 // ---------------------------------------------------------------------------
 // gRPC Health Check (grpc.health.v1)
@@ -87,10 +89,15 @@ struct AgentServiceImpl {
     active_uploads: Arc<std::sync::atomic::AtomicU64>,
     tenant_rate_limiter: Option<Arc<rate_limit::TenantLimiter>>,
     command_tracker: Arc<command_stream::CommandTracker>,
+    evidence_store: Option<Arc<evidence_store::EvidenceStore>>,
 }
 
 impl AgentServiceImpl {
-    fn new(require_mtls_identity: bool, nats_js: Option<Arc<async_nats::jetstream::Context>>) -> Self {
+    fn new(
+        require_mtls_identity: bool,
+        nats_js: Option<Arc<async_nats::jetstream::Context>>,
+        evidence_store: Option<Arc<evidence_store::EvidenceStore>>,
+    ) -> Self {
         Self {
             require_mtls_identity,
             nats_js,
@@ -98,6 +105,7 @@ impl AgentServiceImpl {
             active_uploads: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             tenant_rate_limiter: rate_limit::from_env(),
             command_tracker: Arc::new(command_stream::CommandTracker::new()),
+            evidence_store,
         }
     }
 }
@@ -366,6 +374,11 @@ impl AgentService for AgentServiceImpl {
         &self,
         request: Request<Streaming<UploadEvidenceRequest>>,
     ) -> Result<Response<UploadEvidenceResponse>, Status> {
+        let evidence_store = self.evidence_store.as_ref().ok_or_else(|| {
+            Status::failed_precondition(
+                "UploadEvidence disabled: DMSX_GW_EVIDENCE_S3_BUCKET is not set",
+            )
+        })?;
         self.active_uploads
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         struct Guard(Arc<std::sync::atomic::AtomicU64>);
@@ -380,36 +393,143 @@ impl AgentService for AgentServiceImpl {
         let peer_certs = request.peer_certs();
         let mut stream = request.into_inner();
         let mut total_bytes: usize = 0;
-        let mut validated_device = false;
+        let mut body = Vec::new();
+        let mut effective_tenant_id: Option<uuid::Uuid> = None;
+        let mut effective_device_id: Option<uuid::Uuid> = None;
+        let mut content_type = "application/octet-stream".to_string();
+        let mut seen_upload_token: Option<String> = None;
         while let Some(chunk) = stream.next().await {
             let req = chunk?;
-            if !validated_device {
+            if effective_device_id.is_none() {
                 let did = uuid::Uuid::parse_str(req.device_id.trim())
                     .map_err(|_| Status::invalid_argument("device_id must be a UUID"))?;
-                if require_mtls_identity {
-                    let certs = peer_certs
-                        .clone()
-                        .ok_or_else(|| {
-                            Status::unauthenticated("mTLS: peer certificates not available")
-                        })?;
-                    let id = client_identity::identity_from_peer_certs_der(certs.as_ref().as_slice())?;
-                    rate_limit::check(&self.tenant_rate_limiter, id.tenant_id)?;
-                    if id.device_id != did {
-                        return Err(Status::permission_denied(
-                            "device_id does not match client certificate",
-                        ));
+                let req_content_type = req.content_type.trim();
+                let req_content_type = if req_content_type.is_empty() {
+                    "application/octet-stream"
+                } else {
+                    req_content_type
+                };
+                let req_upload_token = req.upload_token.trim();
+
+                let peer_identity = match peer_certs.clone() {
+                    Some(certs) => Some(client_identity::identity_from_peer_certs_der(
+                        certs.as_ref().as_slice(),
+                    )?),
+                    None => None,
+                };
+                if require_mtls_identity && peer_identity.is_none() {
+                    return Err(Status::unauthenticated(
+                        "mTLS: peer certificates not available",
+                    ));
+                }
+
+                let token_claims = if req_upload_token.is_empty() {
+                    None
+                } else {
+                    Some(upload_token::verify(req_upload_token, now_unix())?)
+                };
+
+                let tenant_id = match (peer_identity.as_ref(), token_claims.as_ref()) {
+                    (Some(identity), Some(claims)) => {
+                        if identity.device_id != did || claims.device_id != did {
+                            return Err(Status::permission_denied(
+                                "device_id does not match mTLS identity or upload_token",
+                            ));
+                        }
+                        if identity.tenant_id != claims.tenant_id {
+                            return Err(Status::permission_denied(
+                                "tenant_id mismatch between mTLS identity and upload_token",
+                            ));
+                        }
+                        identity.tenant_id
+                    }
+                    (Some(identity), None) => {
+                        if identity.device_id != did {
+                            return Err(Status::permission_denied(
+                                "device_id does not match client certificate",
+                            ));
+                        }
+                        identity.tenant_id
+                    }
+                    (None, Some(claims)) => {
+                        if claims.device_id != did {
+                            return Err(Status::permission_denied(
+                                "device_id does not match upload_token",
+                            ));
+                        }
+                        claims.tenant_id
+                    }
+                    (None, None) => {
+                        return Err(Status::unauthenticated(
+                            "upload_evidence requires mTLS identity or upload_token",
+                        ))
+                    }
+                };
+
+                if let Some(claims) = token_claims.as_ref() {
+                    if let Some(token_content_type) = claims
+                        .content_type
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|v| !v.is_empty())
+                    {
+                        if token_content_type != req_content_type {
+                            return Err(Status::permission_denied(
+                                "content_type does not match upload_token",
+                            ));
+                        }
                     }
                 }
-                validated_device = true;
+
+                rate_limit::check(&self.tenant_rate_limiter, tenant_id)?;
+                effective_tenant_id = Some(tenant_id);
+                effective_device_id = Some(did);
+                content_type = req_content_type.to_string();
+                seen_upload_token = Some(req_upload_token.to_string());
+            } else {
+                let expected_device_id = effective_device_id.unwrap();
+                if !req.device_id.trim().is_empty() && req.device_id.trim() != expected_device_id.to_string() {
+                    return Err(Status::invalid_argument(
+                        "all UploadEvidence chunks must carry the same device_id",
+                    ));
+                }
+                if !req.content_type.trim().is_empty() && req.content_type.trim() != content_type {
+                    return Err(Status::invalid_argument(
+                        "all UploadEvidence chunks must carry the same content_type",
+                    ));
+                }
+                if !req.upload_token.trim().is_empty()
+                    && Some(req.upload_token.trim().to_string()) != seen_upload_token
+                {
+                    return Err(Status::invalid_argument(
+                        "all UploadEvidence chunks must carry the same upload_token",
+                    ));
+                }
             }
             total_bytes += req.chunk.len();
             const MAX_EVIDENCE_BYTES: usize = 256 * 1024 * 1024; // 256 MiB
             if total_bytes > MAX_EVIDENCE_BYTES {
                 return Err(Status::resource_exhausted("evidence too large (>256 MiB)"));
             }
+            body.extend_from_slice(&req.chunk);
         }
+        let tenant_id =
+            effective_tenant_id.ok_or_else(|| Status::invalid_argument("empty upload stream"))?;
+        let device_id =
+            effective_device_id.ok_or_else(|| Status::invalid_argument("empty upload stream"))?;
+        let object_key = evidence_store
+            .put_object(tenant_id, device_id, &content_type, body)
+            .await
+            .map_err(Status::internal)?;
+        tracing::info!(
+            tenant_id = %tenant_id,
+            device_id = %device_id,
+            object_key = %object_key,
+            bytes = total_bytes,
+            "upload_evidence persisted"
+        );
         Ok(Response::new(UploadEvidenceResponse {
-            object_key: "stub/object".to_string(),
+            object_key,
         }))
     }
 }
@@ -431,9 +551,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .map(|s| !s.trim().is_empty())
         .unwrap_or(false);
     let require_mtls_identity = tls_cfg.is_some() && client_ca_configured;
+    let evidence_store = evidence_store::EvidenceStore::from_env()
+        .await
+        .map_err(std::io::Error::other)?
+        .map(Arc::new);
 
     let nats_js = result_publish::connect_jetstream_from_env().await;
-    let svc_impl = AgentServiceImpl::new(require_mtls_identity, nats_js);
+    let svc_impl = AgentServiceImpl::new(require_mtls_identity, nats_js, evidence_store);
 
     if metrics_http::enabled_from_env() {
         let st = metrics_http::MetricsState {

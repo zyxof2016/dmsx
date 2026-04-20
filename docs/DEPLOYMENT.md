@@ -266,12 +266,21 @@ spec:
 | `DMSX_GW_ENROLL_HMAC_SECRET` | （未设置） | **内测 Enroll**：HMAC secret（启用 enrollment token 验证）；未设置则 `Enroll` 返回失败（failed_precondition） |
 | `DMSX_GW_ENROLL_CA_CERT` / `DMSX_GW_ENROLL_CA_KEY` | （未设置） | **内测 Enroll**：CA 证书/私钥 PEM 路径；用于签发设备客户端证书（`EnrollRequest.public_key_pem` 需为 **CSR PEM**） |
 | `DMSX_GW_ENROLL_CERT_TTL_DAYS` | `30` | **内测 Enroll**：签发证书有效期（天，1–3650） |
+| `DMSX_GW_UPLOAD_TOKEN_HMAC_SECRET` | （未设置） | `UploadEvidence` 的 `upload_token` 验签 secret；token 采用 `v1.<payload_b64url>.<sig_b64url>`（payload 至少含 `tenant_id` / `device_id` / `exp`，可选 `content_type`） |
+| `DMSX_GW_EVIDENCE_S3_BUCKET` | （未设置） | 启用 `UploadEvidence` 真实持久化；未设置时 `UploadEvidence` 返回 failed_precondition |
+| `DMSX_GW_EVIDENCE_S3_REGION` | `us-east-1` | 证据对象存储 region |
+| `DMSX_GW_EVIDENCE_S3_ENDPOINT` | （未设置） | S3 兼容 endpoint（例如本地 MinIO 可填 `http://127.0.0.1:9100`） |
+| `DMSX_GW_EVIDENCE_S3_ACCESS_KEY` / `DMSX_GW_EVIDENCE_S3_SECRET_KEY` | （未设置） | 显式对象存储凭据；未设置时走默认 AWS credential chain |
+| `DMSX_GW_EVIDENCE_S3_PREFIX` | `evidence` | 证据对象 key 前缀 |
+| `DMSX_GW_EVIDENCE_S3_FORCE_PATH_STYLE` | `true`（当设置 endpoint 时） | 是否使用 path-style 访问；MinIO 通常需要开启 |
 
 `StreamCommands`：当前实现使用按租户/设备稳定命名的 **durable pull consumer**（名称前缀可通过 `DMSX_GW_COMMAND_CONSUMER_PREFIX` 调整），在解析出 **`tenant_id` + `device_id`** 后使用 **`filter_subject=dmsx.command.{tenant_id}.{device_id}`**（租户在 **mTLS 严格模式**下可由证书 SAN 推出，否则须在 `StreamCommandsRequest.tenant_id` 中显式携带 UUID）。默认 `ack_wait=30s`、`max_deliver=5`、`max_ack_pending=1`，并使用单条 pull（batch 1）保证**单设备单条在途命令**；若 `cursor` 提供 **JetStream stream sequence**，首次创建 consumer 时将从该序号恢复。消息体为 `dmsx-api` 发布的 **`Command` JSON**；当前语义不是“送入 gRPC 缓冲即 ACK”，而是**发出一条命令后等待同设备对应 `ReportResult(command_id)` 发布成功，再 ACK JetStream 并继续下一条**。等待期间网关会发送 progress ack 续租；客户端断开或流被替换时会 **NAK** 让该条命令尽快重投。同一租户/设备仅允许一个活跃 `StreamCommands` 连接，第二个连接会被拒绝。
 
 `ReportResult`：在 NATS/JetStream 可用时将 JSON 发布到 **`dmsx.command.result.{tenant_id}.{device_id}`**（与 `dmsx-api` 后台 ingest 约定一致）。控制面入库时以消息中的 **`status`** 为准更新 `commands.status`，`exit_code/stdout/stderr/evidence_key` 写入 `command_results`。**mTLS 严格模式**（已配置 `DMSX_GW_TLS_CLIENT_CA` 且未开启 `DMSX_GW_TLS_CLIENT_AUTH_OPTIONAL`）下，客户端证书 SAN 须含 URI **`urn:dmsx:tenant:{uuid}:device:{uuid}`**，且与 RPC 中的 `tenant_id` / `device_id` 一致。
 
 `Enroll`（内测实现）：验证 enrollment token（`v1.<payload_b64url>.<sig_b64url>`，HMAC-SHA256 over `payload_b64url`），并使用 CA 签发设备客户端证书；证书 SAN 写入 `urn:dmsx:tenant:{tenant_id}:device:{device_id}`。当前 enrollment token **必须显式绑定 `device_id`**，避免同一 token 重放生成多个设备身份；`EnrollRequest.public_key_pem` 在内测实现中要求为 **PKCS#10 CSR PEM**（历史字段名保留，后续可协议升级为 `csr_pem`）。若同时配置了 `DMSX_GW_TLS_CLIENT_CA` 与 Enroll 所需 HMAC/CA，握手层会允许匿名新设备连入并调用 `Enroll`，但其他 RPC 仍要求设备证书。
+
+`UploadEvidence`：当前实现会将收到的 chunk 聚合后写入 **S3 / MinIO 兼容对象存储**，对象 key 形如 `evidence/{tenant_id}/{device_id}/{uuid}`。租户与设备身份来自**设备证书**或 **`upload_token`**；若两者同时提供，则必须一致。若既没有 mTLS 身份、也没有 `upload_token`，网关会拒绝匿名落盘。当前仍未提供控制面对 `upload_token` 的签发接口，因此 token 更适合过渡/外部集成场景；生产内测建议优先使用设备证书身份直传。
 
 数据面最小闭环联调可使用 `scripts/internal-beta-data-plane-e2e.sh`：脚本会串起**创建设备 -> Enroll -> FetchDesiredState -> StreamCommands -> ReportResult -> 控制面查结果**，默认按 `GW_GRPC_MODE=tls` 运行；若为自签名服务端证书，可配 `GW_TLS_CA_CERT` 或直接 `GW_TLS_INSECURE=1`。
 

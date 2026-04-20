@@ -13,12 +13,13 @@ info:
 
     本 OpenAPI 仅描述**控制面 HTTP**（`dmsx-api`）契约；设备长连接数据面由 `dmsx-device-gw` 提供 **gRPC**（`proto/dmsx/agent.proto`，包名 `dmsx.agent.v1`，服务 `AgentService`），不在本 OpenAPI 的 `paths` 中展开。
 
-    **认证与身份**：生产建议启用 **mTLS**（网关配置 `DMSX_GW_TLS_CLIENT_CA`）。在 mTLS 严格模式下，客户端证书 SAN 必须包含 URI `urn:dmsx:tenant:{uuid}:device:{uuid}`，网关以证书为准校验每个 RPC 中的 `device_id`（及显式 `tenant_id`，若携带）与证书一致。为支持设备首证签发，若同时配置了 Enroll 所需 HMAC/CA，握手层会允许匿名新设备连入并仅调用 `Enroll`；其余 RPC 仍需设备证书。
+    **认证与身份**：生产建议启用 **mTLS**（网关配置 `DMSX_GW_TLS_CLIENT_CA`）。在 mTLS 严格模式下，客户端证书 SAN 必须包含 URI `urn:dmsx:tenant:{uuid}:device:{uuid}`，网关以证书为准校验每个 RPC 中的 `device_id`（及显式 `tenant_id`，若携带）与证书一致。为支持设备首证签发，若同时配置了 Enroll 所需 HMAC/CA，握手层会允许匿名新设备连入并仅调用 `Enroll`；其余 RPC 仍需设备证书。`UploadEvidence` 因无显式 `tenant_id`，当前要求通过设备证书或 `upload_token` 推导租户。
 
     **JetStream 命令与回执**：
     - 命令下发：控制面在命令写入 Postgres 并提交后异步发布到 NATS JetStream，subject `dmsx.command.{tenant_id}.{device_id}`（stream 默认 `DMSX_COMMANDS`，subjects `dmsx.command.>`）。
     - 设备拉取：网关当前对同一 `{tenant_id, device_id}` 仅允许一个活跃 `StreamCommands` 流，并按“发出一条命令 -> 等对应 `ReportResult(command_id)` 发布成功 -> ACK JetStream -> 再发下一条”串行推进。
     - 回执入库：网关将命令执行结果发布到 `dmsx.command.result.{tenant_id}.{device_id}`；控制面以 durable pull consumer 消费（默认 `DMSX_NATS_RESULT_CONSUMER=dmsx-api-result-ingest`）并与 `POST /v1/tenants/{tid}/commands/{cid}/result` 语义对齐写库。
+    - 证据上传：`UploadEvidence` 当前写入 S3 / MinIO 兼容对象存储；对象 key 由网关生成并通过 `ReportResult.evidence_object_key` 回传控制面。
 
     **认证**：根级 `security: [bearerAuth]`；`/health` 与 `/ready` 使用 `security: []`。JWT 可选 **`allowed_tenant_ids`**（路径租户白名单）与可选 **`tenant_roles`**（按租户覆盖 RBAC，见 `components.securitySchemes.bearerAuth`）。开发环境可将 `DMSX_API_AUTH_MODE=disabled` 关闭校验。
 

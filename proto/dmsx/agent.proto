@@ -101,6 +101,8 @@ message UploadEvidenceRequest {
   string content_type = 2;
   bytes chunk         = 3;
   bool last_chunk     = 4;
+  // 若无 mTLS 证书可推导租户，则需提供 upload_token（当前实现为
+  // v1.<payload_b64url>.<sig_b64url>，payload 至少含 tenant_id/device_id/exp）。
   string upload_token = 5;
 }
 
