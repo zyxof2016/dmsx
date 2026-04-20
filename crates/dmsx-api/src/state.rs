@@ -19,6 +19,7 @@ pub struct AppState {
     pub db: PgPool,
     pub redis_url: Option<String>,
     pub command_jetstream: Option<Arc<CommandJetStream>>,
+    pub upload_token_hmac_secret: Option<String>,
     pub livekit_url: String,
     pub livekit_api_key: String,
     pub livekit_api_secret: String,

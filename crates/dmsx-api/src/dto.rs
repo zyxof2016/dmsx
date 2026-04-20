@@ -489,6 +489,42 @@ pub struct SubmitCommandResultReq {
     pub evidence_key: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct IssueEvidenceUploadTokenReq {
+    pub content_type: Option<String>,
+    pub expires_in_seconds: Option<i64>,
+}
+
+impl IssueEvidenceUploadTokenReq {
+    pub fn validate(&self) -> Result<(), DmsxError> {
+        if let Some(content_type) = &self.content_type {
+            check_len("content_type", content_type, 1, 255)?;
+        }
+        if let Some(v) = self.expires_in_seconds {
+            if !(60..=3600).contains(&v) {
+                return Err(DmsxError::Validation(
+                    "expires_in_seconds must be between 60 and 3600".into(),
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    pub fn expires_in_seconds(&self) -> i64 {
+        self.expires_in_seconds.unwrap_or(900)
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct EvidenceUploadToken {
+    pub upload_token: String,
+    pub tenant_id: Uuid,
+    pub device_id: Uuid,
+    pub command_id: Uuid,
+    pub content_type: Option<String>,
+    pub expires_at: DateTime<Utc>,
+}
+
 // ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------
@@ -638,6 +674,27 @@ mod tests {
 
         let err = req.validate().unwrap_err();
         assert!(matches!(err, DmsxError::Validation(_)));
+    }
+
+    #[test]
+    fn issue_evidence_upload_token_req_rejects_ttl_out_of_range() {
+        let req = IssueEvidenceUploadTokenReq {
+            content_type: Some("text/plain".into()),
+            expires_in_seconds: Some(30),
+        };
+
+        let err = req.validate().unwrap_err();
+        assert!(matches!(err, DmsxError::Validation(_)));
+    }
+
+    #[test]
+    fn issue_evidence_upload_token_req_defaults_ttl() {
+        let req = IssueEvidenceUploadTokenReq {
+            content_type: None,
+            expires_in_seconds: None,
+        };
+
+        assert_eq!(req.expires_in_seconds(), 900);
     }
 
     #[test]

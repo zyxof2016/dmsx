@@ -909,6 +909,36 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '500':
           $ref: '#/components/responses/InternalServerError'
+  /v1/tenants/{tenant_id}/commands/{command_id}/evidence-upload-token:
+    post:
+      summary: Issue short-lived evidence upload token for command target device
+      operationId: postCommandEvidenceUploadToken
+      parameters:
+      - $ref: '#/components/parameters/TenantId'
+      - $ref: '#/components/parameters/CommandId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IssueEvidenceUploadTokenReq'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EvidenceUploadToken'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
   /v1/tenants/{tenant_id}/artifacts:
     get:
       summary: List artifacts
@@ -2003,6 +2033,46 @@ components:
         evidence_key:
           type: string
           nullable: true
+    IssueEvidenceUploadTokenReq:
+      type: object
+      properties:
+        content_type:
+          type: string
+          nullable: true
+          description: Optional MIME type bound into the token and later enforced by `UploadEvidence`
+        expires_in_seconds:
+          type: integer
+          format: int64
+          minimum: 60
+          maximum: 3600
+          nullable: true
+          description: Token TTL in seconds; defaults to 900
+    EvidenceUploadToken:
+      type: object
+      required:
+      - upload_token
+      - tenant_id
+      - device_id
+      - command_id
+      - expires_at
+      properties:
+        upload_token:
+          type: string
+        tenant_id:
+          type: string
+          format: uuid
+        device_id:
+          type: string
+          format: uuid
+        command_id:
+          type: string
+          format: uuid
+        content_type:
+          type: string
+          nullable: true
+        expires_at:
+          type: string
+          format: date-time
     AiContext:
       type: object
       required:

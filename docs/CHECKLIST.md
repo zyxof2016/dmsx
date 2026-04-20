@@ -177,6 +177,7 @@
 - [x] `GET /v1/tenants/{tid}/commands/{cid}` 查询命令状态（sqlx 持久化）
 - [x] `PATCH /v1/tenants/{tid}/commands/{cid}/status` 更新命令状态
 - [x] `GET/POST /v1/tenants/{tid}/commands/{cid}/result` 命令结果查询/提交
+- [x] `POST /v1/tenants/{tid}/commands/{cid}/evidence-upload-token` 命令证据上传 token 签发
 - [x] `GET /v1/tenants/{tid}/devices/{did}/shadow` 获取设备影子（含 delta 计算）
 - [x] `PATCH /v1/tenants/{tid}/devices/{did}/shadow/desired` 更新期望状态
 - [x] `POST /v1/tenants/{tid}/devices/{did}/actions` 设备远控操作下发
@@ -227,7 +228,7 @@
 - [~] `FetchDesiredState` — 返回空策略（stub；已做 mTLS device_id 校验）
 - [~] `StreamCommands` — JetStream durable pull，`filter_subject=dmsx.command.{tenant_id}.{device_id}`；支持稳定 consumer + `cursor`（stream sequence）恢复；同设备**单活跃流**、**单条在途命令**，以 `ReportResult(command_id)` 发布成功作为 ACK 提交点；mTLS SAN 与 RPC 对齐（见 `docs/DEPLOYMENT.md`）；已补 `scripts/internal-beta-data-plane-e2e.sh` 做最小闭环联调；更完整跨实例恢复语义待补
 - [x] `ReportResult` — 发布 JetStream `dmsx.command.result.{tenant_id}.{device_id}`（无 NATS 时 `accepted=false`）
-- [~] `UploadEvidence` — 消费流 + 256 MiB 限制 + 首包 `device_id` mTLS / `upload_token` 绑定校验；已支持写入 S3 / MinIO 兼容对象存储（`DMSX_GW_EVIDENCE_S3_*`）；控制面签发 `upload_token` 入口待补
+- [~] `UploadEvidence` — 消费流 + 256 MiB 限制 + 首包 `device_id` mTLS / `upload_token` 绑定校验；已支持写入 S3 / MinIO 兼容对象存储（`DMSX_GW_EVIDENCE_S3_*`）；控制面已接 `POST /v1/tenants/{tid}/commands/{cid}/evidence-upload-token` 签发入口；真实端到端联调记录待补
 - [x] gRPC Health Check（`grpc.health.v1.Health`）
 
 ### 基础设施

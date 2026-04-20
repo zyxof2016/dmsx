@@ -38,6 +38,9 @@ once_cell = "1.21"
 prometheus-client-derive-encode = "0.4"
 redis = { version = "1.2.0", features = ["aio", "tokio-comp"] }
 async-nats = "0.47.0"
+base64 = "0.22"
+hmac = "0.12"
+sha2 = "0.10"
 
 [dev-dependencies]
 sqlx.workspace = true

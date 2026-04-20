@@ -337,6 +337,16 @@ pub async fn command_result_submit(
     Ok((StatusCode::CREATED, Json(result)).into_response())
 }
 
+pub async fn command_evidence_upload_token_issue(
+    State(st): State<AppState>,
+    Extension(ctx): Extension<AuthContext>,
+    Path((tid, cid)): Path<(Uuid, Uuid)>,
+    Json(body): Json<IssueEvidenceUploadTokenReq>,
+) -> ApiResult<Response> {
+    let token = commands::issue_evidence_upload_token(&st, &ctx, tid, cid, &body).await?;
+    Ok((StatusCode::CREATED, Json(token)).into_response())
+}
+
 // ---------------------------------------------------------------------------
 // Artifacts
 // ---------------------------------------------------------------------------

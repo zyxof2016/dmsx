@@ -232,6 +232,7 @@ spec:
 | `DMSX_API_CONCURRENCY_LIMIT` | `1024` | 全局并发上限（启用时生效；下限 1） |
 | `DMSX_API_CORS_ALLOWED_ORIGINS` | （未设置） | 允许的 CORS 来源（逗号分隔，完整 scheme+host+port，如 `https://admin.example.com,http://localhost:3000`）。未设置且非 `dev` 环境将拒绝所有跨域请求（浏览器侧阻断）。 |
 | `DMSX_API_CORS_ALLOW_ALL` | `false` | 是否放开所有 CORS 来源（dev-like）；设置为 `1/true/yes` 时 `DMSX_API_CORS_ALLOWED_ORIGINS` 将被忽略。 |
+| `DMSX_API_UPLOAD_TOKEN_HMAC_SECRET` | （未设置） | 控制面签发 `UploadEvidence` token 的 HMAC secret；应与网关 `DMSX_GW_UPLOAD_TOKEN_HMAC_SECRET` 保持一致。若未设置，`POST /v1/tenants/{tid}/commands/{cid}/evidence-upload-token` 返回 **500** |
 | `DMSX_CLICKHOUSE_HTTP_URL` | （未设置） | ClickHouse HTTP 接口地址（未设置则不写入 CH）。示例：`http://127.0.0.1:8123` |
 | `DMSX_CLICKHOUSE_HTTP_USER` / `DMSX_CLICKHOUSE_HTTP_PASSWORD` | （可选） | ClickHouse HTTP Basic Auth 用户名/密码；仅当上述 URL 配置了且两项都存在时才启用 |
 | `DMSX_REDIS_URL` | （未设置） | Redis URL（未设置则不使用缓存/持久化）。当前用于桌面会话映射持久化：`session_id → {tenant_id, device_id}` 与 `device_id → session_id` |
@@ -280,7 +281,7 @@ spec:
 
 `Enroll`（内测实现）：验证 enrollment token（`v1.<payload_b64url>.<sig_b64url>`，HMAC-SHA256 over `payload_b64url`），并使用 CA 签发设备客户端证书；证书 SAN 写入 `urn:dmsx:tenant:{tenant_id}:device:{device_id}`。当前 enrollment token **必须显式绑定 `device_id`**，避免同一 token 重放生成多个设备身份；`EnrollRequest.public_key_pem` 在内测实现中要求为 **PKCS#10 CSR PEM**（历史字段名保留，后续可协议升级为 `csr_pem`）。若同时配置了 `DMSX_GW_TLS_CLIENT_CA` 与 Enroll 所需 HMAC/CA，握手层会允许匿名新设备连入并调用 `Enroll`，但其他 RPC 仍要求设备证书。
 
-`UploadEvidence`：当前实现会将收到的 chunk 聚合后写入 **S3 / MinIO 兼容对象存储**，对象 key 形如 `evidence/{tenant_id}/{device_id}/{uuid}`。租户与设备身份来自**设备证书**或 **`upload_token`**；若两者同时提供，则必须一致。若既没有 mTLS 身份、也没有 `upload_token`，网关会拒绝匿名落盘。当前仍未提供控制面对 `upload_token` 的签发接口，因此 token 更适合过渡/外部集成场景；生产内测建议优先使用设备证书身份直传。
+`UploadEvidence`：当前实现会将收到的 chunk 聚合后写入 **S3 / MinIO 兼容对象存储**，对象 key 形如 `evidence/{tenant_id}/{device_id}/{uuid}`。租户与设备身份来自**设备证书**或 **`upload_token`**；若两者同时提供，则必须一致。若既没有 mTLS 身份、也没有 `upload_token`，网关会拒绝匿名落盘。控制面现已提供 **`POST /v1/tenants/{tid}/commands/{cid}/evidence-upload-token`** 用于按命令目标设备签发短期 token（可选绑定 `content_type`）；生产内测建议仍优先使用设备证书身份直传，并将 token 作为过渡或跨进程上传场景兜底。
 
 数据面最小闭环联调可使用 `scripts/internal-beta-data-plane-e2e.sh`：脚本会串起**创建设备 -> Enroll -> FetchDesiredState -> StreamCommands -> ReportResult -> 控制面查结果**，默认按 `GW_GRPC_MODE=tls` 运行；若为自签名服务端证书，可配 `GW_TLS_CA_CERT` 或直接 `GW_TLS_INSECURE=1`。
 

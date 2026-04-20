@@ -183,6 +183,16 @@ pub async fn build_state_from_env() -> AppState {
         .ok()
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty());
+    let upload_token_hmac_secret = std::env::var("DMSX_API_UPLOAD_TOKEN_HMAC_SECRET")
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .or_else(|| {
+            std::env::var("DMSX_GW_UPLOAD_TOKEN_HMAC_SECRET")
+                .ok()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+        });
 
     let command_jetstream = crate::command_jetstream::CommandJetStream::try_from_env().await;
 
@@ -190,6 +200,7 @@ pub async fn build_state_from_env() -> AppState {
         db: pool,
         redis_url,
         command_jetstream,
+        upload_token_hmac_secret,
         livekit_url,
         livekit_api_key,
         livekit_api_secret,
@@ -324,6 +335,10 @@ pub fn build_router(st: AppState) -> Router {
             get(handlers::command_result_get).post(handlers::command_result_submit),
         )
         .route(
+            "/v1/tenants/{tenant_id}/commands/{command_id}/evidence-upload-token",
+            post(handlers::command_evidence_upload_token_issue),
+        )
+        .route(
             "/v1/tenants/{tenant_id}/artifacts",
             get(handlers::artifacts_list).post(handlers::artifacts_create),
         )
@@ -428,6 +443,7 @@ mod tests {
                 .expect("lazy pool"),
             redis_url: None,
             command_jetstream: None,
+            upload_token_hmac_secret: Some("test-upload-token-secret".to_string()),
             livekit_url: "ws://127.0.0.1:7880".to_string(),
             livekit_api_key: "test-livekit-key".to_string(),
             livekit_api_secret: "test-livekit-secret".to_string(),
