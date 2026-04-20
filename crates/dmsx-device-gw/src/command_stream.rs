@@ -1,11 +1,13 @@
 //! `StreamCommands`：从 JetStream 拉取 `dmsx-api` 发布的命令（subject `dmsx.command.{tenant}.{device}`），
-//! 过滤 `dmsx.command.*.{device_id}`，反序列化为 `dmsx_core::Command` 并映射为 gRPC `CommandEnvelope`。
+//! 使用按租户/设备稳定命名的 durable pull consumer，反序列化为 `dmsx_core::Command`
+//! 并映射为 gRPC `CommandEnvelope`。
 
 use std::pin::Pin;
+use std::time::Duration;
 
 use async_nats::jetstream::{
     self,
-    consumer::{pull, DeliverPolicy},
+    consumer::{pull, AckPolicy, DeliverPolicy},
     stream,
 };
 use dmsx_core::Command;
@@ -35,6 +37,37 @@ fn command_stream_filter_subject(device_id: &str, tenant_id: Option<Uuid>) -> St
     }
 }
 
+fn parse_cursor_start_sequence(cursor: Option<&str>) -> Option<u64> {
+    cursor
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .and_then(|s| s.parse::<u64>().ok())
+        .filter(|v| *v > 0)
+}
+
+fn consumer_name(device_id: &str, tenant_id: Option<Uuid>) -> String {
+    let prefix = std::env::var("DMSX_GW_COMMAND_CONSUMER_PREFIX")
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "dgw".to_string());
+    match tenant_id {
+        Some(tid) => {
+            let tid = tid.simple().to_string();
+            let did = device_id.replace('-', "");
+            format!(
+                "{prefix}-{}-{}",
+                &tid[..12.min(tid.len())],
+                &did[..12.min(did.len())]
+            )
+        }
+        None => {
+            let did = device_id.replace('-', "");
+            format!("{prefix}-{}", &did[..20.min(did.len())])
+        }
+    }
+}
+
 fn map_command(cmd: &Command) -> CommandEnvelope {
     CommandEnvelope {
         command_id: cmd.id.0.to_string(),
@@ -48,6 +81,7 @@ fn map_command(cmd: &Command) -> CommandEnvelope {
 async fn pull_loop(
     device_id: String,
     tenant_id: Option<Uuid>,
+    cursor: Option<String>,
     tx: mpsc::Sender<Result<CommandEnvelope, Status>>,
 ) {
     let nats_url = match std::env::var("DMSX_NATS_URL")
@@ -100,102 +134,133 @@ async fn pull_loop(
         }
     };
 
-    let consumer_label = format!("dmsx-gw-{}", Uuid::new_v4().as_simple());
     let filter_subject = command_stream_filter_subject(&device_id, tenant_id);
+    let durable_name = consumer_name(&device_id, tenant_id);
+    let deliver_policy = parse_cursor_start_sequence(cursor.as_deref())
+        .map(|start_sequence| DeliverPolicy::ByStartSequence { start_sequence })
+        .unwrap_or(DeliverPolicy::New);
 
-    let consumer = match stream
-        .get_or_create_consumer(
-            &consumer_label,
-            pull::Config {
-                durable_name: None,
-                name: Some(consumer_label.clone()),
-                filter_subject,
-                deliver_policy: DeliverPolicy::New,
-                ..Default::default()
-            },
-        )
-        .await
-    {
-        Ok(c) => c,
-        Err(e) => {
-            tracing::warn!(
-                error = %e,
-                consumer = %consumer_label,
-                "dmsx-device-gw: get_or_create_consumer failed"
-            );
-            return;
-        }
-    };
-
-    let mut messages = match consumer.messages().await {
-        Ok(m) => m,
-        Err(e) => {
-            tracing::warn!(error = %e, "dmsx-device-gw: consumer.messages failed");
-            return;
-        }
-    };
-
-    tracing::info!(
-        device_id = %device_id,
-        consumer = %consumer_label,
-        "stream_commands: JetStream pull started"
-    );
-
-    while let Some(item) = messages.next().await {
-        let msg = match item {
-            Ok(m) => m,
-            Err(e) => {
-                tracing::warn!(error = %e, "dmsx-device-gw: jetstream message recv error");
-                continue;
-            }
-        };
-
-        let cmd: Command = match serde_json::from_slice(msg.payload.as_ref()) {
+    loop {
+        let consumer = match stream
+            .get_or_create_consumer(
+                &durable_name,
+                pull::Config {
+                    durable_name: Some(durable_name.clone()),
+                    name: Some(durable_name.clone()),
+                    description: Some("device-gw StreamCommands durable consumer".to_string()),
+                    filter_subject: filter_subject.clone(),
+                    deliver_policy,
+                    ack_policy: AckPolicy::Explicit,
+                    ack_wait: Duration::from_secs(30),
+                    max_deliver: 5,
+                    max_ack_pending: 8,
+                    max_waiting: 1,
+                    inactive_threshold: Duration::from_secs(300),
+                    ..Default::default()
+                },
+            )
+            .await
+        {
             Ok(c) => c,
             Err(e) => {
-                tracing::warn!(error = %e, "dmsx-device-gw: command JSON decode failed, ack drop");
-                let _ = msg.ack().await;
+                tracing::warn!(
+                    error = %e,
+                    consumer = %durable_name,
+                    "dmsx-device-gw: get_or_create_consumer failed"
+                );
+                tokio::time::sleep(Duration::from_secs(2)).await;
                 continue;
             }
         };
 
-        if cmd.target_device_id.0.to_string() != device_id {
-            tracing::warn!(
-                expected = %device_id,
-                got = %cmd.target_device_id.0,
-                "dmsx-device-gw: device_id mismatch on filtered subject; nak"
-            );
-            let _ = msg
-                .ack_with(async_nats::jetstream::AckKind::Nak(None))
-                .await;
-            continue;
-        }
+        let mut messages = match consumer
+            .stream()
+            .max_messages_per_batch(8)
+            .heartbeat(Duration::from_secs(5))
+            .expires(Duration::from_secs(15))
+            .messages()
+            .await
+        {
+            Ok(m) => m,
+            Err(e) => {
+                tracing::warn!(error = %e, consumer = %durable_name, "dmsx-device-gw: consumer.messages failed");
+                tokio::time::sleep(Duration::from_secs(2)).await;
+                continue;
+            }
+        };
 
-        if let Some(expect_tid) = tenant_id {
-            if cmd.tenant_id.0 != expect_tid {
+        tracing::info!(
+            device_id = %device_id,
+            consumer = %durable_name,
+            filter_subject = %filter_subject,
+            cursor = ?cursor,
+            "stream_commands: JetStream pull started"
+        );
+
+        while let Some(item) = messages.next().await {
+            let msg = match item {
+                Ok(m) => m,
+                Err(e) => {
+                    tracing::warn!(error = %e, consumer = %durable_name, "dmsx-device-gw: jetstream message recv error");
+                    break;
+                }
+            };
+
+            let cmd: Command = match serde_json::from_slice(msg.payload.as_ref()) {
+                Ok(c) => c,
+                Err(e) => {
+                    tracing::warn!(error = %e, "dmsx-device-gw: command JSON decode failed, term drop");
+                    let _ = msg
+                        .ack_with(async_nats::jetstream::AckKind::Term)
+                        .await;
+                    continue;
+                }
+            };
+
+            if cmd.target_device_id.0.to_string() != device_id {
                 tracing::warn!(
-                    tenant = %expect_tid,
-                    got = %cmd.tenant_id.0,
-                    "dmsx-device-gw: tenant_id mismatch; nak"
+                    expected = %device_id,
+                    got = %cmd.target_device_id.0,
+                    "dmsx-device-gw: device_id mismatch on filtered subject; nak"
                 );
                 let _ = msg
                     .ack_with(async_nats::jetstream::AckKind::Nak(None))
                     .await;
                 continue;
             }
+
+            if let Some(expect_tid) = tenant_id {
+                if cmd.tenant_id.0 != expect_tid {
+                    tracing::warn!(
+                        tenant = %expect_tid,
+                        got = %cmd.tenant_id.0,
+                        "dmsx-device-gw: tenant_id mismatch; nak"
+                    );
+                    let _ = msg
+                        .ack_with(async_nats::jetstream::AckKind::Nak(None))
+                        .await;
+                    continue;
+                }
+            }
+
+            let env = map_command(&cmd);
+            if tx.send(Ok(env)).await.is_err() {
+                let _ = msg
+                    .ack_with(async_nats::jetstream::AckKind::Nak(None))
+                    .await;
+                return;
+            }
+
+            if let Err(e) = msg.ack().await {
+                tracing::warn!(error = %e, "dmsx-device-gw: message ack failed");
+            }
         }
 
-        let env = map_command(&cmd);
-        if tx.send(Ok(env)).await.is_err() {
-            let _ = msg
-                .ack_with(async_nats::jetstream::AckKind::Nak(None))
-                .await;
-            break;
-        }
-
-        if let Err(e) = msg.ack().await {
-            tracing::warn!(error = %e, "dmsx-device-gw: message ack failed");
-        }
+        tracing::warn!(
+            consumer = %durable_name,
+            "stream_commands: message stream ended, recreating durable consumer stream"
+        );
+        tokio::time::sleep(Duration::from_secs(1)).await;
     }
 }
 
@@ -203,6 +268,7 @@ async fn pull_loop(
 pub fn stream_commands(
     device_id: String,
     tenant_id: Option<Uuid>,
+    cursor: Option<String>,
 ) -> Pin<Box<dyn tokio_stream::Stream<Item = Result<CommandEnvelope, Status>> + Send + 'static>> {
     let device_id = device_id.trim().to_string();
     if device_id.is_empty() {
@@ -218,11 +284,12 @@ pub fn stream_commands(
         return Box::pin(tokio_stream::empty());
     }
 
-    let (tx, rx) = mpsc::channel::<Result<CommandEnvelope, Status>>(32);
+    let (tx, rx) = mpsc::channel::<Result<CommandEnvelope, Status>>(1);
     let did = device_id.clone();
     let tid = tenant_id;
+    let cursor = cursor;
     tokio::spawn(async move {
-        pull_loop(did, tid, tx).await;
+        pull_loop(did, tid, cursor, tx).await;
     });
 
     Box::pin(ReceiverStream::new(rx))

@@ -270,7 +270,11 @@ impl AgentService for AgentServiceImpl {
         rate_limit::check(&self.tenant_rate_limiter, tid)?;
         tracing::info!(tenant_id = %tid, device_id = %did, "stream_commands");
         let s: Self::StreamCommandsStream =
-            command_stream::stream_commands(did.to_string(), Some(tid));
+            command_stream::stream_commands(
+                did.to_string(),
+                Some(tid),
+                Some(request.get_ref().cursor.clone()),
+            );
         Ok(Response::new(s))
     }
 

@@ -225,7 +225,7 @@
 - [~] `Enroll` — 内测 CA 签发证书（HMAC enrollment token + **固定 device_id** + CSR；SAN `urn:dmsx:tenant:{tid}:device:{did}`）；生产级 CA 集成/吊销待补
 - [x] `Heartbeat` — 返回服务器时间
 - [~] `FetchDesiredState` — 返回空策略（stub；已做 mTLS device_id 校验）
-- [~] `StreamCommands` — JetStream pull，`filter_subject=dmsx.command.{tenant_id}.{device_id}`；mTLS SAN 与 RPC 对齐（见 `docs/DEPLOYMENT.md`）；背压/有序投递待补
+- [~] `StreamCommands` — JetStream durable pull，`filter_subject=dmsx.command.{tenant_id}.{device_id}`；支持稳定 consumer + `cursor`（stream sequence）恢复；mTLS SAN 与 RPC 对齐（见 `docs/DEPLOYMENT.md`）；更完整有序投递语义待补
 - [x] `ReportResult` — 发布 JetStream `dmsx.command.result.{tenant_id}.{device_id}`（无 NATS 时 `accepted=false`）
 - [~] `UploadEvidence` — 消费流 + 256 MiB 限制 + 首包 `device_id` mTLS 校验（未持久化）
 - [x] gRPC Health Check（`grpc.health.v1.Health`）

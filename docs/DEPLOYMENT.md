@@ -267,7 +267,7 @@ spec:
 | `DMSX_GW_ENROLL_CA_CERT` / `DMSX_GW_ENROLL_CA_KEY` | （未设置） | **内测 Enroll**：CA 证书/私钥 PEM 路径；用于签发设备客户端证书（`EnrollRequest.public_key_pem` 需为 **CSR PEM**） |
 | `DMSX_GW_ENROLL_CERT_TTL_DAYS` | `30` | **内测 Enroll**：签发证书有效期（天，1–3650） |
 
-`StreamCommands`：对每个 gRPC 流创建 **ephemeral pull consumer**，在解析出 **`tenant_id` + `device_id`** 后使用 **`filter_subject=dmsx.command.{tenant_id}.{device_id}`**（租户在 **mTLS 严格模式**下可由证书 SAN 推出，否则须在 `StreamCommandsRequest.tenant_id` 中显式携带 UUID）；`deliver_policy=new`，消息体为 `dmsx-api` 发布的 **`Command` JSON**；成功推送到 gRPC 客户端后再 **ACK**；客户端断开则 **NAK** 以便重投。
+`StreamCommands`：当前实现使用按租户/设备稳定命名的 **durable pull consumer**（名称前缀可通过 `DMSX_GW_COMMAND_CONSUMER_PREFIX` 调整），在解析出 **`tenant_id` + `device_id`** 后使用 **`filter_subject=dmsx.command.{tenant_id}.{device_id}`**（租户在 **mTLS 严格模式**下可由证书 SAN 推出，否则须在 `StreamCommandsRequest.tenant_id` 中显式携带 UUID）。默认 `ack_wait=30s`、`max_deliver=5`、`max_ack_pending=8`，并使用小批量 pull（batch 8）降低缓冲放大；若 `cursor` 提供 **JetStream stream sequence**，首次创建 consumer 时将从该序号恢复。消息体为 `dmsx-api` 发布的 **`Command` JSON**；成功送入 gRPC 内部缓冲后再 **ACK**；客户端断开则 **NAK** 以便重投。
 
 `ReportResult`：在 NATS/JetStream 可用时将 JSON 发布到 **`dmsx.command.result.{tenant_id}.{device_id}`**（与 `dmsx-api` 后台 ingest 约定一致）。控制面入库时以消息中的 **`status`** 为准更新 `commands.status`，`exit_code/stdout/stderr/evidence_key` 写入 `command_results`。**mTLS 严格模式**（已配置 `DMSX_GW_TLS_CLIENT_CA` 且未开启 `DMSX_GW_TLS_CLIENT_AUTH_OPTIONAL`）下，客户端证书 SAN 须含 URI **`urn:dmsx:tenant:{uuid}:device:{uuid}`**，且与 RPC 中的 `tenant_id` / `device_id` 一致。
 
