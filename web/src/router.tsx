@@ -1,38 +1,120 @@
+import React from "react";
 import {
   createRouter,
   createRoute,
   createRootRoute,
 } from "@tanstack/react-router";
-import { AppLayout } from "./App";
-import { DashboardPage } from "./pages/Dashboard";
-import { DevicesPage } from "./pages/Devices";
-import { DeviceDetailDrawer } from "./components/DeviceDetail";
-import { PoliciesPage } from "./pages/Policies";
-import { PolicyDetailDrawer } from "./components/PolicyDetail";
-import { CommandsPage } from "./pages/Commands";
-import { CommandDetailDrawer } from "./components/CommandDetail";
-import { ArtifactsPage } from "./pages/Artifacts";
-import { CompliancePage } from "./pages/Compliance";
-import { NetworkPage } from "./pages/Network";
-import { AiCenterPage } from "./pages/AiCenter";
-import { SystemSettingsPage } from "./pages/SystemSettings";
-import { PolicyEditorPage } from "./pages/PolicyEditor";
-import { AuditLogsPage } from "./pages/AuditLogs";
-import { UsersRolesPage } from "./pages/UsersRoles";
+import { Spin } from "antd";
 
-const rootRoute = createRootRoute({ component: AppLayout });
+const AppLayout = React.lazy(async () => {
+  const mod = await import("./App");
+  return { default: mod.AppLayout };
+});
+
+const DashboardPage = React.lazy(async () => {
+  const mod = await import("./pages/Dashboard");
+  return { default: mod.DashboardPage };
+});
+
+const DevicesPage = React.lazy(async () => {
+  const mod = await import("./pages/Devices");
+  return { default: mod.DevicesPage };
+});
+
+const DeviceDetailDrawer = React.lazy(async () => {
+  const mod = await import("./components/DeviceDetail");
+  return { default: mod.DeviceDetailDrawer };
+});
+
+const PoliciesPage = React.lazy(async () => {
+  const mod = await import("./pages/Policies");
+  return { default: mod.PoliciesPage };
+});
+
+const PolicyDetailDrawer = React.lazy(async () => {
+  const mod = await import("./components/PolicyDetail");
+  return { default: mod.PolicyDetailDrawer };
+});
+
+const CommandsPage = React.lazy(async () => {
+  const mod = await import("./pages/Commands");
+  return { default: mod.CommandsPage };
+});
+
+const CommandDetailDrawer = React.lazy(async () => {
+  const mod = await import("./components/CommandDetail");
+  return { default: mod.CommandDetailDrawer };
+});
+
+const ArtifactsPage = React.lazy(async () => {
+  const mod = await import("./pages/Artifacts");
+  return { default: mod.ArtifactsPage };
+});
+
+const CompliancePage = React.lazy(async () => {
+  const mod = await import("./pages/Compliance");
+  return { default: mod.CompliancePage };
+});
+
+const NetworkPage = React.lazy(async () => {
+  const mod = await import("./pages/Network");
+  return { default: mod.NetworkPage };
+});
+
+const AiCenterPage = React.lazy(async () => {
+  const mod = await import("./pages/AiCenter");
+  return { default: mod.AiCenterPage };
+});
+
+const SystemSettingsPage = React.lazy(async () => {
+  const mod = await import("./pages/SystemSettings");
+  return { default: mod.SystemSettingsPage };
+});
+
+const PolicyEditorPage = React.lazy(async () => {
+  const mod = await import("./pages/PolicyEditor");
+  return { default: mod.PolicyEditorPage };
+});
+
+const AuditLogsPage = React.lazy(async () => {
+  const mod = await import("./pages/AuditLogs");
+  return { default: mod.AuditLogsPage };
+});
+
+const UsersRolesPage = React.lazy(async () => {
+  const mod = await import("./pages/UsersRoles");
+  return { default: mod.UsersRolesPage };
+});
+
+function withLazyBoundary(Component: React.LazyExoticComponent<React.ComponentType>) {
+  return function LazyRouteComponent() {
+    return (
+      <React.Suspense
+        fallback={
+          <div style={{ minHeight: 240, display: "grid", placeItems: "center" }}>
+            <Spin size="large" />
+          </div>
+        }
+      >
+        <Component />
+      </React.Suspense>
+    );
+  };
+}
+
+const rootRoute = createRootRoute({ component: withLazyBoundary(AppLayout) });
 
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
-  component: DashboardPage,
+  component: withLazyBoundary(DashboardPage),
 });
 
 // --- Devices (nested: list + detail drawer) ---
 const devicesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/devices",
-  component: DevicesPage,
+  component: withLazyBoundary(DevicesPage),
 });
 const devicesIndexRoute = createRoute({
   getParentRoute: () => devicesRoute,
@@ -44,14 +126,14 @@ const deviceDetailRoute = createRoute({
   validateSearch: (search: Record<string, unknown>) => ({
     tab: typeof search.tab === "string" ? search.tab : undefined,
   }),
-  component: DeviceDetailDrawer,
+  component: withLazyBoundary(DeviceDetailDrawer),
 });
 
 // --- Policies (nested) ---
 const policiesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/policies",
-  component: PoliciesPage,
+  component: withLazyBoundary(PoliciesPage),
 });
 const policiesIndexRoute = createRoute({
   getParentRoute: () => policiesRoute,
@@ -60,14 +142,14 @@ const policiesIndexRoute = createRoute({
 const policyDetailRoute = createRoute({
   getParentRoute: () => policiesRoute,
   path: "$policyId",
-  component: PolicyDetailDrawer,
+  component: withLazyBoundary(PolicyDetailDrawer),
 });
 
 // --- Commands (nested) ---
 const commandsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/commands",
-  component: CommandsPage,
+  component: withLazyBoundary(CommandsPage),
 });
 const commandsIndexRoute = createRoute({
   getParentRoute: () => commandsRoute,
@@ -76,53 +158,53 @@ const commandsIndexRoute = createRoute({
 const commandDetailRoute = createRoute({
   getParentRoute: () => commandsRoute,
   path: "$commandId",
-  component: CommandDetailDrawer,
+  component: withLazyBoundary(CommandDetailDrawer),
 });
 
 // --- Flat routes ---
 const artifactsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/artifacts",
-  component: ArtifactsPage,
+  component: withLazyBoundary(ArtifactsPage),
 });
 const complianceRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/compliance",
-  component: CompliancePage,
+  component: withLazyBoundary(CompliancePage),
 });
 const networkRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/network",
-  component: NetworkPage,
+  component: withLazyBoundary(NetworkPage),
 });
 const aiRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/ai",
-  component: AiCenterPage,
+  component: withLazyBoundary(AiCenterPage),
 });
 
 const systemSettingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/settings",
-  component: SystemSettingsPage,
+  component: withLazyBoundary(SystemSettingsPage),
 });
 
 const policyEditorRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/policy-editor",
-  component: PolicyEditorPage,
+  component: withLazyBoundary(PolicyEditorPage),
 });
 
 const auditLogsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/audit-logs",
-  component: AuditLogsPage,
+  component: withLazyBoundary(AuditLogsPage),
 });
 
 const usersRolesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/users",
-  component: UsersRolesPage,
+  component: withLazyBoundary(UsersRolesPage),
 });
 
 const routeTree = rootRoute.addChildren([
