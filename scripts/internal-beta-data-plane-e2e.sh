@@ -8,6 +8,13 @@
 # - GW 已配置 DMSX_GW_ENROLL_HMAC_SECRET + DMSX_GW_ENROLL_CA_CERT/KEY
 # - 若要验证 mTLS，建议 GW 开启 TLS（DMSX_GW_TLS_CERT/KEY），本脚本默认按 TLS 跑
 #
+# 证据上传闭环（可选）：
+# - 设置 DMSX_E2E_WITH_EVIDENCE=1 时，在 ReportResult 前会：签发 evidence-upload-token →
+#   gRPC UploadEvidence → ReportResult 携带 evidence_object_key → 轮询 GET .../result 断言 evidence_key
+# - 需 GW 配置 DMSX_GW_EVIDENCE_S3_BUCKET 及 DMSX_GW_EVIDENCE_S3_*（见 docs/DEPLOYMENT.md），且
+#   API 与 GW 使用同一 upload token HMAC 密钥（DMSX_API_UPLOAD_TOKEN_HMAC_SECRET 与
+#   DMSX_GW_UPLOAD_TOKEN_HMAC_SECRET 至少一侧配置且值一致；API 未单独配置时会回退读 GW 同名变量）
+#
 # 依赖：curl、python3、openssl、grpcurl、timeout
 #
 # 环境变量：
@@ -22,6 +29,7 @@
 # - STREAM_WAIT_SECS    默认 15
 # - RESULT_WAIT_SECS    默认 15
 # - KEEP_WORKDIR        默认 0；设为 1 时保留临时目录
+# - DMSX_E2E_WITH_EVIDENCE  默认未设；设为 1 时跑证据上传并校验控制面 evidence_key
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -202,25 +210,77 @@ wait "$STREAM_PID" || true
 [[ -n "$STREAM_CMD_ID" ]] || die "StreamCommands 未在 ${STREAM_WAIT_SECS}s 内收到命令（详见 $STREAM_ERR）"
 [[ "$STREAM_CMD_ID" == "$CMD_ID" ]] || die "StreamCommands 收到的 command_id 与 API 不一致: $STREAM_CMD_ID != $CMD_ID"
 
+EVIDENCE_OBJECT_KEY=""
+if [[ "${DMSX_E2E_WITH_EVIDENCE:-}" == "1" ]]; then
+  echo "== 签发 evidence-upload-token =="
+  TOKEN_JSON="$WORKDIR/evidence_upload_token.json"
+  curl -sfS "${HDR[@]}" -X POST \
+    "$API/v1/tenants/$TENANT/commands/$CMD_ID/evidence-upload-token" \
+    -d '{"content_type":"text/plain","expires_in_seconds":600}' \
+    -o "$TOKEN_JSON" || die "evidence-upload-token 失败（检查 API 是否配置 upload token HMAC secret、命令是否存在）"
+  UPLOAD_TOKEN="$(python3 - "$TOKEN_JSON" <<'PY'
+import json, sys
+print(json.load(open(sys.argv[1], encoding="utf-8"))["upload_token"])
+PY
+)"
+
+  echo "== UploadEvidence（对象存储） =="
+  UPLOAD_OUT="$WORKDIR/upload_evidence.json"
+  DEVICE_ID="$DEVICE_ID" UPLOAD_TOKEN="$UPLOAD_TOKEN" python3 - <<'PY' | \
+    grpcurl "${grpc_mtls_args[@]}" \
+      -import-path "$ROOT/proto" \
+      -proto dmsx/agent.proto \
+      -d @ \
+      "$GW_ADDR" dmsx.agent.v1.AgentService/UploadEvidence >"$UPLOAD_OUT"
+import base64, json, os
+
+chunk = base64.b64encode(b"internal-beta-data-plane-e2e evidence blob").decode()
+msg = {
+    "device_id": os.environ["DEVICE_ID"],
+    "content_type": "text/plain",
+    "chunk": chunk,
+    "upload_token": os.environ["UPLOAD_TOKEN"],
+}
+print(json.dumps(msg, ensure_ascii=False))
+PY
+
+  EVIDENCE_OBJECT_KEY="$(python3 - "$UPLOAD_OUT" <<'PY'
+import json, sys
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+key = (data.get("object_key") or data.get("objectKey") or "").strip()
+if not key:
+    raise SystemExit("UploadEvidence 响应缺少 object_key")
+print(key)
+PY
+)"
+  echo "evidence_object_key=$EVIDENCE_OBJECT_KEY"
+fi
+
 echo "== ReportResult（回执 JetStream） =="
 REPORT_JSON="$WORKDIR/report_result.json"
+REPORT_PAYLOAD="$(DEVICE_ID="$DEVICE_ID" TENANT="$TENANT" CMD_ID="$CMD_ID" EVIDENCE_OBJECT_KEY="$EVIDENCE_OBJECT_KEY" python3 - <<'PY'
+import json, os
+
+print(
+    json.dumps(
+        {
+            "device_id": os.environ["DEVICE_ID"],
+            "tenant_id": os.environ["TENANT"],
+            "command_id": os.environ["CMD_ID"],
+            "status": "COMMAND_STATUS_SUCCEEDED",
+            "exit_code": 0,
+            "stdout_snippet": "internal-beta-data-plane-e2e",
+            "stderr_snippet": "",
+            "evidence_object_key": os.environ.get("EVIDENCE_OBJECT_KEY", ""),
+        }
+    )
+)
+PY
+)"
 grpcurl "${grpc_mtls_args[@]}" \
   -import-path "$ROOT/proto" \
   -proto dmsx/agent.proto \
-  -d "$(python3 - <<PY
-import json
-print(json.dumps({
-  "device_id":"$DEVICE_ID",
-  "tenant_id":"$TENANT",
-  "command_id":"$CMD_ID",
-  "status":"COMMAND_STATUS_SUCCEEDED",
-  "exit_code":0,
-  "stdout_snippet":"internal-beta-data-plane-e2e",
-  "stderr_snippet":"",
-  "evidence_object_key":""
-}))
-PY
-)" \
+  -d "$REPORT_PAYLOAD" \
   "$GW_ADDR" dmsx.agent.v1.AgentService/ReportResult >"$REPORT_JSON"
 
 python3 - "$REPORT_JSON" <<'PY'
@@ -260,7 +320,22 @@ data = json.load(open(sys.argv[1], encoding="utf-8"))
 print(data.get("stdout",""))
 PY
 )"
+    RESULT_EVIDENCE="$(python3 - "$WORKDIR/result.json" <<'PY'
+import json, sys
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+v = data.get("evidence_key")
+print("" if v is None else v)
+PY
+)"
+    ok=0
     if [[ "$RESULT_CODE" == "0" && "$RESULT_STDOUT" == *"internal-beta-data-plane-e2e"* ]]; then
+      if [[ "${DMSX_E2E_WITH_EVIDENCE:-}" == "1" ]]; then
+        [[ "$RESULT_EVIDENCE" == "$EVIDENCE_OBJECT_KEY" ]] && ok=1
+      else
+        ok=1
+      fi
+    fi
+    if [[ "$ok" == "1" ]]; then
       break
     fi
   fi
@@ -269,6 +344,18 @@ done
 
 [[ "$RESULT_CODE" == "0" ]] || die "结果 exit_code 非 0：$RESULT_CODE"
 [[ "$RESULT_STDOUT" == *"internal-beta-data-plane-e2e"* ]] || die "结果 stdout 未命中标记"
+if [[ "${DMSX_E2E_WITH_EVIDENCE:-}" == "1" ]]; then
+  [[ -n "$EVIDENCE_OBJECT_KEY" ]] || die "证据模式但未得到 object_key"
+  RESULT_EVIDENCE_FINAL="$(python3 - "$WORKDIR/result.json" <<'PY'
+import json, sys
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+v = data.get("evidence_key")
+print("" if v is None else v)
+PY
+)"
+  [[ "$RESULT_EVIDENCE_FINAL" == "$EVIDENCE_OBJECT_KEY" ]] \
+    || die "结果 evidence_key 与 UploadEvidence 不一致: ${RESULT_EVIDENCE_FINAL} != ${EVIDENCE_OBJECT_KEY}"
+fi
 
 echo ""
-echo "数据面最小闭环通过（api=$API gw=$GW_ADDR tenant=$TENANT device=$DEVICE_ID command=$CMD_ID mode=$GW_GRPC_MODE）。"
+echo "数据面最小闭环通过（api=$API gw=$GW_ADDR tenant=$TENANT device=$DEVICE_ID command=$CMD_ID mode=$GW_GRPC_MODE${DMSX_E2E_WITH_EVIDENCE:+ evidence=1}）。"

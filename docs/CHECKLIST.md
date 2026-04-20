@@ -228,7 +228,7 @@
 - [~] `FetchDesiredState` — 返回空策略（stub；已做 mTLS device_id 校验）
 - [~] `StreamCommands` — JetStream durable pull，`filter_subject=dmsx.command.{tenant_id}.{device_id}`；支持稳定 consumer + `cursor`（stream sequence）恢复；同设备**单活跃流**、**单条在途命令**，以 `ReportResult(command_id)` 发布成功作为 ACK 提交点；mTLS SAN 与 RPC 对齐（见 `docs/DEPLOYMENT.md`）；已补 `scripts/internal-beta-data-plane-e2e.sh` 做最小闭环联调；更完整跨实例恢复语义待补
 - [x] `ReportResult` — 发布 JetStream `dmsx.command.result.{tenant_id}.{device_id}`（无 NATS 时 `accepted=false`）
-- [~] `UploadEvidence` — 消费流 + 256 MiB 限制 + 首包 `device_id` mTLS / `upload_token` 绑定校验；已支持写入 S3 / MinIO 兼容对象存储（`DMSX_GW_EVIDENCE_S3_*`）；控制面已接 `POST /v1/tenants/{tid}/commands/{cid}/evidence-upload-token` 签发入口；真实端到端联调记录待补
+- [x] `UploadEvidence` — 消费流 + 256 MiB 限制 + 首包 `device_id` mTLS / `upload_token` 绑定校验；已支持写入 S3 / MinIO 兼容对象存储（`DMSX_GW_EVIDENCE_S3_*`）；控制面已接 `POST /v1/tenants/{tid}/commands/{cid}/evidence-upload-token` 签发入口；**验证**：`DMSX_E2E_WITH_EVIDENCE=1 ./scripts/internal-beta-data-plane-e2e.sh`（依赖可写桶 + 与 GW 一致的 upload token secret；默认不传此变量则不跑对象存储段）
 - [x] gRPC Health Check（`grpc.health.v1.Health`）
 
 ### 基础设施
@@ -420,10 +420,10 @@
 
 | 状态 | 数量 |
 |------|------|
-| [x] 已完成 | 139 |
-| [~] 骨架/Stub | 13 |
+| [x] 已完成 | 140 |
+| [~] 骨架/Stub | 12 |
 | [ ] 未开始 | 48 |
 
 > 上表仅统计 **§1 起各功能小节** 中带状态标记的条目；**「内测阶段目标与完成定义」** 中的 DoD 为过程自查项，**未计入**上表「未开始」数量。其中 **「自动化基线绿灯」** 已勾选并附验证记录，亦不纳入上表「已完成」计数。
 
-> 最后更新：2026-04-16（**租户/组织/站点/组 POST** 已落地 + OpenAPI；**Agent** `smoke_noop` + `scripts/agent-dev-e2e.sh`；**环境可复现** / **多租户公测**见前文；新增迁移后须重编 `dmsx-api`）
+> 最后更新：2026-04-20（**数据面 e2e**：`DMSX_E2E_WITH_EVIDENCE=1` 覆盖 evidence-upload-token → `UploadEvidence` → `ReportResult` → 控制面 `evidence_key`；其余见前文）

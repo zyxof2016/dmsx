@@ -283,7 +283,7 @@ spec:
 
 `UploadEvidence`：当前实现会将收到的 chunk 聚合后写入 **S3 / MinIO 兼容对象存储**，对象 key 形如 `evidence/{tenant_id}/{device_id}/{uuid}`。租户与设备身份来自**设备证书**或 **`upload_token`**；若两者同时提供，则必须一致。若既没有 mTLS 身份、也没有 `upload_token`，网关会拒绝匿名落盘。控制面现已提供 **`POST /v1/tenants/{tid}/commands/{cid}/evidence-upload-token`** 用于按命令目标设备签发短期 token（可选绑定 `content_type`）；生产内测建议仍优先使用设备证书身份直传，并将 token 作为过渡或跨进程上传场景兜底。
 
-数据面最小闭环联调可使用 `scripts/internal-beta-data-plane-e2e.sh`：脚本会串起**创建设备 -> Enroll -> FetchDesiredState -> StreamCommands -> ReportResult -> 控制面查结果**，默认按 `GW_GRPC_MODE=tls` 运行；若为自签名服务端证书，可配 `GW_TLS_CA_CERT` 或直接 `GW_TLS_INSECURE=1`。
+数据面最小闭环联调可使用 `scripts/internal-beta-data-plane-e2e.sh`：脚本会串起**创建设备 -> Enroll -> FetchDesiredState -> StreamCommands -> ReportResult -> 控制面查结果**，默认按 `GW_GRPC_MODE=tls` 运行；若为自签名服务端证书，可配 `GW_TLS_CA_CERT` 或直接 `GW_TLS_INSECURE=1`。设置 **`DMSX_E2E_WITH_EVIDENCE=1`** 时，会额外跑 **evidence-upload-token → `UploadEvidence` → `ReportResult.evidence_object_key` → GET 结果校验 `evidence_key`**（需 GW 已配置 `DMSX_GW_EVIDENCE_S3_*` 桶可写，且 API/GW 的 upload token HMAC 密钥一致）。
 
 ## 环境变量（dmsx-agent）
 
