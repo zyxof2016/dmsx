@@ -20,6 +20,7 @@ import { SyncOutlined, DownloadOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import { useFindings, useStats, exportCsv } from "../api/hooks";
 import type { ComplianceFinding, ListParams } from "../api/types";
+import { formatApiError } from "../api/errors";
 
 const { Title } = Typography;
 
@@ -82,7 +83,7 @@ export const CompliancePage: React.FC = () => {
       <Alert
         type="error"
         message="加载失败"
-        description={String(error)}
+        description={formatApiError(error)}
         showIcon
       />
     );
