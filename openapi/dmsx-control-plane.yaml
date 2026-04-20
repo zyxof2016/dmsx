@@ -17,6 +17,7 @@ info:
 
     **JetStream 命令与回执**：
     - 命令下发：控制面在命令写入 Postgres 并提交后异步发布到 NATS JetStream，subject `dmsx.command.{tenant_id}.{device_id}`（stream 默认 `DMSX_COMMANDS`，subjects `dmsx.command.>`）。
+    - 设备拉取：网关当前对同一 `{tenant_id, device_id}` 仅允许一个活跃 `StreamCommands` 流，并按“发出一条命令 -> 等对应 `ReportResult(command_id)` 发布成功 -> ACK JetStream -> 再发下一条”串行推进。
     - 回执入库：网关将命令执行结果发布到 `dmsx.command.result.{tenant_id}.{device_id}`；控制面以 durable pull consumer 消费（默认 `DMSX_NATS_RESULT_CONSUMER=dmsx-api-result-ingest`）并与 `POST /v1/tenants/{tid}/commands/{cid}/result` 语义对齐写库。
 
     **认证**：根级 `security: [bearerAuth]`；`/health` 与 `/ready` 使用 `security: []`。JWT 可选 **`allowed_tenant_ids`**（路径租户白名单）与可选 **`tenant_roles`**（按租户覆盖 RBAC，见 `components.securitySchemes.bearerAuth`）。开发环境可将 `DMSX_API_AUTH_MODE=disabled` 关闭校验。

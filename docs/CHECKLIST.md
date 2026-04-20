@@ -225,7 +225,7 @@
 - [~] `Enroll` — 内测 CA 签发证书（HMAC enrollment token + **固定 device_id** + CSR；SAN `urn:dmsx:tenant:{tid}:device:{did}`）；启用 `DMSX_GW_TLS_CLIENT_CA` 且配置 Enroll HMAC/CA 时，允许匿名新设备仅调用 `Enroll`；生产级 CA 集成/吊销待补
 - [x] `Heartbeat` — 返回服务器时间
 - [~] `FetchDesiredState` — 返回空策略（stub；已做 mTLS device_id 校验）
-- [~] `StreamCommands` — JetStream durable pull，`filter_subject=dmsx.command.{tenant_id}.{device_id}`；支持稳定 consumer + `cursor`（stream sequence）恢复；mTLS SAN 与 RPC 对齐（见 `docs/DEPLOYMENT.md`）；已补 `scripts/internal-beta-data-plane-e2e.sh` 做最小闭环联调；更完整有序投递语义待补
+- [~] `StreamCommands` — JetStream durable pull，`filter_subject=dmsx.command.{tenant_id}.{device_id}`；支持稳定 consumer + `cursor`（stream sequence）恢复；同设备**单活跃流**、**单条在途命令**，以 `ReportResult(command_id)` 发布成功作为 ACK 提交点；mTLS SAN 与 RPC 对齐（见 `docs/DEPLOYMENT.md`）；已补 `scripts/internal-beta-data-plane-e2e.sh` 做最小闭环联调；更完整跨实例恢复语义待补
 - [x] `ReportResult` — 发布 JetStream `dmsx.command.result.{tenant_id}.{device_id}`（无 NATS 时 `accepted=false`）
 - [~] `UploadEvidence` — 消费流 + 256 MiB 限制 + 首包 `device_id` mTLS 校验（未持久化）
 - [x] gRPC Health Check（`grpc.health.v1.Health`）

@@ -86,6 +86,7 @@ struct AgentServiceImpl {
     active_stream_commands: Arc<std::sync::atomic::AtomicU64>,
     active_uploads: Arc<std::sync::atomic::AtomicU64>,
     tenant_rate_limiter: Option<Arc<rate_limit::TenantLimiter>>,
+    command_tracker: Arc<command_stream::CommandTracker>,
 }
 
 impl AgentServiceImpl {
@@ -96,6 +97,7 @@ impl AgentServiceImpl {
             active_stream_commands: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             active_uploads: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             tenant_rate_limiter: rate_limit::from_env(),
+            command_tracker: Arc::new(command_stream::CommandTracker::new()),
         }
     }
 }
@@ -286,12 +288,14 @@ impl AgentService for AgentServiceImpl {
             &request.get_ref().device_id,
         )?;
         rate_limit::check(&self.tenant_rate_limiter, tid)?;
+        let session_lease = self.command_tracker.start_session(tid, did)?;
         tracing::info!(tenant_id = %tid, device_id = %did, "stream_commands");
         let s: Self::StreamCommandsStream =
             command_stream::stream_commands(
                 did.to_string(),
                 Some(tid),
                 Some(request.get_ref().cursor.clone()),
+                session_lease,
             );
         Ok(Response::new(s))
     }
@@ -345,10 +349,13 @@ impl AgentService for AgentServiceImpl {
             .await
             .map_err(|e| Status::internal(e))?;
 
+        let committed = self.command_tracker.mark_completed(tid, did, command_id);
+
         tracing::info!(
             tenant_id = %tid,
             device_id = %did,
             command_id = %command_id,
+            committed_to_stream = committed,
             "report_result published to JetStream"
         );
 
