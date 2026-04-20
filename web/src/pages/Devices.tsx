@@ -37,6 +37,7 @@ import {
   exportCsv,
 } from "../api/hooks";
 import type { Device, CreateDeviceReq, ListParams } from "../api/types";
+import { formatApiError } from "../api/errors";
 
 const { Title } = Typography;
 
@@ -92,7 +93,7 @@ export const DevicesPage: React.FC = () => {
       setOpen(false);
       form.resetFields();
     } catch (e: unknown) {
-      message.error(String(e));
+      message.error(formatApiError(e));
     }
   };
 
@@ -101,7 +102,7 @@ export const DevicesPage: React.FC = () => {
       await deleteMut.mutateAsync(id);
       message.success("已删除");
     } catch (e: unknown) {
-      message.error(String(e));
+      message.error(formatApiError(e));
     }
   };
 
@@ -115,13 +116,13 @@ export const DevicesPage: React.FC = () => {
 
   if (error) {
     return (
-      <Alert
-        type="error"
-        message="加载失败"
-        description={String(error)}
-        showIcon
-      />
-    );
+        <Alert
+          type="error"
+          message="加载失败"
+          description={formatApiError(error)}
+          showIcon
+        />
+      );
   }
 
   return (

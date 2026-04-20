@@ -22,6 +22,7 @@ import {
 import dayjs from "dayjs";
 import { useArtifacts, useCreateArtifact, exportCsv } from "../api/hooks";
 import type { Artifact, CreateArtifactReq, ListParams } from "../api/types";
+import { formatApiError } from "../api/errors";
 
 const { Title } = Typography;
 
@@ -52,19 +53,19 @@ export const ArtifactsPage: React.FC = () => {
       setOpen(false);
       form.resetFields();
     } catch (e: unknown) {
-      message.error(String(e));
+      message.error(formatApiError(e));
     }
   };
 
   if (error) {
     return (
-      <Alert
-        type="error"
-        message="加载失败"
-        description={String(error)}
-        showIcon
-      />
-    );
+        <Alert
+          type="error"
+          message="加载失败"
+          description={formatApiError(error)}
+          showIcon
+        />
+      );
   }
 
   return (

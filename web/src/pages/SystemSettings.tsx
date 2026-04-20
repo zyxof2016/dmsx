@@ -15,6 +15,7 @@ import {
 import { useAppI18n, useAppSession } from "../appProviders";
 import { useSystemSetting, useUpsertSystemSetting } from "../api/hooks";
 import { ApiError, DEFAULT_TENANT_ID } from "../api/client";
+import { formatApiError } from "../api/errors";
 
 const METRICS_BEARER_ENABLED_KEY = "metrics.bearer.enabled";
 
@@ -75,7 +76,7 @@ export const SystemSettingsPage: React.FC = () => {
           type="error"
           showIcon
           message="加载系统设置失败"
-          description={String(error)}
+          description={formatApiError(error)}
           action={<Button onClick={() => refetch()}>重试</Button>}
         />
       </Space>
@@ -208,7 +209,7 @@ export const SystemSettingsPage: React.FC = () => {
                     });
                     message.success("系统设置已保存");
                   } catch (e) {
-                    message.error(String(e));
+                    message.error(formatApiError(e));
                   }
                 }}
               >

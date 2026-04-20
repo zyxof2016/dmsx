@@ -12,6 +12,7 @@ import {
 import type { CreatePolicyReq, Policy, PolicyEditorPublishReq } from "../api/types";
 import { useAppI18n } from "../appProviders";
 import { usePolicyEditorPublish } from "../api/hooks";
+import { formatApiError } from "../api/errors";
 
 const { TextArea } = Input;
 
@@ -160,7 +161,7 @@ export const PolicyEditorPage: React.FC = () => {
                   const rev = await publishMut.mutateAsync(publishReq);
                   message.success(`已发布 revision v${rev.version}`);
                 } catch (e) {
-                  message.error(String(e));
+                  message.error(formatApiError(e));
                 }
               }}
             >
@@ -172,4 +173,3 @@ export const PolicyEditorPage: React.FC = () => {
     </Space>
   );
 };
-

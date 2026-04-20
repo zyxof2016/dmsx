@@ -36,6 +36,7 @@ import {
 } from "recharts";
 import { useStats, useFindings } from "../api/hooks";
 import type { DashboardStats } from "../api/types";
+import { formatApiError } from "../api/errors";
 
 const { Title, Text } = Typography;
 
@@ -93,13 +94,13 @@ export const DashboardPage: React.FC = () => {
 
   if (error) {
     return (
-      <Alert
-        type="error"
-        message="加载失败"
-        description={String(error)}
-        showIcon
-      />
-    );
+        <Alert
+          type="error"
+          message="加载失败"
+          description={formatApiError(error)}
+          showIcon
+        />
+      );
   }
 
   const total = stats?.device_total ?? 0;

@@ -17,6 +17,7 @@ import {
 import { EditOutlined, SyncOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import { useShadow, useUpdateShadowDesired } from "../api/hooks";
+import { formatApiError } from "../api/errors";
 
 const { Text } = Typography;
 const { TextArea } = Input;
@@ -84,7 +85,7 @@ export const ShadowPanel: React.FC<{ deviceId: string }> = ({ deviceId }) => {
             setEditOpen(false);
             refetch();
           },
-          onError: (e) => message.error(String(e)),
+          onError: (e) => message.error(formatApiError(e)),
         },
       );
     } catch {
@@ -92,7 +93,7 @@ export const ShadowPanel: React.FC<{ deviceId: string }> = ({ deviceId }) => {
     }
   };
 
-  if (error) return <Alert type="error" message="加载影子失败" description={String(error)} showIcon />;
+  if (error) return <Alert type="error" message="加载影子失败" description={formatApiError(error)} showIcon />;
 
   return (
     <Spin spinning={isLoading}>

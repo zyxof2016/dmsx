@@ -13,6 +13,7 @@ import { CopyOutlined } from "@ant-design/icons";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import dayjs from "dayjs";
 import { usePolicy } from "../api/hooks";
+import { formatApiError } from "../api/errors";
 
 const { Text } = Typography;
 
@@ -49,7 +50,7 @@ export const PolicyDetailDrawer: React.FC = () => {
         <Alert
           type="error"
           message="加载失败"
-          description={String(error)}
+          description={formatApiError(error)}
           showIcon
         />
       )}

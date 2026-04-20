@@ -4,6 +4,7 @@ import { useAppI18n } from "../appProviders";
 import dayjs from "dayjs";
 import { useAuditLogs } from "../api/hooks";
 import type { AuditLog, AuditLogListParams } from "../api/types";
+import { formatApiError } from "../api/errors";
 
 export const AuditLogsPage: React.FC = () => {
   const { t } = useAppI18n();
@@ -34,7 +35,7 @@ export const AuditLogsPage: React.FC = () => {
           type="error"
           showIcon
           message="加载失败"
-          description={String(error)}
+          description={formatApiError(error)}
           action={<Button onClick={() => refetch()}>重试</Button>}
         />
       )}
@@ -125,4 +126,3 @@ export const AuditLogsPage: React.FC = () => {
     </Space>
   );
 };
-

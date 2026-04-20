@@ -35,6 +35,7 @@ import {
   useCommandResult,
 } from "../api/hooks";
 import type { DeviceActionType, Command } from "../api/types";
+import { formatApiError } from "../api/errors";
 
 const { TextArea } = Input;
 const { Text } = Typography;
@@ -138,7 +139,7 @@ export const RemoteControlPanel: React.FC<{
       { deviceId, action: { action, params } },
       {
         onSuccess: () => message.success(`操作 ${action} 已下发`),
-        onError: (e) => message.error(String(e)),
+        onError: (e) => message.error(formatApiError(e)),
       },
     );
   };

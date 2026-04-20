@@ -17,6 +17,7 @@ import { useDevice } from "../api/hooks";
 import { ShadowPanel } from "./ShadowPanel";
 import { RemoteControlPanel } from "./RemoteControl";
 import { RemoteDesktopPanel } from "./RemoteDesktop";
+import { formatApiError } from "../api/errors";
 
 const { Text } = Typography;
 
@@ -77,7 +78,7 @@ export const DeviceDetailDrawer: React.FC = () => {
         <Alert
           type="error"
           message="加载失败"
-          description={String(error)}
+          description={formatApiError(error)}
           showIcon
         />
       )}
