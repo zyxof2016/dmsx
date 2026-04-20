@@ -16,8 +16,12 @@ import dayjs from "dayjs";
 import { useDevice } from "../api/hooks";
 import { ShadowPanel } from "./ShadowPanel";
 import { RemoteControlPanel } from "./RemoteControl";
-import { RemoteDesktopPanel } from "./RemoteDesktop";
 import { formatApiError } from "../api/errors";
+
+const RemoteDesktopPanel = React.lazy(async () => {
+  const mod = await import("./RemoteDesktop");
+  return { default: mod.RemoteDesktopPanel };
+});
 
 const { Text } = Typography;
 
@@ -168,12 +172,16 @@ export const DeviceDetailDrawer: React.FC = () => {
                 key: "desktop",
                 label: "远程桌面",
                 children: (
-                  <RemoteDesktopPanel
-                    deviceId={device.id}
-                    deviceHostname={device.hostname ?? undefined}
-                    devicePlatform={device.platform}
-                    deviceOnlineState={device.online_state}
-                  />
+                  activeTab === "desktop" ? (
+                    <React.Suspense fallback={<Spin />}>
+                      <RemoteDesktopPanel
+                        deviceId={device.id}
+                        deviceHostname={device.hostname ?? undefined}
+                        devicePlatform={device.platform}
+                        deviceOnlineState={device.online_state}
+                      />
+                    </React.Suspense>
+                  ) : null
                 ),
               },
             ]}

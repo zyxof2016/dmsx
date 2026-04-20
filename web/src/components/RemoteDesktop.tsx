@@ -21,13 +21,15 @@ import {
   PoweroffOutlined,
   LoadingOutlined,
 } from "@ant-design/icons";
-import { ConnectionState, Room, RoomEvent, Track } from "livekit-client";
 import {
   useShadow,
   useCreateDesktopSession,
   useDeleteDesktopSession,
 } from "../api/hooks";
 import type { DesktopSessionResponse } from "../api/types";
+
+type LiveKitModule = typeof import("livekit-client");
+type LiveKitRoom = import("livekit-client").Room;
 
 const { Text, Paragraph } = Typography;
 
@@ -67,9 +69,10 @@ export const RemoteDesktopPanel: React.FC<Props> = ({
   const stageRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const roomRef = useRef<Room | null>(null);
+  const roomRef = useRef<LiveKitRoom | null>(null);
   const sessionRef = useRef<DesktopSessionResponse | null>(null);
   const manualDisconnectRef = useRef(false);
+  const liveKitModuleRef = useRef<LiveKitModule | null>(null);
 
   const rustdesk = shadow?.reported?.rustdesk as
     | { installed?: boolean; id?: string; has_permanent_password?: boolean }
@@ -127,14 +130,21 @@ export const RemoteDesktopPanel: React.FC<Props> = ({
     };
   }, [fullCleanup]);
 
-  const attachTrack = useCallback((room: Room) => {
+  const loadLiveKit = useCallback(async () => {
+    if (!liveKitModuleRef.current) {
+      liveKitModuleRef.current = await import("livekit-client");
+    }
+    return liveKitModuleRef.current;
+  }, []);
+
+  const attachTrack = useCallback((room: LiveKitRoom) => {
     let attached = false;
     room.remoteParticipants.forEach((participant) => {
       participant.trackPublications.forEach((publication) => {
         const subscribedTrack = publication.track;
         if (
           subscribedTrack &&
-          subscribedTrack.kind === Track.Kind.Video &&
+          subscribedTrack.kind === "video" &&
           videoRef.current
         ) {
           subscribedTrack.attach(videoRef.current);
@@ -150,31 +160,31 @@ export const RemoteDesktopPanel: React.FC<Props> = ({
   }, []);
 
   const wireRoom = useCallback(
-    (room: Room) => {
+    (room: LiveKitRoom, livekit: LiveKitModule) => {
       room
-        .on(RoomEvent.ConnectionStateChanged, (state: ConnectionState) => {
-          if (state === ConnectionState.Reconnecting) {
+        .on(livekit.RoomEvent.ConnectionStateChanged, (state) => {
+          if (state === "reconnecting") {
             setSessionState("reconnecting");
-          } else if (state === ConnectionState.Connected) {
+          } else if (state === "connected") {
             setSessionState("waiting_agent");
             attachTrack(room);
           }
         })
-        .on(RoomEvent.TrackSubscribed, (track) => {
-          if (track.kind === Track.Kind.Video && videoRef.current) {
+        .on(livekit.RoomEvent.TrackSubscribed, (track) => {
+          if (track.kind === "video" && videoRef.current) {
             track.attach(videoRef.current);
             setSessionState("connected");
             requestAnimationFrame(() => stageRef.current?.focus());
           }
         })
-        .on(RoomEvent.TrackUnsubscribed, (track) => {
+        .on(livekit.RoomEvent.TrackUnsubscribed, (track) => {
           if (videoRef.current) {
             track.detach(videoRef.current);
           }
           detachVideo();
           setSessionState("waiting_agent");
         })
-        .on(RoomEvent.Disconnected, () => {
+        .on(livekit.RoomEvent.Disconnected, () => {
           detachVideo();
           setHasFocus(false);
           setSessionState(
@@ -187,16 +197,17 @@ export const RemoteDesktopPanel: React.FC<Props> = ({
 
   const connectToRoom = useCallback(
     async (session: DesktopSessionResponse) => {
-      const room = new Room({
+      const livekit = await loadLiveKit();
+      const room = new livekit.Room({
         adaptiveStream: true,
         dynacast: true,
       });
-      wireRoom(room);
+      wireRoom(room, livekit);
       roomRef.current = room;
       await room.connect(session.livekit_url, session.token);
       attachTrack(room);
     },
-    [attachTrack, wireRoom],
+    [attachTrack, loadLiveKit, wireRoom],
   );
 
   const handleConnect = async () => {
@@ -239,7 +250,7 @@ export const RemoteDesktopPanel: React.FC<Props> = ({
   const sendInput = useCallback(
     async (data: Record<string, unknown>, reliable = false) => {
       const room = roomRef.current;
-      if (!room || room.state !== ConnectionState.Connected) return;
+      if (!room || room.state !== "connected") return;
       const payload = new TextEncoder().encode(JSON.stringify(data));
       await room.localParticipant.publishData(payload, {
         reliable,
