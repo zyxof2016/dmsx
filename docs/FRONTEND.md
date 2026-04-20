@@ -96,6 +96,7 @@ web/
 - 键鼠控制：前端采集鼠标/键盘事件 → LiveKit Data Channel → Agent 注入输入
 - 状态反馈：创建中、等待设备接入、已连接、重连中、已断开、错误
 - 当前仓库已在本机验证过最小真实闭环：`dmsx-api` + LiveKit + Redis + 真实 `dmsx-agent` 能完成 `POST /desktop/session`、Agent 入房、发布屏幕轨；坏 LiveKit 地址下 `start_desktop` 会回报失败而不是假成功。
+- 删除会话时当前语义是“控制面立即清理会话映射并投递 `stop_desktop`”；如果设备已取到先前的 `start_desktop`，可能会短暂建连后再停止，最终由 `stop_desktop` 收敛。
 - **RustDesk 方案（备选）**：显示 RustDesk ID、一键打开 Web Client 或本地客户端
 
 ### AI 智慧中心（AiCenter）
