@@ -27,6 +27,9 @@ import {
   useDeleteDesktopSession,
 } from "../api/hooks";
 import type { DesktopSessionResponse } from "../api/types";
+import { useResourceAccess, WRITE_DISABLED_REASON } from "../authz";
+import { GuardedButton } from "./GuardedButton";
+import { ReadonlyBanner } from "./ReadonlyBanner";
 
 type LiveKitModule = typeof import("livekit-client");
 type LiveKitRoom = import("livekit-client").Room;
@@ -60,6 +63,7 @@ export const RemoteDesktopPanel: React.FC<Props> = ({
   const { data: shadow, isLoading } = useShadow(deviceId);
   const createSession = useCreateDesktopSession();
   const deleteSession = useDeleteDesktopSession();
+  const { canWrite } = useResourceAccess("remoteDesktop");
 
   const [sessionState, setSessionState] = useState<SessionState>("idle");
   const [errorMsg, setErrorMsg] = useState("");
@@ -73,6 +77,9 @@ export const RemoteDesktopPanel: React.FC<Props> = ({
   const sessionRef = useRef<DesktopSessionResponse | null>(null);
   const manualDisconnectRef = useRef(false);
   const liveKitModuleRef = useRef<LiveKitModule | null>(null);
+  const fullCleanupRef = useRef<((destroyRemote: boolean) => Promise<void>) | null>(null);
+  const pendingMouseMoveRef = useRef<{ x: number; y: number } | null>(null);
+  const mouseMoveFrameRef = useRef<number | null>(null);
 
   const rustdesk = shadow?.reported?.rustdesk as
     | { installed?: boolean; id?: string; has_permanent_password?: boolean }
@@ -118,17 +125,24 @@ export const RemoteDesktopPanel: React.FC<Props> = ({
       if (destroyRemote) {
         await destroySession();
       }
+      if (mouseMoveFrameRef.current !== null) {
+        cancelAnimationFrame(mouseMoveFrameRef.current);
+        mouseMoveFrameRef.current = null;
+      }
+      pendingMouseMoveRef.current = null;
       setRemoteSize({ width: 0, height: 0 });
       setHasFocus(false);
     },
     [destroySession, disconnectRoom],
   );
 
+  fullCleanupRef.current = fullCleanup;
+
   useEffect(() => {
     return () => {
-      void fullCleanup(true);
+      void fullCleanupRef.current?.(true);
     };
-  }, [fullCleanup]);
+  }, []);
 
   const loadLiveKit = useCallback(async () => {
     if (!liveKitModuleRef.current) {
@@ -262,8 +276,16 @@ export const RemoteDesktopPanel: React.FC<Props> = ({
 
   const onMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     if (sessionState !== "connected") return;
-    const { x, y } = mapCoords(e);
-    void sendInput({ type: "mousemove", x, y });
+    pendingMouseMoveRef.current = mapCoords(e);
+    if (mouseMoveFrameRef.current !== null) return;
+
+    mouseMoveFrameRef.current = requestAnimationFrame(() => {
+      mouseMoveFrameRef.current = null;
+      const coords = pendingMouseMoveRef.current;
+      if (!coords) return;
+      pendingMouseMoveRef.current = null;
+      void sendInput({ type: "mousemove", x: coords.x, y: coords.y });
+    });
   };
 
   const onMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -387,6 +409,7 @@ export const RemoteDesktopPanel: React.FC<Props> = ({
 
   return (
     <Space direction="vertical" style={{ width: "100%" }} size="middle">
+      <ReadonlyBanner visible={!canWrite} resourceLabel="远程桌面" />
       {/* --- WebRTC / WebSocket Remote Desktop --- */}
       <Card
         title="远程桌面 (LiveKit WebRTC)"
@@ -422,15 +445,17 @@ export const RemoteDesktopPanel: React.FC<Props> = ({
                 showIcon
               />
             )}
-            <Button
+            <GuardedButton
               type="primary"
               size="large"
               icon={<DesktopOutlined />}
               onClick={handleConnect}
               loading={createSession.isPending}
+              allowed={canWrite}
+              disabledReason={WRITE_DISABLED_REASON}
             >
               连接远程桌面
-            </Button>
+            </GuardedButton>
             <Alert
               type="info"
               showIcon
@@ -443,14 +468,16 @@ export const RemoteDesktopPanel: React.FC<Props> = ({
         {sessionState === "error" && (
           <Space direction="vertical" style={{ width: "100%" }}>
             <Alert type="error" message="连接失败" description={errorMsg} showIcon />
-            <Button
+            <GuardedButton
               onClick={() => {
                 setErrorMsg("");
                 setSessionState("idle");
               }}
+              allowed={canWrite}
+              disabledReason={WRITE_DISABLED_REASON}
             >
               重试
-            </Button>
+            </GuardedButton>
           </Space>
         )}
 
@@ -462,9 +489,9 @@ export const RemoteDesktopPanel: React.FC<Props> = ({
               message="会话已断开"
               description="远程桌面已显式关闭，重新连接会创建新的桌面会话。"
             />
-            <Button type="primary" onClick={handleConnect}>
+            <GuardedButton type="primary" onClick={handleConnect} allowed={canWrite} disabledReason={WRITE_DISABLED_REASON}>
               重新连接
-            </Button>
+            </GuardedButton>
           </Space>
         )}
 
@@ -488,7 +515,7 @@ export const RemoteDesktopPanel: React.FC<Props> = ({
                 />
               </Tooltip>
               <Tooltip title="Ctrl+Alt+Del">
-                <Button size="small" icon={<PoweroffOutlined />} onClick={onCtrlAltDel}>
+                <Button size="small" icon={<PoweroffOutlined />} onClick={onCtrlAltDel} disabled={!canWrite} title={!canWrite ? WRITE_DISABLED_REASON : undefined}>
                   Ctrl+Alt+Del
                 </Button>
               </Tooltip>
@@ -498,6 +525,8 @@ export const RemoteDesktopPanel: React.FC<Props> = ({
                   danger
                   icon={<DisconnectOutlined />}
                   onClick={handleDisconnect}
+                  disabled={!canWrite}
+                  title={!canWrite ? WRITE_DISABLED_REASON : undefined}
                 >
                   断开
                 </Button>

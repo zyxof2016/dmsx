@@ -4,6 +4,7 @@ import {
   Layout,
   Menu,
   Breadcrumb,
+  Segmented,
   Space,
   Select,
   Switch,
@@ -16,6 +17,7 @@ import {
   DashboardOutlined,
   DesktopOutlined,
   SafetyOutlined,
+  SettingOutlined,
   AppstoreOutlined,
   CloudServerOutlined,
   AuditOutlined,
@@ -29,7 +31,14 @@ import {
   useRouterState,
 } from "@tanstack/react-router";
 
-import { useAppI18n, useThemeMode, useAppSession, type Lang } from "./appProviders";
+import {
+  useAppI18n,
+  useThemeMode,
+  useAppSession,
+  type AppMode,
+  type Lang,
+} from "./appProviders";
+import { AccessGate } from "./components/AccessGate";
 
 const AppDeferredTools = React.lazy(async () => {
   const mod = await import("./components/AppDeferredTools");
@@ -38,20 +47,145 @@ const AppDeferredTools = React.lazy(async () => {
 
 const { Header, Sider, Content } = Layout;
 
-const keyToPath: Record<string, string> = {
-  dashboard: "/",
-  devices: "/devices",
-  policies: "/policies",
-  commands: "/commands",
-  artifacts: "/artifacts",
-  compliance: "/compliance",
-  network: "/network",
-  ai: "/ai",
-  settings: "/settings",
-  policyEditor: "/policy-editor",
-  auditLogs: "/audit-logs",
-  usersRoles: "/users",
+type NavItem = {
+  key: string;
+  path: string;
+  labelKey: string;
+  icon: React.ReactNode;
+  mode: AppMode;
+  requiresPlatformAdmin?: boolean;
+  requiredRoles?: string[];
 };
+
+type AccessResult = {
+  allowed: boolean;
+  reason: "mode" | "role" | "platform" | "unknown";
+};
+
+const NAV_ITEMS: NavItem[] = [
+  {
+    key: "platformOverview",
+    path: "/platform",
+    labelKey: "mode.platform",
+    icon: <SettingOutlined />,
+    mode: "platform",
+    requiresPlatformAdmin: true,
+  },
+  {
+    key: "dashboard",
+    path: "/",
+    labelKey: "nav.dashboard",
+    icon: <DashboardOutlined />,
+    mode: "tenant",
+  },
+  {
+    key: "devices",
+    path: "/devices",
+    labelKey: "nav.devices",
+    icon: <DesktopOutlined />,
+    mode: "tenant",
+  },
+  {
+    key: "policies",
+    path: "/policies",
+    labelKey: "nav.policies",
+    icon: <SafetyOutlined />,
+    mode: "tenant",
+  },
+  {
+    key: "commands",
+    path: "/commands",
+    labelKey: "nav.commands",
+    icon: <CloudServerOutlined />,
+    mode: "tenant",
+  },
+  {
+    key: "artifacts",
+    path: "/artifacts",
+    labelKey: "nav.artifacts",
+    icon: <AppstoreOutlined />,
+    mode: "tenant",
+  },
+  {
+    key: "compliance",
+    path: "/compliance",
+    labelKey: "nav.compliance",
+    icon: <AuditOutlined />,
+    mode: "tenant",
+  },
+  {
+    key: "network",
+    path: "/network",
+    labelKey: "nav.network",
+    icon: <GlobalOutlined />,
+    mode: "tenant",
+  },
+  {
+    key: "ai",
+    path: "/ai",
+    labelKey: "nav.ai",
+    icon: <RobotOutlined />,
+    mode: "tenant",
+    requiredRoles: ["PlatformAdmin", "TenantAdmin", "SiteAdmin", "Operator"],
+  },
+  {
+    key: "policyEditor",
+    path: "/policy-editor",
+    labelKey: "nav.policyEditor",
+    icon: <SafetyOutlined />,
+    mode: "tenant",
+    requiredRoles: ["PlatformAdmin", "TenantAdmin"],
+  },
+  {
+    key: "auditLogs",
+    path: "/audit-logs",
+    labelKey: "nav.auditLogs",
+    icon: <AuditOutlined />,
+    mode: "tenant",
+  },
+  {
+    key: "settings",
+    path: "/settings",
+    labelKey: "nav.settings",
+    icon: <SafetyOutlined />,
+    mode: "platform",
+    requiresPlatformAdmin: true,
+  },
+  {
+    key: "usersRoles",
+    path: "/users",
+    labelKey: "nav.usersRoles",
+    icon: <UserOutlined />,
+    mode: "platform",
+    requiresPlatformAdmin: true,
+  },
+];
+
+function itemIsVisible(
+  item: NavItem,
+  appMode: AppMode,
+  effectiveRoles: string[],
+  canUsePlatformMode: boolean,
+) {
+  return evaluateItemAccess(item, appMode, effectiveRoles, canUsePlatformMode).allowed;
+}
+
+function evaluateItemAccess(
+  item: NavItem | undefined,
+  appMode: AppMode,
+  effectiveRoles: string[],
+  canUsePlatformMode: boolean,
+): AccessResult {
+  if (!item) return { allowed: true, reason: "unknown" };
+  if (item.mode !== appMode) return { allowed: false, reason: "mode" };
+  if (item.requiresPlatformAdmin && !canUsePlatformMode) {
+    return { allowed: false, reason: "platform" };
+  }
+  if (!item.requiredRoles?.length) return { allowed: true, reason: "unknown" };
+  return item.requiredRoles.some((role) => effectiveRoles.includes(role))
+    ? { allowed: true, reason: "unknown" }
+    : { allowed: false, reason: "role" };
+}
 
 export const AppLayout: React.FC = () => {
   const { lang } = useAppI18n();
@@ -84,30 +218,63 @@ const AppShell: React.FC = () => {
 
   const topSegment = "/" + (pathname.split("/")[1] || "");
   const selectedKey =
-    Object.entries(keyToPath).find(([, v]) => v === topSegment)?.[0] ??
+    NAV_ITEMS.find((item) => item.path === topSegment)?.key ??
     "dashboard";
 
   const { t, lang, setLang } = useAppI18n();
   const { themeMode, setThemeMode } = useThemeMode();
-  const { tenantId, setTenantId, jwt, setJwt, clearJwt } = useAppSession();
+  const {
+    tenantId,
+    setTenantId,
+    jwt,
+    setJwt,
+    clearJwt,
+    appMode,
+    setAppMode,
+    effectiveRoles,
+    canUsePlatformMode,
+    subject,
+    tenantOptions,
+  } = useAppSession();
   const { token } = antdTheme.useToken();
 
+  const visibleNavItems = React.useMemo(
+    () =>
+      NAV_ITEMS.filter((item) =>
+        itemIsVisible(item, appMode, effectiveRoles, canUsePlatformMode),
+      ),
+    [appMode, canUsePlatformMode, effectiveRoles],
+  );
   const breadcrumbLabel = t(`nav.${selectedKey}`);
+  const modeLabel = t(`mode.${appMode}`);
+  const defaultModePath = visibleNavItems[0]?.path ?? "/";
+  const selectedNavItem = NAV_ITEMS.find((item) => item.key === selectedKey);
+  const selectedAccess = evaluateItemAccess(
+    selectedNavItem,
+    appMode,
+    effectiveRoles,
+    canUsePlatformMode,
+  );
+  const hasAccess = selectedAccess.allowed;
 
-  const menuItems = [
-    { key: "dashboard", icon: <DashboardOutlined />, label: t("nav.dashboard") },
-    { key: "devices", icon: <DesktopOutlined />, label: t("nav.devices") },
-    { key: "policies", icon: <SafetyOutlined />, label: t("nav.policies") },
-    { key: "commands", icon: <CloudServerOutlined />, label: t("nav.commands") },
-    { key: "artifacts", icon: <AppstoreOutlined />, label: t("nav.artifacts") },
-    { key: "compliance", icon: <AuditOutlined />, label: t("nav.compliance") },
-    { key: "network", icon: <GlobalOutlined />, label: t("nav.network") },
-    { key: "ai", icon: <RobotOutlined />, label: t("nav.ai") },
-    { key: "settings", icon: <SafetyOutlined />, label: t("nav.settings") },
-    { key: "policyEditor", icon: <SafetyOutlined />, label: t("nav.policyEditor") },
-    { key: "auditLogs", icon: <AuditOutlined />, label: t("nav.auditLogs") },
-    { key: "usersRoles", icon: <UserOutlined />, label: t("nav.usersRoles") },
-  ];
+  const accessDescription =
+    selectedAccess.reason === "mode"
+      ? "当前页面属于另一种工作模式。请切换模式，或返回当前模式首页。"
+      : selectedAccess.reason === "platform"
+        ? "当前 JWT 不具备 PlatformAdmin，不能进入平台级页面。"
+        : selectedAccess.reason === "role"
+          ? "当前角色不足以展示该页面入口，请检查 JWT 中的 roles / tenant_roles。"
+          : "当前页面不可访问。";
+
+  React.useEffect(() => {
+    if (
+      !selectedNavItem &&
+      !visibleNavItems.some((item) => item.key === selectedKey) &&
+      pathname !== defaultModePath
+    ) {
+      navigate({ to: defaultModePath, replace: true });
+    }
+  }, [defaultModePath, navigate, pathname, selectedKey, selectedNavItem, visibleNavItems]);
 
   return (
     <Layout style={{ minHeight: "100vh" }}>
@@ -133,14 +300,30 @@ const AppShell: React.FC = () => {
         >
           {collapsed ? "DX" : t("brand.full")}
         </div>
+        {!collapsed && (
+          <div
+            style={{
+              margin: "0 16px 12px",
+              color: token.colorTextSecondary,
+              fontSize: 12,
+              textAlign: "center",
+            }}
+          >
+            {modeLabel}
+          </div>
+        )}
         <Menu
           theme={themeMode === "dark" ? "dark" : "light"}
           mode="inline"
           selectedKeys={[selectedKey]}
-          items={menuItems}
+          items={visibleNavItems.map((item) => ({
+            key: item.key,
+            icon: item.icon,
+            label: t(item.labelKey),
+          }))}
           onClick={({ key }) => {
-            const to = keyToPath[key];
-            if (to) navigate({ to });
+            const target = visibleNavItems.find((item) => item.key === key)?.path;
+            if (target) navigate({ to: target });
           }}
         />
       </Sider>
@@ -156,9 +339,37 @@ const AppShell: React.FC = () => {
             borderBottom: `1px solid ${token.colorBorderSecondary}`,
           }}
         >
-          <Breadcrumb
-            items={[{ title: t("brand") }, { title: breadcrumbLabel }]}
-          />
+          <Space size="middle">
+            <Breadcrumb
+              items={[
+                { title: t("brand") },
+                { title: modeLabel },
+                { title: breadcrumbLabel },
+              ]}
+            />
+            <Segmented
+              size="small"
+              value={appMode}
+              options={[
+                { value: "tenant", label: t("mode.tenantShort") },
+                {
+                  value: "platform",
+                  label: t("mode.platformShort"),
+                  disabled: !canUsePlatformMode,
+                },
+              ]}
+              onChange={(value) => {
+                const nextMode = value as AppMode;
+                setAppMode(nextMode);
+                const nextPath = NAV_ITEMS.find((item) =>
+                  itemIsVisible(item, nextMode, effectiveRoles, canUsePlatformMode),
+                )?.path;
+                if (nextPath && !NAV_ITEMS.some((item) => item.key === selectedKey && item.path === nextPath)) {
+                  navigate({ to: nextPath });
+                }
+              }}
+            />
+          </Space>
           <Space size="large">
             <Select
               size="small"
@@ -180,14 +391,16 @@ const AppShell: React.FC = () => {
             <React.Suspense fallback={null}>
               <AppDeferredTools
                 tenantId={tenantId}
+                tenantOptions={tenantOptions}
                 jwt={jwt}
-                userLabel={t("user.admin")}
+                userLabel={subject ?? t("user.admin")}
                 profileLabel={t("user.profile")}
                 logoutLabel={t("user.logout")}
                 aiTooltip={t("ai.assistant")}
                 setTenantId={setTenantId}
                 setJwt={setJwt}
                 clearJwt={clearJwt}
+                showTenantShortcut={appMode === "tenant"}
                 onOpenAi={() => navigate({ to: "/ai" })}
               />
             </React.Suspense>
@@ -203,7 +416,30 @@ const AppShell: React.FC = () => {
               minHeight: 600,
             }}
           >
-            <Outlet />
+            {!hasAccess ? (
+              <AccessGate
+                title="当前页面无访问权限"
+                description={accessDescription}
+                roles={effectiveRoles}
+                modeLabel={modeLabel}
+                onGoDefault={() => navigate({ to: defaultModePath })}
+                onSwitchMode={
+                  canUsePlatformMode || appMode === "platform"
+                    ? () => {
+                        const nextMode: AppMode = appMode === "tenant" ? "platform" : "tenant";
+                        setAppMode(nextMode);
+                        const nextPath = NAV_ITEMS.find((item) =>
+                          itemIsVisible(item, nextMode, effectiveRoles, canUsePlatformMode),
+                        )?.path;
+                        navigate({ to: nextPath ?? "/" });
+                      }
+                    : undefined
+                }
+                switchModeLabel={appMode === "tenant" ? "切换到平台模式" : "切换到租户模式"}
+              />
+            ) : (
+              <Outlet />
+            )}
           </div>
         </Content>
       </Layout>

@@ -3,8 +3,10 @@ import {
   Alert,
   Button,
   Card,
+  Descriptions,
   Form,
   Input,
+  Select,
   Space,
   Spin,
   Switch,
@@ -24,15 +26,24 @@ function maskJwt(jwt: string): string {
   return `${jwt.slice(0, 12)}...${jwt.slice(-6)}`;
 }
 
-function isValidUuid(value: string): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-    value,
-  );
-}
-
 export const SystemSettingsPage: React.FC = () => {
   const { t } = useAppI18n();
-  const { tenantId, setTenantId, jwt, setJwt, clearJwt } = useAppSession();
+  const {
+    tenantId,
+    setTenantId,
+    jwt,
+    setJwt,
+    clearJwt,
+    subject,
+    primaryTenantId,
+    permittedTenantIds,
+    tenantOptions,
+    globalRoles,
+    tenantRoles,
+    effectiveRoles,
+    hasJwt,
+    jwtParseError,
+  } = useAppSession();
 
   const {
     data,
@@ -106,19 +117,36 @@ export const SystemSettingsPage: React.FC = () => {
 
           <Form layout="vertical">
             <Form.Item
-              label="活动租户 ID"
-              validateStatus={tenantDraft && !isValidUuid(tenantDraft.trim()) ? "error" : ""}
+              label="活动租户"
               help={
-                tenantDraft && !isValidUuid(tenantDraft.trim())
-                  ? "租户 ID 必须是合法 UUID"
-                  : "所有 /v1/tenants/{tid}/... 请求都会使用这里的租户 ID"
+                "仅展示当前 JWT 许可的租户，以及本浏览器最近创建过的租户。所有 /v1/tenants/{tid}/... 请求都会使用这里选择的租户。"
               }
             >
-              <Input
-                value={tenantDraft}
-                onChange={(e) => setTenantDraft(e.target.value)}
-                placeholder="例如 00000000-0000-0000-0000-000000000001"
-              />
+                <Select
+                  value={tenantDraft}
+                  onChange={(value) => setTenantDraft(value)}
+                  options={tenantOptions.map((option) => ({
+                    value: option.id,
+                    label: (
+                      <Space direction="vertical" size={0}>
+                        <Typography.Text strong>
+                          {option.name ?? `${option.id.slice(0, 8)}…${option.id.slice(-4)}`}
+                        </Typography.Text>
+                        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                          {option.id}
+                        </Typography.Text>
+                        <Space wrap size={4}>
+                          {option.id === tenantId && <Tag color="blue">当前</Tag>}
+                          <Tag>{option.source === "jwt" ? "JWT 授权" : "最近创建"}</Tag>
+                          {option.effectiveRoles.map((role) => (
+                            <Tag key={`${option.id}-${role}`}>{role}</Tag>
+                          ))}
+                        </Space>
+                      </Space>
+                    ),
+                  }))}
+                  placeholder="选择当前用户可访问的租户"
+                />
             </Form.Item>
 
             <Form.Item
@@ -138,8 +166,8 @@ export const SystemSettingsPage: React.FC = () => {
                 type="primary"
                 onClick={() => {
                   const nextTenantId = tenantDraft.trim();
-                  if (!isValidUuid(nextTenantId)) {
-                    message.error("租户 ID 必须是合法 UUID");
+                  if (!nextTenantId) {
+                    message.error("请选择一个租户");
                     return;
                   }
 
@@ -179,6 +207,80 @@ export const SystemSettingsPage: React.FC = () => {
               </Button>
             </Space>
           </Form>
+        </Space>
+      </Card>
+
+      <Card title="当前 JWT 解析结果">
+        <Space direction="vertical" style={{ width: "100%" }} size="middle">
+          {!hasJwt ? (
+            <Alert
+              type="info"
+              showIcon
+              message="当前未设置 JWT"
+              description="disabled 模式下这很常见。若切到 jwt 模式，可在上方粘贴令牌后，这里会展示主租户、允许租户和角色覆盖信息。"
+            />
+          ) : jwtParseError ? (
+            <Alert
+              type="warning"
+              showIcon
+              message="JWT 已设置，但前端未能解析"
+              description="这通常表示令牌不是标准 JWT 三段格式，或 payload 不是合法 JSON。前端会停止用它做导航收敛，最终权限仍以后端校验为准。"
+            />
+          ) : (
+            <>
+              <Descriptions bordered size="small" column={1}>
+                <Descriptions.Item label="Subject">
+                  {subject ?? "未声明"}
+                </Descriptions.Item>
+                <Descriptions.Item label="主租户">
+                  {primaryTenantId ?? "未声明"}
+                </Descriptions.Item>
+                <Descriptions.Item label="当前活动租户有效角色">
+                  <Space wrap>
+                    {effectiveRoles.length ? effectiveRoles.map((role) => <Tag key={role}>{role}</Tag>) : <Tag>无角色</Tag>}
+                  </Space>
+                </Descriptions.Item>
+                <Descriptions.Item label="令牌级 roles">
+                  <Space wrap>
+                    {globalRoles.length ? globalRoles.map((role) => <Tag key={role}>{role}</Tag>) : <Tag>无</Tag>}
+                  </Space>
+                </Descriptions.Item>
+                <Descriptions.Item label="允许访问租户">
+                  <Space wrap>
+                    {permittedTenantIds.map((id) => (
+                      <Tag key={id} color={id === tenantId ? "blue" : "default"}>
+                        {id}
+                      </Tag>
+                    ))}
+                  </Space>
+                </Descriptions.Item>
+              </Descriptions>
+
+              <div>
+                <Typography.Text strong>tenant_roles 覆盖</Typography.Text>
+                <div style={{ marginTop: 12 }}>
+                  {Object.keys(tenantRoles).length === 0 ? (
+                    <Alert
+                      type="info"
+                      showIcon
+                      message="当前 JWT 未声明 tenant_roles"
+                      description="这意味着前端和后端都会回退到令牌级 roles。"
+                    />
+                  ) : (
+                    <Descriptions bordered size="small" column={1}>
+                      {Object.entries(tenantRoles).map(([id, roles]) => (
+                        <Descriptions.Item key={id} label={id}>
+                          <Space wrap>
+                            {roles.length ? roles.map((role) => <Tag key={`${id}-${role}`}>{role}</Tag>) : <Tag>空数组（显式无角色）</Tag>}
+                          </Space>
+                        </Descriptions.Item>
+                      ))}
+                    </Descriptions>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
         </Space>
       </Card>
 

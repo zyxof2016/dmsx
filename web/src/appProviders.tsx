@@ -9,6 +9,22 @@ import {
 
 export type ThemeMode = "light" | "dark";
 export type Lang = "zh" | "en";
+export type AppMode = "tenant" | "platform";
+
+type ParsedJwtClaims = {
+  subject: string | null;
+  primaryTenantId: string | null;
+  permittedTenantIds: string[];
+  roles: string[];
+  tenantRoles: Record<string, string[]>;
+};
+
+export type TenantOption = {
+  id: string;
+  name?: string | null;
+  source: "jwt" | "recent";
+  effectiveRoles: string[];
+};
 
 type I18nContextValue = {
   lang: Lang;
@@ -28,10 +44,25 @@ type SessionContextValue = {
   jwt: string;
   setJwt: (jwt: string) => void;
   clearJwt: () => void;
+  appMode: AppMode;
+  setAppMode: (mode: AppMode) => void;
+  subject: string | null;
+  primaryTenantId: string | null;
+  globalRoles: string[];
+  tenantRoles: Record<string, string[]>;
+  permittedTenantIds: string[];
+  tenantOptions: TenantOption[];
+  effectiveRoles: string[];
+  hasJwt: boolean;
+  jwtParseError: boolean;
+  canUsePlatformMode: boolean;
+  isPlatformAdmin: boolean;
 };
 
 const LANG_KEY = "dmsx_lang";
 const THEME_KEY = "dmsx_theme";
+const MODE_KEY = "dmsx.mode";
+const RECENT_TENANTS_KEY = "dmsx.platform.recent_tenants";
 
 const I18nContext = React.createContext<I18nContextValue | null>(null);
 const ThemeContext = React.createContext<ThemeContextValue | null>(null);
@@ -56,6 +87,11 @@ const dictionaries: Record<Lang, Record<string, string>> = {
     "nav.policyEditor": "策略编辑器",
     "nav.auditLogs": "审计日志",
     "nav.usersRoles": "用户 / 角色管理",
+    "mode.platform": "平台管理",
+    "mode.tenant": "租户管理",
+    "mode.platformShort": "平台",
+    "mode.tenantShort": "租户",
+    "mode.switch": "工作模式",
     "user.profile": "个人中心",
     "user.logout": "退出登录",
     "user.admin": "管理员",
@@ -90,6 +126,11 @@ const dictionaries: Record<Lang, Record<string, string>> = {
     "nav.policyEditor": "Policy Editor",
     "nav.auditLogs": "Audit Logs",
     "nav.usersRoles": "Users / Roles",
+    "mode.platform": "Platform",
+    "mode.tenant": "Tenant",
+    "mode.platformShort": "Platform",
+    "mode.tenantShort": "Tenant",
+    "mode.switch": "Mode",
     "user.profile": "Profile",
     "user.logout": "Logout",
     "user.admin": "Admin",
@@ -123,6 +164,98 @@ function getInitialTheme(): ThemeMode {
     : "light";
 }
 
+function getInitialMode(): AppMode {
+  return localStorage.getItem(MODE_KEY) === "platform" ? "platform" : "tenant";
+}
+
+function isValidUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value,
+  );
+}
+
+function decodeBase64Url(value: string): string {
+  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+  const binary = window.atob(padded);
+  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
+}
+
+function asStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string");
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return Array.from(new Set(values));
+}
+
+function getRecentTenantIds(): Array<{ id: string; name?: string | null }> {
+  try {
+    const raw = localStorage.getItem(RECENT_TENANTS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as Array<{ id?: unknown; name?: unknown }>;
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map((item) => ({
+        id: typeof item?.id === "string" ? item.id : "",
+        name: typeof item?.name === "string" ? item.name : null,
+      }))
+      .filter((item) => isValidUuid(item.id));
+  } catch {
+    return [];
+  }
+}
+
+function parseJwtClaims(jwt: string): ParsedJwtClaims | null {
+  const raw = jwt.trim();
+  if (!raw) return null;
+
+  const token = raw.startsWith("Bearer ") ? raw.slice(7).trim() : raw;
+  const parts = token.split(".");
+  if (parts.length < 2) return null;
+
+  try {
+    const payload = JSON.parse(decodeBase64Url(parts[1])) as Record<string, unknown>;
+    const primaryTenantId =
+      typeof payload.tenant_id === "string" && isValidUuid(payload.tenant_id)
+        ? payload.tenant_id
+        : null;
+    const allowedTenantIds = asStringArray(payload.allowed_tenant_ids).filter(isValidUuid);
+    const tenantRolesRaw =
+      payload.tenant_roles && typeof payload.tenant_roles === "object"
+        ? (payload.tenant_roles as Record<string, unknown>)
+        : {};
+
+    const tenantRoles = Object.fromEntries(
+      Object.entries(tenantRolesRaw)
+        .filter(([tenant]) => isValidUuid(tenant))
+        .map(([tenant, roles]) => [tenant, uniqueStrings(asStringArray(roles))]),
+    );
+
+    return {
+      subject: typeof payload.sub === "string" ? payload.sub : null,
+      primaryTenantId,
+      permittedTenantIds: uniqueStrings(
+        [primaryTenantId, ...allowedTenantIds].filter((value): value is string => !!value),
+      ),
+      roles: uniqueStrings(asStringArray(payload.roles)),
+      tenantRoles,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function getEffectiveRolesForTenant(
+  claims: ParsedJwtClaims | null,
+  tenantId: string,
+): string[] {
+  if (!claims) return [];
+  return claims.tenantRoles[tenantId] ?? claims.roles;
+}
+
 export function useAppI18n() {
   const ctx = React.useContext(I18nContext);
   if (!ctx) throw new Error("useAppI18n must be used within AppProviders");
@@ -148,10 +281,49 @@ export const AppProviders: React.FC<{ children: React.ReactNode }> = ({
   const [themeMode, setThemeMode] = React.useState<ThemeMode>(() =>
     getInitialTheme(),
   );
+  const [appMode, setAppModeState] = React.useState<AppMode>(() => getInitialMode());
   const [tenantId, setTenantIdState] = React.useState<string>(() =>
     getStoredTenantId(),
   );
   const [jwt, setJwtState] = React.useState<string>(() => getStoredJwt() ?? "");
+  const jwtClaims = React.useMemo(() => parseJwtClaims(jwt), [jwt]);
+  const hasJwt = jwt.trim().length > 0;
+  const jwtParseError = hasJwt && !jwtClaims;
+
+  const permittedTenantIds = React.useMemo(
+    () =>
+      jwtClaims?.permittedTenantIds.length
+        ? jwtClaims.permittedTenantIds
+        : [tenantId],
+    [jwtClaims, tenantId],
+  );
+  const tenantOptions = React.useMemo(() => {
+    const recentById = new Map(getRecentTenantIds().map((item) => [item.id, item]));
+    const ids = uniqueStrings([...permittedTenantIds, ...recentById.keys()]);
+
+    return ids.map((id) => ({
+      id,
+      name: recentById.get(id)?.name ?? null,
+      source: permittedTenantIds.includes(id) ? "jwt" : "recent",
+      effectiveRoles: jwtClaims ? getEffectiveRolesForTenant(jwtClaims, id) : ["TenantAdmin"],
+    } satisfies TenantOption));
+  }, [jwtClaims, permittedTenantIds]);
+  const effectiveRoles = React.useMemo(
+    () =>
+      jwtClaims
+        ? getEffectiveRolesForTenant(jwtClaims, tenantId)
+        : appMode === "platform"
+          ? ["PlatformAdmin"]
+          : ["TenantAdmin"],
+    [appMode, jwtClaims, tenantId],
+  );
+  const platformRoles = React.useMemo(() => {
+    if (!jwtClaims) return ["PlatformAdmin"];
+    const platformTenantId = jwtClaims.primaryTenantId ?? tenantId;
+    return getEffectiveRolesForTenant(jwtClaims, platformTenantId);
+  }, [jwtClaims, tenantId]);
+  const canUsePlatformMode = platformRoles.includes("PlatformAdmin");
+  const isPlatformAdmin = canUsePlatformMode;
 
   React.useEffect(() => {
     localStorage.setItem(LANG_KEY, lang);
@@ -160,6 +332,20 @@ export const AppProviders: React.FC<{ children: React.ReactNode }> = ({
   React.useEffect(() => {
     localStorage.setItem(THEME_KEY, themeMode);
   }, [themeMode]);
+
+  React.useEffect(() => {
+    if (jwtClaims?.primaryTenantId && !permittedTenantIds.includes(tenantId)) {
+      setStoredTenantId(jwtClaims.primaryTenantId);
+      setTenantIdState(jwtClaims.primaryTenantId);
+    }
+  }, [jwtClaims, permittedTenantIds, tenantId]);
+
+  React.useEffect(() => {
+    if (!canUsePlatformMode && appMode === "platform") {
+      localStorage.setItem(MODE_KEY, "tenant");
+      setAppModeState("tenant");
+    }
+  }, [appMode, canUsePlatformMode]);
 
   const t = React.useCallback(
     (key: string) => {
@@ -201,8 +387,39 @@ export const AppProviders: React.FC<{ children: React.ReactNode }> = ({
         clearStoredJwt();
         setJwtState("");
       },
+      appMode,
+      setAppMode: (mode: AppMode) => {
+        localStorage.setItem(MODE_KEY, mode);
+        setAppModeState(mode);
+      },
+      subject: jwtClaims?.subject ?? null,
+      primaryTenantId: jwtClaims?.primaryTenantId ?? null,
+      globalRoles: jwtClaims?.roles ?? [],
+      tenantRoles: jwtClaims?.tenantRoles ?? {},
+      permittedTenantIds,
+      tenantOptions,
+      effectiveRoles,
+      hasJwt,
+      jwtParseError,
+      canUsePlatformMode,
+      isPlatformAdmin,
     }),
-    [jwt, tenantId],
+    [
+      appMode,
+      canUsePlatformMode,
+      effectiveRoles,
+      hasJwt,
+      isPlatformAdmin,
+      jwt,
+      jwtClaims?.subject,
+      jwtClaims?.primaryTenantId,
+      jwtClaims?.roles,
+      jwtClaims?.tenantRoles,
+      jwtParseError,
+      permittedTenantIds,
+      tenantOptions,
+      tenantId,
+    ],
   );
 
   return (

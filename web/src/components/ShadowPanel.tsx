@@ -18,6 +18,8 @@ import { EditOutlined, SyncOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import { useShadow, useUpdateShadowDesired } from "../api/hooks";
 import { formatApiError } from "../api/errors";
+import { useResourceAccess, WRITE_DISABLED_REASON } from "../authz";
+import { ReadonlyBanner } from "./ReadonlyBanner";
 
 const { Text } = Typography;
 const { TextArea } = Input;
@@ -59,6 +61,7 @@ const JsonBlock: React.FC<{
 export const ShadowPanel: React.FC<{ deviceId: string }> = ({ deviceId }) => {
   const { data: shadow, isLoading, error, refetch } = useShadow(deviceId);
   const updateDesired = useUpdateShadowDesired();
+  const { canWrite } = useResourceAccess("deviceShadow");
   const [editOpen, setEditOpen] = useState(false);
   const [editJson, setEditJson] = useState("");
   const [jsonError, setJsonError] = useState<string | null>(null);
@@ -99,6 +102,7 @@ export const ShadowPanel: React.FC<{ deviceId: string }> = ({ deviceId }) => {
     <Spin spinning={isLoading}>
       {shadow && (
         <>
+          <ReadonlyBanner visible={!canWrite} resourceLabel="设备影子" />
           <Descriptions size="small" column={3} bordered style={{ marginBottom: 16 }}>
             <Descriptions.Item label="版本">{shadow.version}</Descriptions.Item>
             <Descriptions.Item label="上报时间">
@@ -133,7 +137,13 @@ export const ShadowPanel: React.FC<{ deviceId: string }> = ({ deviceId }) => {
                 title={
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <span><Tag color="blue">Desired</Tag> 期望状态</span>
-                    <Button size="small" icon={<EditOutlined />} onClick={openEdit}>
+                    <Button
+                      size="small"
+                      icon={<EditOutlined />}
+                      onClick={openEdit}
+                      disabled={!canWrite}
+                      title={!canWrite ? WRITE_DISABLED_REASON : undefined}
+                    >
                       编辑
                     </Button>
                   </div>
@@ -164,6 +174,7 @@ export const ShadowPanel: React.FC<{ deviceId: string }> = ({ deviceId }) => {
             onCancel={() => setEditOpen(false)}
             onOk={handleSave}
             confirmLoading={updateDesired.isPending}
+            okButtonProps={{ disabled: !canWrite }}
             width={600}
           >
             <TextArea

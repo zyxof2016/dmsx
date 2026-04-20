@@ -33,6 +33,9 @@ import {
 } from "../api/hooks";
 import type { Command, CreateCommandReq, ListParams } from "../api/types";
 import { formatApiError } from "../api/errors";
+import { useResourceAccess } from "../authz";
+import { GuardedButton } from "../components/GuardedButton";
+import { ReadonlyBanner } from "../components/ReadonlyBanner";
 
 const { Title } = Typography;
 const { confirm } = Modal;
@@ -69,6 +72,7 @@ export const CommandsPage: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<string>();
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+  const { canWrite } = useResourceAccess("commands");
 
   const params: ListParams = {
     limit: pageSize,
@@ -148,6 +152,7 @@ export const CommandsPage: React.FC = () => {
     <>
       <Spin spinning={isLoading}>
         <Title level={4}>远程命令</Title>
+        <ReadonlyBanner visible={!canWrite} resourceLabel="远程命令" />
         <Card>
           <Space style={{ marginBottom: 16 }} wrap>
             <Select
@@ -164,13 +169,14 @@ export const CommandsPage: React.FC = () => {
                 label: v,
               }))}
             />
-            <Button
+            <GuardedButton
               type="primary"
               icon={<PlusOutlined />}
               onClick={() => setOpen(true)}
+              allowed={canWrite}
             >
               下发命令
-            </Button>
+            </GuardedButton>
             <Button icon={<SyncOutlined />} onClick={() => refetch()}>
               刷新
             </Button>
@@ -284,6 +290,7 @@ export const CommandsPage: React.FC = () => {
         onCancel={() => setOpen(false)}
         onOk={() => form.submit()}
         confirmLoading={createMut.isPending}
+        okButtonProps={{ disabled: !canWrite }}
       >
         <Form form={form} layout="vertical" onFinish={handleCreate}>
           <Form.Item

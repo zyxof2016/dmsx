@@ -36,6 +36,9 @@ import {
 } from "../api/hooks";
 import type { DeviceActionType, Command } from "../api/types";
 import { formatApiError } from "../api/errors";
+import { useResourceAccess, WRITE_DISABLED_REASON } from "../authz";
+import { GuardedButton } from "./GuardedButton";
+import { ReadonlyBanner } from "./ReadonlyBanner";
 
 const { TextArea } = Input;
 const { Text } = Typography;
@@ -120,6 +123,7 @@ export const RemoteControlPanel: React.FC<{
 }> = ({ deviceId, deviceHostname }) => {
   const sendAction = useDeviceAction();
   const { message, modal } = App.useApp();
+  const { canWrite } = useResourceAccess("commands");
 
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -145,6 +149,7 @@ export const RemoteControlPanel: React.FC<{
   };
 
   const confirmAction = (def: ActionDef) => {
+    if (!canWrite) return;
     if (def.type === "wipe") {
       wipeHostnameRef.current = "";
       const expected = deviceHostname ?? deviceId;
@@ -243,6 +248,7 @@ export const RemoteControlPanel: React.FC<{
 
   return (
     <>
+      <ReadonlyBanner visible={!canWrite} resourceLabel="远控面板" />
       <Card title="快捷操作" size="small" style={{ marginBottom: 16 }}>
         <Row gutter={[12, 12]}>
           {ACTIONS.map((a) => (
@@ -254,6 +260,7 @@ export const RemoteControlPanel: React.FC<{
                   danger={a.danger}
                   onClick={() => confirmAction(a)}
                   loading={sendAction.isPending}
+                  disabled={!canWrite}
                 >
                   {a.label}
                 </Button>
@@ -264,9 +271,11 @@ export const RemoteControlPanel: React.FC<{
       </Card>
 
       <Card title="脚本执行" size="small" style={{ marginBottom: 16 }}>
-        <Button icon={<CodeOutlined />} onClick={() => setScriptOpen(true)}>
-          打开脚本编辑器
-        </Button>
+        <Tooltip title={!canWrite ? WRITE_DISABLED_REASON : "编写并执行远端脚本"}>
+          <GuardedButton icon={<CodeOutlined />} onClick={() => setScriptOpen(true)} allowed={canWrite}>
+            打开脚本编辑器
+          </GuardedButton>
+        </Tooltip>
       </Card>
 
       <Card title="操作历史" size="small">
@@ -296,7 +305,7 @@ export const RemoteControlPanel: React.FC<{
         onCancel={() => setScriptOpen(false)}
         onOk={handleScriptRun}
         okText="执行"
-        okButtonProps={{ icon: <PlayCircleOutlined /> }}
+        okButtonProps={{ icon: <PlayCircleOutlined />, disabled: !canWrite }}
         width={640}
       >
         <Space direction="vertical" style={{ width: "100%" }}>

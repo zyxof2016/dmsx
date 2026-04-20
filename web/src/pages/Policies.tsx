@@ -33,6 +33,9 @@ import {
 } from "../api/hooks";
 import type { Policy, CreatePolicyReq, ListParams } from "../api/types";
 import { formatApiError } from "../api/errors";
+import { useResourceAccess } from "../authz";
+import { GuardedButton } from "../components/GuardedButton";
+import { ReadonlyBanner } from "../components/ReadonlyBanner";
 
 const { Title } = Typography;
 
@@ -53,6 +56,7 @@ export const PoliciesPage: React.FC = () => {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
+  const { canWrite } = useResourceAccess("policies");
 
   const params: ListParams = {
     limit: pageSize,
@@ -110,6 +114,7 @@ export const PoliciesPage: React.FC = () => {
     <>
       <Spin spinning={isLoading}>
         <Title level={4}>策略中心</Title>
+        <ReadonlyBanner visible={!canWrite} resourceLabel="策略中心" />
         <Card>
           <Space style={{ marginBottom: 16 }} wrap>
             <Input.Search
@@ -122,17 +127,18 @@ export const PoliciesPage: React.FC = () => {
               }}
               allowClear
             />
-            <Button
+            <GuardedButton
               type="primary"
               icon={<PlusOutlined />}
               onClick={() => setOpen(true)}
+              allowed={canWrite}
             >
               创建策略
-            </Button>
+            </GuardedButton>
             <Button icon={<SyncOutlined />} onClick={() => refetch()}>
               刷新
             </Button>
-            {selectedRowKeys.length > 0 && (
+            {canWrite && selectedRowKeys.length > 0 && (
               <Popconfirm
                 title={`确认删除 ${selectedRowKeys.length} 条策略？`}
                 onConfirm={handleBatchDelete}
@@ -233,19 +239,21 @@ export const PoliciesPage: React.FC = () => {
                     >
                       详情
                     </Button>
-                    <Popconfirm
-                      title="确认删除？"
-                      onConfirm={() => handleDelete(record.id)}
-                    >
-                      <Button
-                        size="small"
-                        type="link"
-                        danger
-                        icon={<DeleteOutlined />}
+                    {canWrite && (
+                      <Popconfirm
+                        title="确认删除？"
+                        onConfirm={() => handleDelete(record.id)}
                       >
-                        删除
-                      </Button>
-                    </Popconfirm>
+                        <Button
+                          size="small"
+                          type="link"
+                          danger
+                          icon={<DeleteOutlined />}
+                        >
+                          删除
+                        </Button>
+                      </Popconfirm>
+                    )}
                   </Space>
                 ),
               },
@@ -260,6 +268,7 @@ export const PoliciesPage: React.FC = () => {
         onCancel={() => setOpen(false)}
         onOk={() => form.submit()}
         confirmLoading={createMut.isPending}
+        okButtonProps={{ disabled: !canWrite }}
       >
         <Form form={form} layout="vertical" onFinish={handleCreate}>
           <Form.Item

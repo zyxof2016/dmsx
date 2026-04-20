@@ -23,6 +23,9 @@ import dayjs from "dayjs";
 import { useArtifacts, useCreateArtifact, exportCsv } from "../api/hooks";
 import type { Artifact, CreateArtifactReq, ListParams } from "../api/types";
 import { formatApiError } from "../api/errors";
+import { useResourceAccess } from "../authz";
+import { GuardedButton } from "../components/GuardedButton";
+import { ReadonlyBanner } from "../components/ReadonlyBanner";
 
 const { Title } = Typography;
 
@@ -33,6 +36,7 @@ export const ArtifactsPage: React.FC = () => {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+  const { canWrite } = useResourceAccess("artifacts");
 
   const params: ListParams = {
     limit: pageSize,
@@ -71,6 +75,7 @@ export const ArtifactsPage: React.FC = () => {
   return (
     <Spin spinning={isLoading}>
       <Title level={4}>应用分发</Title>
+      <ReadonlyBanner visible={!canWrite} resourceLabel="应用分发" />
       <Card>
         <Space style={{ marginBottom: 16 }} wrap>
           <Input.Search
@@ -83,13 +88,14 @@ export const ArtifactsPage: React.FC = () => {
             }}
             allowClear
           />
-          <Button
+          <GuardedButton
             type="primary"
             icon={<UploadOutlined />}
             onClick={() => setOpen(true)}
+            allowed={canWrite}
           >
             上传制品
-          </Button>
+          </GuardedButton>
           <Button icon={<SyncOutlined />} onClick={() => refetch()}>
             刷新
           </Button>
@@ -156,6 +162,7 @@ export const ArtifactsPage: React.FC = () => {
         onCancel={() => setOpen(false)}
         onOk={() => form.submit()}
         confirmLoading={createMut.isPending}
+        okButtonProps={{ disabled: !canWrite }}
       >
         <Form form={form} layout="vertical" onFinish={handleCreate}>
           <Form.Item name="name" label="名称" rules={[{ required: true }]}>

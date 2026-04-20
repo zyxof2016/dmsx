@@ -13,6 +13,9 @@ import type { CreatePolicyReq, Policy, PolicyEditorPublishReq } from "../api/typ
 import { useAppI18n } from "../appProviders";
 import { usePolicyEditorPublish } from "../api/hooks";
 import { formatApiError } from "../api/errors";
+import { useResourceAccess } from "../authz";
+import { GuardedButton } from "../components/GuardedButton";
+import { ReadonlyBanner } from "../components/ReadonlyBanner";
 
 const { TextArea } = Input;
 
@@ -47,6 +50,7 @@ export const PolicyEditorPage: React.FC = () => {
   const { t } = useAppI18n();
   const { message } = App.useApp();
   const publishMut = usePolicyEditorPublish();
+  const { canWrite } = useResourceAccess("policies");
 
   const [jsonText, setJsonText] = React.useState(() =>
     safeStringify({
@@ -109,6 +113,7 @@ export const PolicyEditorPage: React.FC = () => {
   return (
     <Space direction="vertical" style={{ width: "100%" }}>
       <Typography.Title level={4}>{t("page.policyEditor")}</Typography.Title>
+      <ReadonlyBanner visible={!canWrite} resourceLabel="策略编辑器" />
 
       <Alert type="info" showIcon message="已接入后端：保存将调用 /v1/tenants/{tid}/policies/editor" />
 
@@ -151,8 +156,9 @@ export const PolicyEditorPage: React.FC = () => {
             >
               {t("buttons.copy")}
             </Button>
-            <Button
+            <GuardedButton
               type="default"
+              allowed={canWrite}
               disabled={!publishReq}
               loading={publishMut.isPending}
               onClick={async () => {
@@ -166,7 +172,7 @@ export const PolicyEditorPage: React.FC = () => {
               }}
             >
               保存并发布
-            </Button>
+            </GuardedButton>
           </Space>
         </Space>
       </Card>

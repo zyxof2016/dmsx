@@ -15,6 +15,11 @@ const DashboardPage = React.lazy(async () => {
   return { default: mod.DashboardPage };
 });
 
+const PlatformOverviewPage = React.lazy(async () => {
+  const mod = await import("./pages/PlatformOverview");
+  return { default: mod.PlatformOverviewPage };
+});
+
 const DevicesPage = React.lazy(async () => {
   const mod = await import("./pages/Devices");
   return { default: mod.DevicesPage };
@@ -120,6 +125,12 @@ const indexRoute = createRoute({
   component: withLazyBoundary(DashboardPage),
 });
 
+const platformRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/platform",
+  component: withLazyBoundary(PlatformOverviewPage),
+});
+
 // --- Devices (nested: list + detail drawer) ---
 const devicesRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -219,6 +230,7 @@ const usersRolesRoute = createRoute({
 
 const routeTree = rootRoute.addChildren([
   indexRoute,
+  platformRoute,
   devicesRoute.addChildren([devicesIndexRoute, deviceDetailRoute]),
   policiesRoute.addChildren([policiesIndexRoute, policyDetailRoute]),
   commandsRoute.addChildren([commandsIndexRoute, commandDetailRoute]),

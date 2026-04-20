@@ -253,6 +253,13 @@ export interface RbacRole {
   name: string;
 }
 
+export interface Tenant {
+  id: string;
+  name: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
 export interface PolicyRevision {
   id: string;
   policy_id: string;

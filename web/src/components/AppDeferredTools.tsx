@@ -7,13 +7,17 @@ import {
   FloatButton,
   Input,
   Modal,
+  Select,
   Space,
   Tag,
+  Typography,
 } from "antd";
 import { BellOutlined, RobotOutlined, UserOutlined } from "@ant-design/icons";
+import type { TenantOption } from "../appProviders";
 
 type Props = {
   tenantId: string;
+  tenantOptions: TenantOption[];
   jwt: string;
   userLabel: string;
   profileLabel: string;
@@ -22,14 +26,13 @@ type Props = {
   setTenantId: (tenantId: string) => void;
   setJwt: (jwt: string) => void;
   clearJwt: () => void;
+  showTenantShortcut: boolean;
   onOpenAi: () => void;
 };
 
-const isValidUuid = (value: string) =>
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
-
 export const AppDeferredTools: React.FC<Props> = ({
   tenantId,
+  tenantOptions,
   jwt,
   userLabel,
   profileLabel,
@@ -38,6 +41,7 @@ export const AppDeferredTools: React.FC<Props> = ({
   setTenantId,
   setJwt,
   clearJwt,
+  showTenantShortcut,
   onOpenAi,
 }) => {
   const { message } = App.useApp();
@@ -51,7 +55,9 @@ export const AppDeferredTools: React.FC<Props> = ({
   const userMenu = {
     items: [
       { key: "profile", label: profileLabel },
-      { key: "set_tenant", label: "设置活动租户" },
+      ...(showTenantShortcut
+        ? [{ key: "set_tenant", label: "设置活动租户" }]
+        : []),
       { key: "set_jwt", label: "设置 JWT（用于 jwt 模式联调）" },
       { key: "clear_jwt", label: "清除 JWT" },
       { key: "logout", label: logoutLabel },
@@ -72,16 +78,18 @@ export const AppDeferredTools: React.FC<Props> = ({
 
   return (
     <>
-      <Tag
-        color="blue"
-        style={{ cursor: "pointer", marginInlineEnd: 0 }}
-        onClick={() => {
-          setTenantDraft(tenantId);
-          setTenantModalOpen(true);
-        }}
-      >
-        租户 {shortTenantId}
-      </Tag>
+      {showTenantShortcut && (
+        <Tag
+          color="blue"
+          style={{ cursor: "pointer", marginInlineEnd: 0 }}
+          onClick={() => {
+            setTenantDraft(tenantId);
+            setTenantModalOpen(true);
+          }}
+        >
+          租户 {shortTenantId}
+        </Tag>
+      )}
       <Badge count={0} size="small">
         <BellOutlined style={{ fontSize: 18, cursor: "pointer" }} />
       </Badge>
@@ -126,30 +134,53 @@ export const AppDeferredTools: React.FC<Props> = ({
         />
       </Modal>
 
-      <Modal
-        title="设置活动租户"
-        open={tenantModalOpen}
+      {showTenantShortcut && (
+        <Modal
+          title="设置活动租户"
+          open={tenantModalOpen}
         onCancel={() => setTenantModalOpen(false)}
         onOk={() => {
           const value = tenantDraft.trim();
-          if (!isValidUuid(value)) {
-            message.error("租户 ID 必须是合法 UUID");
+          if (!value) {
+            message.error("请选择一个租户");
             return;
           }
           setTenantId(value);
-          setTenantModalOpen(false);
-          message.success("活动租户已更新");
-        }}
-        okText="保存"
-        cancelText="取消"
-        destroyOnClose
-      >
-        <Input
-          value={tenantDraft}
-          onChange={(event) => setTenantDraft(event.target.value)}
-          placeholder="输入租户 UUID，例如 00000000-0000-0000-0000-000000000001"
-        />
-      </Modal>
+            setTenantModalOpen(false);
+            message.success("活动租户已更新");
+          }}
+          okText="保存"
+          cancelText="取消"
+          destroyOnClose
+        >
+          <Select
+            value={tenantDraft}
+            onChange={(value) => setTenantDraft(value)}
+            options={tenantOptions.map((option) => ({
+              value: option.id,
+              label: (
+                <Space direction="vertical" size={0}>
+                  <Typography.Text strong>
+                    {option.name ?? `${option.id.slice(0, 8)}…${option.id.slice(-4)}`}
+                  </Typography.Text>
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                    {option.id}
+                  </Typography.Text>
+                  <Space wrap size={4}>
+                    {option.id === tenantId && <Tag color="blue">当前</Tag>}
+                    <Tag>{option.source === "jwt" ? "JWT 授权" : "最近创建"}</Tag>
+                    {option.effectiveRoles.map((role) => (
+                      <Tag key={`${option.id}-${role}`}>{role}</Tag>
+                    ))}
+                  </Space>
+                </Space>
+              ),
+            }))}
+            placeholder="选择当前用户可访问的租户"
+            style={{ width: "100%" }}
+          />
+        </Modal>
+      )}
     </>
   );
 };

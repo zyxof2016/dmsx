@@ -35,6 +35,7 @@ import type {
   SystemSetting,
   SystemSettingUpsertReq,
   RbacRole,
+  Tenant,
 } from "./types";
 
 // ---- Dashboard ----
@@ -414,6 +415,12 @@ export function useRbacRoles() {
     queryKey: ["rbacRoles"],
     queryFn: () => api.get<RbacRole[]>("/v1/config/rbac/roles"),
     retry: false,
+  });
+}
+
+export function useCreateTenant() {
+  return useMutation({
+    mutationFn: (body: { name: string }) => api.post<Tenant>("/v1/tenants", body),
   });
 }
 
