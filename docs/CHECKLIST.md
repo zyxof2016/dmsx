@@ -314,6 +314,7 @@
 - [x] 列表轮询（设备 10s / 命令 10s / 统计 15s）
 - [x] 暗色模式（AntD theme darkAlgorithm + 顶部切换；主题偏好落盘 `localStorage`；先覆盖 AppLayout 顶栏/内容容器/侧栏品牌与菜单外观）
 - [x] 国际化（i18n）（简版：提供 `AppProviders` + `t()`；顶部语言切换影响导航/面包屑/用户菜单与 Dashboard 主标题；未覆盖的文案默认回退到中文 key）
+- [x] 前端会话上下文（`AppProviders` 挂载到实际入口；活动租户落盘 `localStorage['dmsx.tenant_id']`，JWT 落盘 `localStorage['dmsx.jwt']`，顶栏可直接切换）
 
 ### 页面
 
@@ -332,9 +333,9 @@
 - [x] 远程桌面面板（RemoteDesktop — LiveKit WebRTC 订阅 + Data Channel 键鼠 + 状态反馈 / 重连 + RustDesk 备选）
 - [x] 策略详情抽屉（完整信息 + 作用域字段）
 - [x] 命令详情抽屉（payload JSON 高亮、状态标签、目标设备信息 + 执行结果展示 exit_code/stdout/stderr）
-- [x] 系统设置页面（已接入后端：`GET/PUT /v1/config/settings/{key}`；前端支持在 `localStorage['dmsx.jwt']` 注入 `Authorization`）
-- [x] 策略编辑器（已接入后端保存：`POST /v1/tenants/{tid}/policies/editor`；前端支持在 `localStorage['dmsx.jwt']` 注入 `Authorization`）
-- [x] 审计日志查看页（已接入后端：`GET /v1/tenants/{tid}/audit-logs`；前端支持在 `localStorage['dmsx.jwt']` 注入 `Authorization`）
+- [x] 系统设置页面（已接入后端：`GET/PUT /v1/config/settings/{key}`；前端支持在 UI 中配置并注入 `Authorization`）
+- [x] 策略编辑器（已接入后端保存：`POST /v1/tenants/{tid}/policies/editor`；前端支持在 UI 中配置活动租户与 `Authorization`）
+- [x] 审计日志查看页（已接入后端：`GET /v1/tenants/{tid}/audit-logs`；前端支持在 UI 中配置活动租户与 `Authorization`）
 - [~] 用户 / 角色管理页（UI 框架 + 表格渲染；后端仅提供 RBAC 角色清单：`GET /v1/config/rbac/roles`；用户/角色管理（CRUD）仍未接入）
 
 ---

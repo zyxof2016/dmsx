@@ -16,8 +16,10 @@
 
 ## 认证与多租户（与 `docs/API.md` 一致）
 
-- **开发**：`web/src/api/client.ts` 用常量 **`TENANT_ID`** 经 **`tenantPath()`** 拼出 `/v1/tenants/{tid}/...`，须与本机 Postgres 种子租户一致；当前 `fetch` 未默认带 `Authorization`（与 `DMSX_API_AUTH_MODE=disabled` 联调）。
-- **生产**：所有 `/v1/...` 请求应带 **`Authorization: Bearer <JWT>`**；签发方在 JWT 中写入路径租户许可（**`tenant_id` ∪ `allowed_tenant_ids`**）及可选 **`tenant_roles`**（按活动租户覆盖角色）。**切换租户** = 改 URL 中的 `{tenant_id}`（及前端路由若绑定租户），并确保证件仍允许该租户；无需单独「切换租户」API。
+- 前端将 **活动租户** 持久化在 `localStorage['dmsx.tenant_id']`，所有租户接口通过 `tenantPathFor(tenantId, ...)` 拼出 `/v1/tenants/{tid}/...`。默认值仍为种子租户 `00000000-0000-0000-0000-000000000001`。
+- 前端将 JWT 持久化在 `localStorage['dmsx.jwt']`；若存在则自动附带 `Authorization: Bearer <JWT>`，若用户直接粘贴了带 `Bearer ` 前缀的值也会原样接受。
+- 顶栏用户菜单支持直接设置 **活动租户** 与 **JWT**，用于 `disabled` / `jwt` 两种模式下的本地联调；不再需要手改源码中的租户常量。
+- 生产语义不变：签发方在 JWT 中写入路径租户许可（**`tenant_id` ∪ `allowed_tenant_ids`**）及可选 **`tenant_roles`**（按活动租户覆盖角色）；前端切换租户本质上仍是切换请求路径中的 `{tenant_id}`。
 
 ## 目录结构
 
@@ -28,10 +30,11 @@ web/
 ├── vite.config.ts          # 含 /v1 代理到 :8080
 ├── tsconfig.json
 └── src/
-    ├── main.tsx             # 入口：QueryClient + AntD ConfigProvider + Router
+    ├── main.tsx             # 入口：QueryClient + AppProviders + Router
+    ├── appProviders.tsx     # 主题 / i18n / 会话（tenantId、JWT）上下文
     ├── router.tsx           # TanStack Router 路由树定义
     ├── api/
-    │   ├── client.ts        # fetch 封装 + 租户路径工具 + TENANT_ID
+    │   ├── client.ts        # fetch 封装 + JWT / tenant 本地持久化 + 租户路径工具
     │   ├── types.ts         # 所有 DTO TypeScript 接口
     │   └── hooks.ts         # TanStack Query hooks（设备/策略/命令/影子/远控/桌面等）
     ├── pages/
@@ -131,3 +134,4 @@ web/
 - API 客户端（`api/client.ts`）统一处理 Problem Details 错误
 - 所有 TypeScript 类型定义在 `api/types.ts`，与后端 DTO 严格对齐
 - `tsconfig.json` 使用 `noEmit: true`，避免将编译产物写回 `src/`
+- `App.tsx`、系统设置页、审计页等依赖 `AppProviders` 上下文；若调整入口挂载顺序，需保证 `RouterProvider` 仍包在 `AppProviders` 内。

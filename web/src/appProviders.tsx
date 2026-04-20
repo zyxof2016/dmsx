@@ -2,6 +2,13 @@ import React from "react";
 import { ConfigProvider, theme as antdTheme } from "antd";
 import zhCN from "antd/locale/zh_CN";
 import enUS from "antd/locale/en_US";
+import {
+  clearStoredJwt,
+  getStoredJwt,
+  getStoredTenantId,
+  setStoredJwt,
+  setStoredTenantId,
+} from "./api/client";
 
 export type ThemeMode = "light" | "dark";
 export type Lang = "zh" | "en";
@@ -18,11 +25,20 @@ type ThemeContextValue = {
   toggleTheme: () => void;
 };
 
+type SessionContextValue = {
+  tenantId: string;
+  setTenantId: (tenantId: string) => void;
+  jwt: string;
+  setJwt: (jwt: string) => void;
+  clearJwt: () => void;
+};
+
 const LANG_KEY = "dmsx_lang";
 const THEME_KEY = "dmsx_theme";
 
 const I18nContext = React.createContext<I18nContextValue | null>(null);
 const ThemeContext = React.createContext<ThemeContextValue | null>(null);
+const SessionContext = React.createContext<SessionContextValue | null>(null);
 
 const dictionaries: Record<Lang, Record<string, string>> = {
   zh: {
@@ -122,6 +138,12 @@ export function useThemeMode() {
   return ctx;
 }
 
+export function useAppSession() {
+  const ctx = React.useContext(SessionContext);
+  if (!ctx) throw new Error("useAppSession must be used within AppProviders");
+  return ctx;
+}
+
 export const AppProviders: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
@@ -129,6 +151,10 @@ export const AppProviders: React.FC<{ children: React.ReactNode }> = ({
   const [themeMode, setThemeMode] = React.useState<ThemeMode>(() =>
     getInitialTheme(),
   );
+  const [tenantId, setTenantIdState] = React.useState<string>(() =>
+    getStoredTenantId(),
+  );
+  const [jwt, setJwtState] = React.useState<string>(() => getStoredJwt() ?? "");
 
   React.useEffect(() => {
     localStorage.setItem(LANG_KEY, lang);
@@ -160,6 +186,28 @@ export const AppProviders: React.FC<{ children: React.ReactNode }> = ({
     [themeMode],
   );
 
+  const sessionValue = React.useMemo<SessionContextValue>(
+    () => ({
+      tenantId,
+      setTenantId: (nextTenantId: string) => {
+        const value = nextTenantId.trim();
+        setStoredTenantId(value);
+        setTenantIdState(value);
+      },
+      jwt,
+      setJwt: (nextJwt: string) => {
+        const value = nextJwt.trim();
+        setStoredJwt(value);
+        setJwtState(value);
+      },
+      clearJwt: () => {
+        clearStoredJwt();
+        setJwtState("");
+      },
+    }),
+    [jwt, tenantId],
+  );
+
   const locale = lang === "zh" ? zhCN : enUS;
   const algorithm =
     themeMode === "dark" ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm;
@@ -167,17 +215,18 @@ export const AppProviders: React.FC<{ children: React.ReactNode }> = ({
   return (
     <ThemeContext.Provider value={themeValue}>
       <I18nContext.Provider value={i18nValue}>
-        <ConfigProvider
-          locale={locale}
-          theme={{
-            algorithm,
-            token: { colorPrimary: "#1677ff", borderRadius: 6 },
-          }}
-        >
-          {children}
-        </ConfigProvider>
+        <SessionContext.Provider value={sessionValue}>
+          <ConfigProvider
+            locale={locale}
+            theme={{
+              algorithm,
+              token: { colorPrimary: "#1677ff", borderRadius: 6 },
+            }}
+          >
+            {children}
+          </ConfigProvider>
+        </SessionContext.Provider>
       </I18nContext.Provider>
     </ThemeContext.Provider>
   );
 };
-

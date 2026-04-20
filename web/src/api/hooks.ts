@@ -4,7 +4,8 @@ import {
   useQueryClient,
   keepPreviousData,
 } from "@tanstack/react-query";
-import { api, tenantPath, buildQuery } from "./client";
+import { useAppSession } from "../appProviders";
+import { api, tenantPathFor, buildQuery } from "./client";
 import type {
   Device,
   Policy,
@@ -39,9 +40,10 @@ import type {
 // ---- Dashboard ----
 
 export function useStats() {
+  const { tenantId } = useAppSession();
   return useQuery({
-    queryKey: ["stats"],
-    queryFn: () => api.get<DashboardStats>(tenantPath("/stats")),
+    queryKey: ["stats", tenantId],
+    queryFn: () => api.get<DashboardStats>(tenantPathFor(tenantId, "/stats")),
     refetchInterval: 15_000,
   });
 }
@@ -49,11 +51,12 @@ export function useStats() {
 // ---- Devices ----
 
 export function useDevices(params?: ListParams) {
+  const { tenantId } = useAppSession();
   return useQuery({
-    queryKey: ["devices", params ?? {}],
+    queryKey: ["devices", tenantId, params ?? {}],
     queryFn: () =>
       api.get<ListResponse<Device>>(
-        tenantPath(`/devices${buildQuery(params)}`),
+        tenantPathFor(tenantId, `/devices${buildQuery(params)}`),
       ),
     placeholderData: keepPreviousData,
     refetchInterval: 10_000,
@@ -61,32 +64,35 @@ export function useDevices(params?: ListParams) {
 }
 
 export function useDevice(id: string | undefined) {
+  const { tenantId } = useAppSession();
   return useQuery({
-    queryKey: ["device", id],
-    queryFn: () => api.get<Device>(tenantPath(`/devices/${id}`)),
+    queryKey: ["device", tenantId, id],
+    queryFn: () => api.get<Device>(tenantPathFor(tenantId, `/devices/${id}`)),
     enabled: !!id,
   });
 }
 
 export function useCreateDevice() {
+  const { tenantId } = useAppSession();
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (data: CreateDeviceReq) =>
-      api.post<Device>(tenantPath("/devices"), data),
+      api.post<Device>(tenantPathFor(tenantId, "/devices"), data),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["devices"] });
-      qc.invalidateQueries({ queryKey: ["stats"] });
+      qc.invalidateQueries({ queryKey: ["devices", tenantId] });
+      qc.invalidateQueries({ queryKey: ["stats", tenantId] });
     },
   });
 }
 
 export function useDeleteDevice() {
+  const { tenantId } = useAppSession();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => api.del(tenantPath(`/devices/${id}`)),
+    mutationFn: (id: string) => api.del(tenantPathFor(tenantId, `/devices/${id}`)),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["devices"] });
-      qc.invalidateQueries({ queryKey: ["stats"] });
+      qc.invalidateQueries({ queryKey: ["devices", tenantId] });
+      qc.invalidateQueries({ queryKey: ["stats", tenantId] });
     },
   });
 }
@@ -94,43 +100,47 @@ export function useDeleteDevice() {
 // ---- Policies ----
 
 export function usePolicies(params?: ListParams) {
+  const { tenantId } = useAppSession();
   return useQuery({
-    queryKey: ["policies", params ?? {}],
+    queryKey: ["policies", tenantId, params ?? {}],
     queryFn: () =>
       api.get<ListResponse<Policy>>(
-        tenantPath(`/policies${buildQuery(params)}`),
+        tenantPathFor(tenantId, `/policies${buildQuery(params)}`),
       ),
     placeholderData: keepPreviousData,
   });
 }
 
 export function usePolicy(id: string | undefined) {
+  const { tenantId } = useAppSession();
   return useQuery({
-    queryKey: ["policy", id],
-    queryFn: () => api.get<Policy>(tenantPath(`/policies/${id}`)),
+    queryKey: ["policy", tenantId, id],
+    queryFn: () => api.get<Policy>(tenantPathFor(tenantId, `/policies/${id}`)),
     enabled: !!id,
   });
 }
 
 export function useCreatePolicy() {
+  const { tenantId } = useAppSession();
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (data: CreatePolicyReq) =>
-      api.post<Policy>(tenantPath("/policies"), data),
+      api.post<Policy>(tenantPathFor(tenantId, "/policies"), data),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["policies"] });
-      qc.invalidateQueries({ queryKey: ["stats"] });
+      qc.invalidateQueries({ queryKey: ["policies", tenantId] });
+      qc.invalidateQueries({ queryKey: ["stats", tenantId] });
     },
   });
 }
 
 export function useDeletePolicy() {
+  const { tenantId } = useAppSession();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => api.del(tenantPath(`/policies/${id}`)),
+    mutationFn: (id: string) => api.del(tenantPathFor(tenantId, `/policies/${id}`)),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["policies"] });
-      qc.invalidateQueries({ queryKey: ["stats"] });
+      qc.invalidateQueries({ queryKey: ["policies", tenantId] });
+      qc.invalidateQueries({ queryKey: ["stats", tenantId] });
     },
   });
 }
@@ -138,11 +148,12 @@ export function useDeletePolicy() {
 // ---- Commands ----
 
 export function useCommands(params?: ListParams) {
+  const { tenantId } = useAppSession();
   return useQuery({
-    queryKey: ["commands", params ?? {}],
+    queryKey: ["commands", tenantId, params ?? {}],
     queryFn: () =>
       api.get<ListResponse<Command>>(
-        tenantPath(`/commands${buildQuery(params)}`),
+        tenantPathFor(tenantId, `/commands${buildQuery(params)}`),
       ),
     placeholderData: keepPreviousData,
     refetchInterval: 10_000,
@@ -150,9 +161,10 @@ export function useCommands(params?: ListParams) {
 }
 
 export function useCommand(id: string | undefined) {
+  const { tenantId } = useAppSession();
   return useQuery({
-    queryKey: ["command", id],
-    queryFn: () => api.get<Command>(tenantPath(`/commands/${id}`)),
+    queryKey: ["command", tenantId, id],
+    queryFn: () => api.get<Command>(tenantPathFor(tenantId, `/commands/${id}`)),
     enabled: !!id,
     refetchInterval: (query) => {
       const command = query.state.data as Command | undefined;
@@ -165,13 +177,14 @@ export function useCommand(id: string | undefined) {
 }
 
 export function useCreateCommand() {
+  const { tenantId } = useAppSession();
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (data: CreateCommandReq) =>
-      api.post<Command>(tenantPath("/commands"), data),
+      api.post<Command>(tenantPathFor(tenantId, "/commands"), data),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["commands"] });
-      qc.invalidateQueries({ queryKey: ["stats"] });
+      qc.invalidateQueries({ queryKey: ["commands", tenantId] });
+      qc.invalidateQueries({ queryKey: ["stats", tenantId] });
     },
   });
 }
@@ -179,16 +192,18 @@ export function useCreateCommand() {
 // ---- Device Shadow ----
 
 export function useShadow(deviceId: string | undefined) {
+  const { tenantId } = useAppSession();
   return useQuery({
-    queryKey: ["shadow", deviceId],
+    queryKey: ["shadow", tenantId, deviceId],
     queryFn: () =>
-      api.get<ShadowResponse>(tenantPath(`/devices/${deviceId}/shadow`)),
+      api.get<ShadowResponse>(tenantPathFor(tenantId, `/devices/${deviceId}/shadow`)),
     enabled: !!deviceId,
     refetchInterval: 10_000,
   });
 }
 
 export function useUpdateShadowDesired() {
+  const { tenantId } = useAppSession();
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({
@@ -197,13 +212,13 @@ export function useUpdateShadowDesired() {
     }: {
       deviceId: string;
       desired: UpdateShadowDesiredReq;
-    }) =>
-      api.patch<ShadowResponse>(
-        tenantPath(`/devices/${deviceId}/shadow/desired`),
-        desired,
-      ),
+      }) =>
+        api.patch<ShadowResponse>(
+          tenantPathFor(tenantId, `/devices/${deviceId}/shadow/desired`),
+          desired,
+        ),
     onSuccess: (_data, vars) => {
-      qc.invalidateQueries({ queryKey: ["shadow", vars.deviceId] });
+      qc.invalidateQueries({ queryKey: ["shadow", tenantId, vars.deviceId] });
     },
   });
 }
@@ -211,6 +226,7 @@ export function useUpdateShadowDesired() {
 // ---- Device Actions (remote control) ----
 
 export function useDeviceAction() {
+  const { tenantId } = useAppSession();
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({
@@ -220,11 +236,11 @@ export function useDeviceAction() {
       deviceId: string;
       action: DeviceActionReq;
     }) =>
-      api.post<Command>(tenantPath(`/devices/${deviceId}/actions`), action),
+      api.post<Command>(tenantPathFor(tenantId, `/devices/${deviceId}/actions`), action),
     onSuccess: (_data, vars) => {
-      qc.invalidateQueries({ queryKey: ["deviceCommands", vars.deviceId] });
-      qc.invalidateQueries({ queryKey: ["commands"] });
-      qc.invalidateQueries({ queryKey: ["stats"] });
+      qc.invalidateQueries({ queryKey: ["deviceCommands", tenantId, vars.deviceId] });
+      qc.invalidateQueries({ queryKey: ["commands", tenantId] });
+      qc.invalidateQueries({ queryKey: ["stats", tenantId] });
     },
   });
 }
@@ -233,11 +249,12 @@ export function useDeviceCommands(
   deviceId: string | undefined,
   params?: ListParams,
 ) {
+  const { tenantId } = useAppSession();
   return useQuery({
-    queryKey: ["deviceCommands", deviceId, params ?? {}],
+    queryKey: ["deviceCommands", tenantId, deviceId, params ?? {}],
     queryFn: () =>
       api.get<ListResponse<Command>>(
-        tenantPath(`/devices/${deviceId}/commands${buildQuery(params)}`),
+        tenantPathFor(tenantId, `/devices/${deviceId}/commands${buildQuery(params)}`),
       ),
     enabled: !!deviceId,
     placeholderData: keepPreviousData,
@@ -248,10 +265,11 @@ export function useDeviceCommands(
 // ---- Command Result ----
 
 export function useCommandResult(commandId: string | undefined) {
+  const { tenantId } = useAppSession();
   return useQuery({
-    queryKey: ["commandResult", commandId],
+    queryKey: ["commandResult", tenantId, commandId],
     queryFn: () =>
-      api.get<CommandResult>(tenantPath(`/commands/${commandId}/result`)),
+      api.get<CommandResult>(tenantPathFor(tenantId, `/commands/${commandId}/result`)),
     enabled: !!commandId,
     retry: false,
     refetchInterval: (query) =>
@@ -260,6 +278,7 @@ export function useCommandResult(commandId: string | undefined) {
 }
 
 export function useSubmitCommandResult() {
+  const { tenantId } = useAppSession();
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({
@@ -270,18 +289,19 @@ export function useSubmitCommandResult() {
       body: SubmitCommandResultReq;
     }) =>
       api.post<CommandResult>(
-        tenantPath(`/commands/${commandId}/result`),
+        tenantPathFor(tenantId, `/commands/${commandId}/result`),
         body,
       ),
     onSuccess: (_data, vars) => {
-      qc.invalidateQueries({ queryKey: ["commandResult", vars.commandId] });
-      qc.invalidateQueries({ queryKey: ["command", vars.commandId] });
-      qc.invalidateQueries({ queryKey: ["commands"] });
+      qc.invalidateQueries({ queryKey: ["commandResult", tenantId, vars.commandId] });
+      qc.invalidateQueries({ queryKey: ["command", tenantId, vars.commandId] });
+      qc.invalidateQueries({ queryKey: ["commands", tenantId] });
     },
   });
 }
 
 export function useUpdateCommandStatus() {
+  const { tenantId } = useAppSession();
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({
@@ -291,10 +311,10 @@ export function useUpdateCommandStatus() {
       commandId: string;
       body: UpdateCommandStatusReq;
     }) =>
-      api.patch<Command>(tenantPath(`/commands/${commandId}/status`), body),
+      api.patch<Command>(tenantPathFor(tenantId, `/commands/${commandId}/status`), body),
     onSuccess: (_data, vars) => {
-      qc.invalidateQueries({ queryKey: ["command", vars.commandId] });
-      qc.invalidateQueries({ queryKey: ["commands"] });
+      qc.invalidateQueries({ queryKey: ["command", tenantId, vars.commandId] });
+      qc.invalidateQueries({ queryKey: ["commands", tenantId] });
     },
   });
 }
@@ -302,33 +322,36 @@ export function useUpdateCommandStatus() {
 // ---- Artifacts ----
 
 export function useArtifacts(params?: ListParams) {
+  const { tenantId } = useAppSession();
   return useQuery({
-    queryKey: ["artifacts", params ?? {}],
+    queryKey: ["artifacts", tenantId, params ?? {}],
     queryFn: () =>
       api.get<ListResponse<Artifact>>(
-        tenantPath(`/artifacts${buildQuery(params)}`),
+        tenantPathFor(tenantId, `/artifacts${buildQuery(params)}`),
       ),
     placeholderData: keepPreviousData,
   });
 }
 
 export function useCreateArtifact() {
+  const { tenantId } = useAppSession();
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (data: CreateArtifactReq) =>
-      api.post<Artifact>(tenantPath("/artifacts"), data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["artifacts"] }),
+      api.post<Artifact>(tenantPathFor(tenantId, "/artifacts"), data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["artifacts", tenantId] }),
   });
 }
 
 // ---- Compliance ----
 
 export function useFindings(params?: ListParams) {
+  const { tenantId } = useAppSession();
   return useQuery({
-    queryKey: ["findings", params ?? {}],
+    queryKey: ["findings", tenantId, params ?? {}],
     queryFn: () =>
       api.get<ListResponse<ComplianceFinding>>(
-        tenantPath(`/compliance/findings${buildQuery(params)}`),
+        tenantPathFor(tenantId, `/compliance/findings${buildQuery(params)}`),
       ),
     placeholderData: keepPreviousData,
   });
@@ -368,6 +391,7 @@ export function useUpsertSystemSetting(key: string) {
 }
 
 export function useAuditLogs(params?: AuditLogListParams) {
+  const { tenantId } = useAppSession();
   const q: Record<string, string | number | undefined> = {
     limit: params?.limit,
     offset: params?.offset,
@@ -375,10 +399,10 @@ export function useAuditLogs(params?: AuditLogListParams) {
     resource_type: params?.resource_type,
   };
   return useQuery({
-    queryKey: ["auditLogs", params ?? {}],
+    queryKey: ["auditLogs", tenantId, params ?? {}],
     queryFn: () =>
       api.get<ListResponse<AuditLog>>(
-        tenantPath(`/audit-logs${buildQuery(q)}`),
+        tenantPathFor(tenantId, `/audit-logs${buildQuery(q)}`),
       ),
     placeholderData: keepPreviousData,
     retry: false,
@@ -394,18 +418,20 @@ export function useRbacRoles() {
 }
 
 export function usePolicyEditorPublish() {
+  const { tenantId } = useAppSession();
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: PolicyEditorPublishReq) =>
-      api.post<PolicyRevision>(tenantPath(`/policies/editor`), body),
+      api.post<PolicyRevision>(tenantPathFor(tenantId, `/policies/editor`), body),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["policies"] });
-      qc.invalidateQueries({ queryKey: ["stats"] });
+      qc.invalidateQueries({ queryKey: ["policies", tenantId] });
+      qc.invalidateQueries({ queryKey: ["stats", tenantId] });
     },
   });
 }
 
 export function useCreateDesktopSession() {
+  const { tenantId } = useAppSession();
   return useMutation({
     mutationFn: ({
       deviceId,
@@ -415,13 +441,14 @@ export function useCreateDesktopSession() {
       body?: DesktopSessionCreateReq;
     }) =>
       api.post<DesktopSessionResponse>(
-        tenantPath(`/devices/${deviceId}/desktop/session`),
+        tenantPathFor(tenantId, `/devices/${deviceId}/desktop/session`),
         body ?? {},
       ),
   });
 }
 
 export function useDeleteDesktopSession() {
+  const { tenantId } = useAppSession();
   return useMutation({
     mutationFn: ({
       deviceId,
@@ -431,7 +458,8 @@ export function useDeleteDesktopSession() {
       sessionId: string;
     }) =>
       api.del(
-        tenantPath(
+        tenantPathFor(
+          tenantId,
           `/devices/${deviceId}/desktop/session${buildQuery({ session_id: sessionId })}`,
         ),
       ),

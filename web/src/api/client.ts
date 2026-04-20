@@ -1,5 +1,9 @@
 const BASE = "";
 
+export const JWT_STORAGE_KEY = "dmsx.jwt";
+export const TENANT_ID_STORAGE_KEY = "dmsx.tenant_id";
+export const DEFAULT_TENANT_ID = "00000000-0000-0000-0000-000000000001";
+
 export class ApiError extends Error {
   status: number;
   title?: string;
@@ -16,7 +20,7 @@ async function request<T>(
   path: string,
   body?: unknown,
 ): Promise<T> {
-  const jwt = localStorage.getItem("dmsx.jwt")?.trim();
+  const jwt = getStoredJwt()?.trim();
   const headers: Record<string, string> = {};
   if (body) headers["Content-Type"] = "application/json";
   if (jwt) headers["Authorization"] = jwt.startsWith("Bearer ")
@@ -47,8 +51,32 @@ export const api = {
   del: <T>(path: string) => request<T>("DELETE", path),
 };
 
-export const TENANT_ID = "00000000-0000-0000-0000-000000000001";
-export const tenantPath = (p: string) => `/v1/tenants/${TENANT_ID}${p}`;
+export function getStoredJwt(): string | null {
+  const raw = localStorage.getItem(JWT_STORAGE_KEY)?.trim();
+  return raw ? raw : null;
+}
+
+export function setStoredJwt(jwt: string) {
+  localStorage.setItem(JWT_STORAGE_KEY, jwt.trim());
+}
+
+export function clearStoredJwt() {
+  localStorage.removeItem(JWT_STORAGE_KEY);
+}
+
+export function getStoredTenantId(): string {
+  const raw = localStorage.getItem(TENANT_ID_STORAGE_KEY)?.trim();
+  return raw || DEFAULT_TENANT_ID;
+}
+
+export function setStoredTenantId(tenantId: string) {
+  localStorage.setItem(TENANT_ID_STORAGE_KEY, tenantId.trim());
+}
+
+export const tenantPathFor = (tenantId: string, p: string) =>
+  `/v1/tenants/${tenantId}${p}`;
+
+export const tenantPath = (p: string) => tenantPathFor(getStoredTenantId(), p);
 
 export function buildQuery(
   params?: Record<string, string | number | undefined>,
