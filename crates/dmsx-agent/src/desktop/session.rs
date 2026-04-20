@@ -3,6 +3,7 @@ use std::sync::{
     Arc,
 };
 
+use tokio::sync::oneshot;
 use tracing::{error, info};
 
 use super::capture::{primary_capture_size, spawn_capture_loop};
@@ -53,6 +54,7 @@ pub async fn start_desktop_session(
     let token_owned = token.clone();
     let room_owned = room.clone();
     let session_id_owned = session_id.clone();
+    let (ready_tx, ready_rx) = oneshot::channel();
 
     let handle = tokio::spawn(async move {
         if let Err(e) = desktop_stream_loop(
@@ -61,6 +63,7 @@ pub async fn start_desktop_session(
             &room_owned,
             &session_id_owned,
             stop_clone,
+            Some(ready_tx),
         )
         .await
         {
@@ -68,6 +71,20 @@ pub async fn start_desktop_session(
         }
         info!(session_id = %session_id_owned, "desktop session task exited");
     });
+
+    match ready_rx.await {
+        Ok(Ok(())) => {}
+        Ok(Err(e)) => {
+            stop_flag.store(true, Ordering::Relaxed);
+            let _ = handle.await;
+            return Err(e);
+        }
+        Err(_) => {
+            stop_flag.store(true, Ordering::Relaxed);
+            let _ = handle.await;
+            return Err("desktop session task exited before reporting readiness".into());
+        }
+    }
 
     Ok(DesktopSession {
         session_id,
@@ -82,6 +99,7 @@ async fn desktop_stream_loop(
     room_name: &str,
     session_id: &str,
     stop_flag: Arc<AtomicBool>,
+    ready_tx: Option<oneshot::Sender<Result<(), String>>>,
 ) -> Result<(), String> {
     use libwebrtc::prelude::{RtcVideoSource, VideoResolution};
     use livekit::options::TrackPublishOptions;
@@ -89,9 +107,15 @@ async fn desktop_stream_loop(
 
     let (capture_width, capture_height) = primary_capture_size().await?;
 
-    let (room, mut room_events) = Room::connect(livekit_url, token, RoomOptions::default())
-        .await
-        .map_err(|e| format!("livekit connect failed: {e}"))?;
+    let (room, mut room_events) = match Room::connect(livekit_url, token, RoomOptions::default()).await {
+        Ok(v) => v,
+        Err(e) => {
+            if let Some(tx) = ready_tx {
+                let _ = tx.send(Err(format!("livekit connect failed: {e}")));
+            }
+            return Err(format!("livekit connect failed: {e}"));
+        }
+    };
 
     let video_source = libwebrtc::video_source::native::NativeVideoSource::new(
         VideoResolution {
@@ -104,7 +128,7 @@ async fn desktop_stream_loop(
         "screen",
         RtcVideoSource::Native(video_source.clone()),
     );
-    room.local_participant()
+    if let Err(e) = room.local_participant()
         .publish_track(
             LocalTrack::Video(video_track),
             TrackPublishOptions {
@@ -114,7 +138,12 @@ async fn desktop_stream_loop(
             },
         )
         .await
-        .map_err(|e| format!("publish screen track failed: {e}"))?;
+    {
+        if let Some(tx) = ready_tx {
+            let _ = tx.send(Err(format!("publish screen track failed: {e}")));
+        }
+        return Err(format!("publish screen track failed: {e}"));
+    }
 
     info!(
         session_id = %session_id,
@@ -123,6 +152,10 @@ async fn desktop_stream_loop(
         height = capture_height,
         "connected to LiveKit room and published screen track"
     );
+
+    if let Some(tx) = ready_tx {
+        let _ = tx.send(Ok(()));
+    }
 
     let capture_task = spawn_capture_loop(video_source.clone(), stop_flag.clone());
 

@@ -95,6 +95,7 @@ web/
 - **LiveKit 主链路**：点击「连接」→ POST 创建会话 → 浏览器基于 `token/livekit_url` 入房 → 订阅远端视频轨
 - 键鼠控制：前端采集鼠标/键盘事件 → LiveKit Data Channel → Agent 注入输入
 - 状态反馈：创建中、等待设备接入、已连接、重连中、已断开、错误
+- 当前仓库已在本机验证过最小真实闭环：`dmsx-api` + LiveKit + Redis + 真实 `dmsx-agent` 能完成 `POST /desktop/session`、Agent 入房、发布屏幕轨；坏 LiveKit 地址下 `start_desktop` 会回报失败而不是假成功。
 - **RustDesk 方案（备选）**：显示 RustDesk ID、一键打开 Web Client 或本地客户端
 
 ### AI 智慧中心（AiCenter）

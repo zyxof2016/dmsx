@@ -173,6 +173,8 @@ Content-Type: application/json
 }
 ```
 
+控制面只负责创建会话并投递 `start_desktop`。设备侧命令结果语义为：**只有 Agent 真正连上 LiveKit 并成功发布屏幕轨后，`start_desktop` 才应回报成功**；若 LiveKit 不可达或发布轨失败，命令结果应为失败。
+
 ### 终止远程桌面会话
 
 ```http
