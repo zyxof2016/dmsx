@@ -2,6 +2,46 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { resolve } from "path";
 
+function getAntdChunkName(id: string): string {
+  if (id.includes("/node_modules/antd/")) {
+    return "antd-core";
+  }
+
+  const antDesignMatch = id.match(/\/node_modules\/(@ant-design(?:\/icons)?|@rc-component\/[^/]+|rc-[^/]+)\//);
+  if (antDesignMatch) {
+    const packageName = antDesignMatch[1];
+    if (packageName === "@ant-design/icons") {
+      return "antd-icons";
+    }
+    if (
+      packageName === "@ant-design" ||
+      packageName.startsWith("@rc-component/") ||
+      packageName.startsWith("rc-")
+    ) {
+      return "antd-framework";
+    }
+    return `antd-${packageName.replace(/[\/]/g, "-")}`;
+  }
+
+  if (id.includes("/node_modules/@emotion/")) {
+    return "antd-emotion";
+  }
+  if (id.includes("/node_modules/stylis/")) {
+    return "antd-stylis";
+  }
+  if (
+    id.includes("/node_modules/compute-scroll-into-view/") ||
+    id.includes("/node_modules/scroll-into-view-if-needed/")
+  ) {
+    return "antd-scroll";
+  }
+  if (id.includes("/node_modules/resize-observer-polyfill/")) {
+    return "antd-resize-observer";
+  }
+
+  return "antd-shared";
+}
+
 export default defineConfig({
   plugins: [react()],
   resolve: {
@@ -37,7 +77,7 @@ export default defineConfig({
             id.includes("/scroll-into-view-if-needed/") ||
             id.includes("/resize-observer-polyfill/")
           ) {
-            return "antd-vendor";
+            return getAntdChunkName(id);
           }
           if (
             id.includes("@tanstack/react-query") ||

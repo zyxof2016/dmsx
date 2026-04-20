@@ -1,5 +1,6 @@
 import React from "react";
 import {
+  App as AntApp,
   Layout,
   Menu,
   Breadcrumb,
@@ -13,9 +14,12 @@ import {
   Modal,
   Input,
   Tag,
+  ConfigProvider,
   theme as antdTheme,
   message,
 } from "antd";
+import zhCN from "antd/locale/zh_CN";
+import enUS from "antd/locale/en_US";
 import {
   DashboardOutlined,
   DesktopOutlined,
@@ -54,6 +58,28 @@ const keyToPath: Record<string, string> = {
 };
 
 export const AppLayout: React.FC = () => {
+  const { lang } = useAppI18n();
+  const { themeMode } = useThemeMode();
+  const locale = lang === "zh" ? zhCN : enUS;
+  const algorithm =
+    themeMode === "dark" ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm;
+
+  return (
+    <ConfigProvider
+      locale={locale}
+      theme={{
+        algorithm,
+        token: { colorPrimary: "#1677ff", borderRadius: 6 },
+      }}
+    >
+      <AntApp>
+        <AppShell />
+      </AntApp>
+    </ConfigProvider>
+  );
+};
+
+const AppShell: React.FC = () => {
   const [collapsed, setCollapsed] = React.useState(false);
   const [jwtModalOpen, setJwtModalOpen] = React.useState(false);
   const [tenantModalOpen, setTenantModalOpen] = React.useState(false);

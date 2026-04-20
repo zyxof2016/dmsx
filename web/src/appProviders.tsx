@@ -1,7 +1,4 @@
 import React from "react";
-import { ConfigProvider, theme as antdTheme } from "antd";
-import zhCN from "antd/locale/zh_CN";
-import enUS from "antd/locale/en_US";
 import {
   clearStoredJwt,
   getStoredJwt,
@@ -208,24 +205,10 @@ export const AppProviders: React.FC<{ children: React.ReactNode }> = ({
     [jwt, tenantId],
   );
 
-  const locale = lang === "zh" ? zhCN : enUS;
-  const algorithm =
-    themeMode === "dark" ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm;
-
   return (
     <ThemeContext.Provider value={themeValue}>
       <I18nContext.Provider value={i18nValue}>
-        <SessionContext.Provider value={sessionValue}>
-          <ConfigProvider
-            locale={locale}
-            theme={{
-              algorithm,
-              token: { colorPrimary: "#1677ff", borderRadius: 6 },
-            }}
-          >
-            {children}
-          </ConfigProvider>
-        </SessionContext.Provider>
+        <SessionContext.Provider value={sessionValue}>{children}</SessionContext.Provider>
       </I18nContext.Provider>
     </ThemeContext.Provider>
   );

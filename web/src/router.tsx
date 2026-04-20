@@ -4,7 +4,6 @@ import {
   createRoute,
   createRootRoute,
 } from "@tanstack/react-router";
-import { Spin } from "antd";
 
 const AppLayout = React.lazy(async () => {
   const mod = await import("./App");
@@ -92,7 +91,18 @@ function withLazyBoundary(Component: React.LazyExoticComponent<React.ComponentTy
       <React.Suspense
         fallback={
           <div style={{ minHeight: 240, display: "grid", placeItems: "center" }}>
-            <Spin size="large" />
+            <div
+              aria-label="loading"
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: "50%",
+                border: "3px solid rgba(22, 119, 255, 0.18)",
+                borderTopColor: "#1677ff",
+                animation: "dmsx-spin 0.8s linear infinite",
+              }}
+            />
+            <style>{"@keyframes dmsx-spin { to { transform: rotate(360deg); } }"}</style>
           </div>
         }
       >
