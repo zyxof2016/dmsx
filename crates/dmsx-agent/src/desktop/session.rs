@@ -158,6 +158,8 @@ async fn desktop_stream_loop(
     let mut enigo = enigo::Enigo::new(&enigo::Settings::default())
         .map_err(|e| format!("failed to create input injector: {e:?}"))?;
     let mut input_state = InputState::default();
+    let session_started_at = Instant::now();
+    let mut input_event_count: u64 = 0;
     let mut last_input_at: Option<Instant> = None;
     let mut last_input_log_at: Option<Instant> = None;
     let mut last_idle_warn_at: Option<Instant> = None;
@@ -183,6 +185,7 @@ async fn desktop_stream_loop(
                     capture_width,
                     capture_height,
                 );
+                input_event_count += 1;
                 last_input_at = Some(now);
                 if last_input_log_at
                     .map(|at| now.duration_since(at) >= Duration::from_secs(10))
@@ -219,5 +222,13 @@ async fn desktop_stream_loop(
     input_state.release_all(&mut enigo);
     let _ = capture_task.await;
     let _ = room.close().await;
+    info!(
+        session_id = %session_id,
+        room = %room_name,
+        session_uptime_secs = session_started_at.elapsed().as_secs(),
+        input_event_count,
+        last_input_age_secs = last_input_at.map(|at| at.elapsed().as_secs()),
+        "desktop session input summary"
+    );
     Ok(())
 }
