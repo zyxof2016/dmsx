@@ -5,6 +5,7 @@ pub mod compliance;
 pub mod devices;
 pub mod groups;
 pub mod orgs;
+pub mod platform;
 pub mod policies;
 pub mod shadow;
 pub mod sites;

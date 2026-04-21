@@ -363,6 +363,10 @@ pub fn build_router(st: AppState) -> Router {
             "/v1/config/rbac/roles",
             get(handlers::rbac_roles_list),
         )
+        .route("/v1/config/tenants", get(handlers::platform_tenants_list))
+        .route("/v1/config/audit-logs", get(handlers::platform_audit_logs_list))
+        .route("/v1/config/platform-health", get(handlers::platform_health_get))
+        .route("/v1/config/quotas", get(handlers::platform_quotas_get))
         .route(
             "/v1/tenants/{tenant_id}/ai/anomalies",
             post(handlers::ai_anomaly_detect),

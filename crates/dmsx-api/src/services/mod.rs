@@ -4,6 +4,7 @@ pub mod commands;
 pub mod compliance;
 pub mod devices;
 pub mod hierarchy;
+pub mod platform;
 pub mod policies;
 pub mod audit;
 pub mod system_settings;

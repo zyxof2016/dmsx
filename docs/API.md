@@ -6,7 +6,7 @@
 
 **远程桌面**：音视频与键鼠控制走 **LiveKit WebRTC**（浏览器 `livekit-client` 订阅、Agent SDK 发布）；`dmsx-api` 负责会话创建、LiveKit JWT 签发，并通过命令队列触发 Agent `start_desktop` / `stop_desktop`。**不再提供**经 `dmsx-api` 的桌面 JPEG WebSocket 中继端点。
 
-**认证**：除 `/health`、`/ready` 外，管理接口需 `Authorization: Bearer <JWT>`（路径 `{tenant_id}` 须被该 JWT 允许；`GET /v1/config/livekit`、`GET/PUT /v1/config/settings/{key}`、`GET /v1/config/rbac/roles` 需 **PlatformAdmin**）。OpenAPI 根级 **`security: [bearerAuth]`**，并在各操作中声明 **`401` / `403`**；资源类接口另声明 **`404`**；各操作另声明 **`500`**（内部错误）。上述错误均复用 `components.responses` 与 **`ProblemDetails`**（见 `openapi/dmsx-control-plane.yaml`）。
+**认证**：除 `/health`、`/ready` 外，管理接口需 `Authorization: Bearer <JWT>`（路径 `{tenant_id}` 须被该 JWT 允许；`GET /v1/config/livekit`、`GET/PUT /v1/config/settings/{key}`、`GET /v1/config/rbac/roles`、`GET /v1/config/tenants`、`GET /v1/config/audit-logs`、`GET /v1/config/platform-health`、`GET /v1/config/quotas` 需 **PlatformAdmin**）。OpenAPI 根级 **`security: [bearerAuth]`**，并在各操作中声明 **`401` / `403`**；资源类接口另声明 **`404`**；各操作另声明 **`500`**（内部错误）。上述错误均复用 `components.responses` 与 **`ProblemDetails`**（见 `openapi/dmsx-control-plane.yaml`）。
 
 **请求关联**：服务端会为每个请求生成或透传 `X-Request-Id`，并在响应中返回同名 header，便于排障时将客户端错误与服务端日志关联。
 
@@ -50,7 +50,7 @@
 
 ### 租户与组织结构
 
-> **实现状态**：下列 **POST** 已在 `dmsx-api` 注册并与 **OpenAPI** 对齐。`POST /v1/tenants`、`GET /v1/config/livekit`、`GET/PUT /v1/config/settings/{key}`、`GET /v1/config/rbac/roles` 同级 RBAC：**仅 `PlatformAdmin`**（`jwt` 模式；`disabled` 不校验）。其余创建路径在 **`jwt` 模式**下需 **`TenantAdmin`**（或更高）且路径 `{tid}` 属于 JWT 许可租户集合；请求体字段 **`name`** 长度 1–200。站点创建要求 **`org_id`** 属于该租户；设备组创建要求 **`site_id`** 属于该租户（否则 **400**）。名称在同一父级下违反唯一约束时 **409**。
+> **实现状态**：下列 **POST** 已在 `dmsx-api` 注册并与 **OpenAPI** 对齐。`POST /v1/tenants`、`GET /v1/config/livekit`、`GET/PUT /v1/config/settings/{key}`、`GET /v1/config/rbac/roles`、`GET /v1/config/tenants`、`GET /v1/config/audit-logs`、`GET /v1/config/platform-health`、`GET /v1/config/quotas` 同级 RBAC：**仅 `PlatformAdmin`**（`jwt` 模式；`disabled` 不校验）。其余创建路径在 **`jwt` 模式**下需 **`TenantAdmin`**（或更高）且路径 `{tid}` 属于 JWT 许可租户集合；请求体字段 **`name`** 长度 1–200。站点创建要求 **`org_id`** 属于该租户；设备组创建要求 **`site_id`** 属于该租户（否则 **400**）。名称在同一父级下违反唯一约束时 **409**。
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
@@ -138,6 +138,15 @@
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | `/v1/config/rbac/roles` | 返回后端内置 RBAC 角色定义（仅 `PlatformAdmin`） |
+
+### 平台管理接口
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/v1/config/tenants` | 平台租户目录汇总（跨租户设备数 / 策略数 / 命令数；仅 `PlatformAdmin`） |
+| GET | `/v1/config/audit-logs` | 平台全局审计日志（分页；支持 `action` / `resource_type` 筛选；仅 `PlatformAdmin`） |
+| GET | `/v1/config/platform-health` | 平台健康摘要（租户数 / 设备数 / 命令数；仅 `PlatformAdmin`） |
+| GET | `/v1/config/quotas` | 平台配额列表（当前为控制面内置静态配额；仅 `PlatformAdmin`） |
 
 ### AI 智慧管控
 

@@ -190,6 +190,10 @@
 - [x] `POST /v1/tenants/{tid}/devices/{did}/desktop/session` 创建远程桌面会话（LiveKit Token + Agent `start_desktop`；**2026-04-20** 已在本机对 `dmsx-api` + LiveKit + Redis + 真实 `dmsx-agent` 做最小闭环验证；Agent 现仅在 **屏幕轨发布成功且输入注入器初始化成功** 后才回报 ready，避免“能看屏但无法输入”仍被判成功）
 - [x] `DELETE /v1/tenants/{tid}/devices/{did}/desktop/session?session_id=` 终止指定远程桌面会话（`stop_desktop`）
 - [x] `GET /v1/config/livekit` LiveKit 配置查询
+- [x] `GET /v1/config/tenants` 平台租户目录汇总（PlatformAdmin）
+- [x] `GET /v1/config/audit-logs` 平台全局审计日志（PlatformAdmin）
+- [x] `GET /v1/config/platform-health` 平台健康摘要（PlatformAdmin）
+- [x] `GET /v1/config/quotas` 平台配额列表（PlatformAdmin；当前为静态配额）
 - [~] `POST /v1/tenants/{tid}/ai/anomalies` AI 异常检测（规则引擎 stub）
 - [~] `POST /v1/tenants/{tid}/ai/recommendations` AI 策略推荐（stub）
 - [~] `POST /v1/tenants/{tid}/ai/chat` AI 智能助手（stub，待接 LLM）

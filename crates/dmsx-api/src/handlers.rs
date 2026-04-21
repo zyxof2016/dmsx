@@ -11,7 +11,7 @@ use uuid::Uuid;
 use crate::auth::AuthContext;
 use crate::dto::*;
 use crate::services::{
-    artifacts, audit, commands, compliance, devices, hierarchy, policies, shadow, stats,
+    artifacts, audit, commands, compliance, devices, hierarchy, platform, policies, shadow, stats,
     system_settings,
 };
 use crate::state::AppState;
@@ -441,6 +441,34 @@ pub async fn rbac_roles_list(
             name: "ReadOnly".to_string(),
         },
     ]))
+}
+
+pub async fn platform_tenants_list(
+    State(st): State<AppState>,
+    Extension(ctx): Extension<AuthContext>,
+) -> ApiResult<Json<Vec<PlatformTenantSummary>>> {
+    Ok(Json(platform::list_tenants(&st, &ctx).await?))
+}
+
+pub async fn platform_audit_logs_list(
+    State(st): State<AppState>,
+    Extension(ctx): Extension<AuthContext>,
+    Query(params): Query<AuditLogListParams>,
+) -> ApiResult<Json<ListResponse<crate::dto::AuditLog>>> {
+    Ok(Json(platform::list_platform_audit_logs(&st, &ctx, &params).await?))
+}
+
+pub async fn platform_health_get(
+    State(st): State<AppState>,
+    Extension(ctx): Extension<AuthContext>,
+) -> ApiResult<Json<PlatformHealth>> {
+    Ok(Json(platform::platform_health(&st, &ctx).await?))
+}
+
+pub async fn platform_quotas_get(
+    Extension(_ctx): Extension<AuthContext>,
+) -> ApiResult<Json<ListResponse<PlatformQuota>>> {
+    Ok(Json(platform::platform_quotas()))
 }
 
 pub async fn policy_editor_create_and_publish(

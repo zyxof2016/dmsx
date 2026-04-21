@@ -1,6 +1,6 @@
+use chrono::{DateTime, Utc};
 use dmsx_core::*;
 use serde::{Deserialize, Serialize};
-use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 // ---------------------------------------------------------------------------
@@ -576,6 +576,32 @@ pub struct SystemSetting {
 #[derive(Debug, Serialize)]
 pub struct RbacRole {
     pub name: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PlatformTenantSummary {
+    pub id: uuid::Uuid,
+    pub name: String,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub device_count: i64,
+    pub policy_count: i64,
+    pub command_count: i64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PlatformQuota {
+    pub key: String,
+    pub limit: i64,
+    pub used: i64,
+    pub unit: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PlatformHealth {
+    pub status: String,
+    pub tenant_count: i64,
+    pub device_count: i64,
+    pub command_count: i64,
 }
 
 #[derive(Debug, Deserialize)]
