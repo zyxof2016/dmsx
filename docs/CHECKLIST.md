@@ -96,7 +96,7 @@
 - [x] `dmsx-agent` 首轮模块化拆分（`config` / `api` / `telemetry` / `rustdesk` / `command_runner` / `desktop`）
 - [x] `dmsx-agent` 第二轮模块化拆分（`app` / `device` / `platform`，`main.rs` 仅保留入口）
 - [x] `dmsx-agent` 第三轮模块化拆分（`desktop` 细分为 `capture` / `input` / `session`，停止逻辑收口为方法）
-- [x] `dmsx-agent` 远程桌面输入注入稳态增强（坐标按 `remoteWidth/remoteHeight` 缩放 + clamp；修饰键状态同步防粘住；普通按键/鼠标按钮丢释放的超时兜底；滚轮支持 `deltaX` 水平滚动并对超大 delta 归一化；超时阈值可通过 `DMSX_AGENT_DESKTOP_STUCK_KEY_TIMEOUT_SECONDS` / `DMSX_AGENT_DESKTOP_STUCK_MOUSE_TIMEOUT_SECONDS` 调优；`cargo test -p dmsx-agent --lib`、`cargo check -p dmsx-agent` 已通过）
+- [x] `dmsx-agent` 远程桌面输入注入稳态增强（坐标按 `remoteWidth/remoteHeight` 缩放 + clamp；修饰键状态同步防粘住；普通按键/鼠标按钮丢释放的超时兜底；滚轮支持 `deltaX` 水平滚动并对超大 delta 归一化；超时阈值可通过 `DMSX_AGENT_DESKTOP_STUCK_KEY_TIMEOUT_SECONDS` / `DMSX_AGENT_DESKTOP_STUCK_MOUSE_TIMEOUT_SECONDS` 调优；输入通道会定期记录 active / idle 健康日志，便于排查“画面存在但长时间无输入”场景；`cargo test -p dmsx-agent --lib`、`cargo check -p dmsx-agent` 已通过）
 - [x] `dmsx-agent` 首批测试用例已补充（`device` 注册/心跳 + `script` 参数分支，`cargo test -p dmsx-agent --lib` 已通过）
 - [x] `dmsx-api` 轻量测试入口已建立（`lib.rs` / `app.rs` / `error.rs`，`cargo test -p dmsx-api --lib` 已通过）
 - [x] `dmsx-api` handlers 纯逻辑已下沉到 `helpers` 并补测试（影子 delta / 命令结果状态，`cargo test -p dmsx-api --lib` 已通过 10 项）

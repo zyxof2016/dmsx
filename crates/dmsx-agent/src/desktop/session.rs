@@ -3,8 +3,10 @@ use std::sync::{
     Arc,
 };
 
+use std::time::{Duration, Instant};
+
 use tokio::sync::oneshot;
-use tracing::{error, info};
+use tracing::{debug, error, info, warn};
 
 use super::capture::{primary_capture_size, spawn_capture_loop};
 use super::input::{apply_input_event, InputState};
@@ -156,6 +158,9 @@ async fn desktop_stream_loop(
     let mut enigo = enigo::Enigo::new(&enigo::Settings::default())
         .map_err(|e| format!("failed to create input injector: {e:?}"))?;
     let mut input_state = InputState::default();
+    let mut last_input_at: Option<Instant> = None;
+    let mut last_input_log_at: Option<Instant> = None;
+    let mut last_idle_warn_at: Option<Instant> = None;
 
     if let Some(tx) = ready_tx {
         let _ = tx.send(Ok(()));
@@ -170,6 +175,7 @@ async fn desktop_stream_loop(
                 topic,
                 ..
             })) if topic.as_deref() == Some("desktop-input") => {
+                let now = Instant::now();
                 apply_input_event(
                     &mut enigo,
                     &mut input_state,
@@ -177,10 +183,35 @@ async fn desktop_stream_loop(
                     capture_width,
                     capture_height,
                 );
+                last_input_at = Some(now);
+                if last_input_log_at
+                    .map(|at| now.duration_since(at) >= Duration::from_secs(10))
+                    .unwrap_or(true)
+                {
+                    debug!(session_id = %session_id, room = %room_name, "desktop input channel active");
+                    last_input_log_at = Some(now);
+                }
             }
             Ok(Some(_)) => {}
             Ok(None) => break,
             Err(_) => {}
+        }
+
+        let now = Instant::now();
+        if let Some(last_input) = last_input_at {
+            if now.duration_since(last_input) >= Duration::from_secs(30)
+                && last_idle_warn_at
+                    .map(|at| now.duration_since(at) >= Duration::from_secs(30))
+                    .unwrap_or(true)
+            {
+                warn!(
+                    session_id = %session_id,
+                    room = %room_name,
+                    idle_for_secs = now.duration_since(last_input).as_secs(),
+                    "desktop input channel idle"
+                );
+                last_idle_warn_at = Some(now);
+            }
         }
     }
 
