@@ -38,10 +38,17 @@ import {
   useDevices,
   useCreateDevice,
   useBatchCreateDevices,
+  useDeviceEnrollmentBatch,
   useDeleteDevice,
   exportCsv,
 } from "../api/hooks";
-import type { BatchCreateDevicesResponse, Device, CreateDeviceReq, ListParams } from "../api/types";
+import type {
+  BatchCreateDevicesResponse,
+  Device,
+  CreateDeviceReq,
+  DeviceEnrollmentBatchResponse,
+  ListParams,
+} from "../api/types";
 import { formatApiError } from "../api/errors";
 import { useResourceAccess } from "../authz";
 import { GuardedButton } from "../components/GuardedButton";
@@ -75,6 +82,70 @@ type BatchValidationError = {
 
 const BATCH_RESULT_KEY = "dmsx.devices.batch_result";
 
+type StoredBatchResult = {
+  batchId: string;
+};
+
+function parseBatchCsv(text: string) {
+  const lines = text.replace(/\r\n/g, "\n").split("\n").filter((line) => line.trim());
+  if (lines.length === 0) return { items: [], errors: [] as BatchValidationError[] };
+
+  const firstColumns = lines[0].split(",").map((part) => part.trim().toLowerCase());
+  const headerAliases: Record<string, keyof CreateDeviceReq> = {
+    registration_code: "registration_code",
+    code: "registration_code",
+    hostname: "hostname",
+    host: "hostname",
+    platform: "platform",
+    os_version: "os_version",
+    agent_version: "agent_version",
+  };
+  const hasHeader = firstColumns.some((value) => value in headerAliases);
+  const headerMap = hasHeader
+    ? Object.fromEntries(
+        firstColumns
+          .map((value, index) => [index, headerAliases[value] ?? null])
+          .filter((entry) => entry[1]),
+      )
+    : null;
+
+  const rows = hasHeader ? lines.slice(1) : lines;
+  const errors: BatchValidationError[] = [];
+  const items = rows.map((raw, index) => {
+    const line = raw.split(",").map((part) => part.trim());
+    const mapped = headerMap
+      ? Object.fromEntries(line.map((value, col) => [headerMap[col], value]))
+      : {
+          registration_code: line[0],
+          hostname: line[1],
+          platform: line[2],
+          os_version: line[3],
+          agent_version: line[4],
+        };
+    const hostname = mapped.hostname?.trim();
+    const platform = mapped.platform?.trim();
+    if (!hostname) {
+      errors.push({ line: index + 1 + (hasHeader ? 1 : 0), reason: "缺少主机名", raw });
+    }
+    if (platform && !platformOptions.some((option) => option.value === platform)) {
+      errors.push({
+        line: index + 1 + (hasHeader ? 1 : 0),
+        reason: `不支持的平台 ${platform}`,
+        raw,
+      });
+    }
+    return {
+      registration_code: mapped.registration_code?.trim() || undefined,
+      hostname: hostname || undefined,
+      platform: (platform || "other") as CreateDeviceReq["platform"],
+      os_version: mapped.os_version?.trim() || undefined,
+      agent_version: mapped.agent_version?.trim() || undefined,
+    };
+  });
+
+  return { items, errors };
+}
+
 function downloadTextFile(filename: string, content: string) {
   const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
   const url = URL.createObjectURL(blob);
@@ -92,15 +163,17 @@ export const DevicesPage: React.FC = () => {
   const [open, setOpen] = useState(false);
   const [batchOpen, setBatchOpen] = useState(false);
   const [batchText, setBatchText] = useState("");
-  const [batchResult, setBatchResult] = useState<BatchCreateDevicesResponse | null>(() => {
+  const [storedBatch, setStoredBatch] = useState<StoredBatchResult | null>(() => {
     const raw = window.localStorage.getItem(BATCH_RESULT_KEY);
     if (!raw) return null;
     try {
-      return JSON.parse(raw) as BatchCreateDevicesResponse;
+      return JSON.parse(raw) as StoredBatchResult;
     } catch {
       return null;
     }
   });
+  const { data: storedBatchResult } = useDeviceEnrollmentBatch(storedBatch?.batchId);
+  const [batchResult, setBatchResult] = useState<BatchCreateDevicesResponse | DeviceEnrollmentBatchResponse | null>(null);
   const [batchIssueTokens, setBatchIssueTokens] = useState(true);
   const [batchErrors, setBatchErrors] = useState<BatchValidationError[]>([]);
   const [agentApiUrl, setAgentApiUrl] = useState(
@@ -160,42 +233,32 @@ export const DevicesPage: React.FC = () => {
 
   const handleBatchCreate = async () => {
     try {
-      const validationErrors: BatchValidationError[] = [];
-      const items = batchText
-        .split("\n")
-        .map((line, index) => ({ raw: line, line: index + 1, value: line.trim() }))
-        .filter((entry) => entry.value)
-        .map((entry) => {
-          const [registration_code, hostname, platform] = entry.value.split(",").map((v) => v.trim());
-          if (!hostname) {
-            validationErrors.push({ line: entry.line, reason: "缺少主机名", raw: entry.raw });
-          }
-          if (platform && !platformOptions.some((option) => option.value === platform)) {
-            validationErrors.push({ line: entry.line, reason: `不支持的平台 ${platform}`, raw: entry.raw });
-          }
-          return {
-            registration_code: registration_code || undefined,
-            hostname: hostname || undefined,
-            platform: (platform || "other") as CreateDeviceReq["platform"],
-          };
-        });
-      setBatchErrors(validationErrors);
-      if (validationErrors.length > 0) {
-        message.error(`批量数据存在 ${validationErrors.length} 处问题，请先修正`);
+      const parsed = parseBatchCsv(batchText);
+      setBatchErrors(parsed.errors);
+      if (parsed.errors.length > 0) {
+        message.error(`批量数据存在 ${parsed.errors.length} 处问题，请先修正`);
         return;
       }
       const result = await batchCreateMut.mutateAsync({
-        items,
+        items: parsed.items,
         issue_enrollment_tokens: batchIssueTokens,
         ttl_seconds: 1800,
       });
       setBatchResult(result);
-      window.localStorage.setItem(BATCH_RESULT_KEY, JSON.stringify(result));
+      const stored = { batchId: result.batch_id };
+      setStoredBatch(stored);
+      window.localStorage.setItem(BATCH_RESULT_KEY, JSON.stringify(stored));
       message.success(`已批量预注册 ${result.devices.length} 台设备`);
     } catch (e: unknown) {
       message.error(formatApiError(e));
     }
   };
+
+  React.useEffect(() => {
+    if (storedBatchResult) {
+      setBatchResult(storedBatchResult);
+    }
+  }, [storedBatchResult]);
 
   const buildEnrollmentUri = (tenantId: string, token: string) => {
     const params = new URLSearchParams({
@@ -658,6 +721,24 @@ export const DevicesPage: React.FC = () => {
                 }}
               >
                 导出 token / 启动命令 CSV
+              </Button>
+              <Button
+                onClick={() => {
+                  const first = batchResult.enrollment_tokens[0];
+                  const firstDevice = batchResult.devices.find((device) => device.id === first?.device_id);
+                  if (!first || !firstDevice) return;
+                  const url = new URL("/zero-touch-enroll", window.location.origin);
+                  url.search = new URLSearchParams({
+                    api_url: agentApiUrl,
+                    tenant_id: firstDevice.tenant_id,
+                    enrollment_token: first.token,
+                    mode: "zero-touch",
+                  }).toString();
+                  window.open(url.toString(), "_blank", "noopener,noreferrer");
+                }}
+                disabled={batchResult.enrollment_tokens.length === 0}
+              >
+                打开零接触安装页
               </Button>
               <Button
                 icon={<CopyOutlined />}

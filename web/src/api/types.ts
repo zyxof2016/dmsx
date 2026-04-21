@@ -44,8 +44,16 @@ export interface BatchCreateDevicesReq {
 }
 
 export interface BatchCreateDevicesResponse {
+  batch_id: string;
   devices: Device[];
   enrollment_tokens: DeviceEnrollmentToken[];
+}
+
+export interface DeviceEnrollmentBatchResponse {
+  batch_id: string;
+  devices: Device[];
+  enrollment_tokens: DeviceEnrollmentToken[];
+  created_at: string;
 }
 
 export interface Policy {

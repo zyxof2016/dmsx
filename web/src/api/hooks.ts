@@ -43,6 +43,7 @@ import type {
   IssueDeviceEnrollmentTokenReq,
   BatchCreateDevicesReq,
   BatchCreateDevicesResponse,
+  DeviceEnrollmentBatchResponse,
 } from "./types";
 
 // ---- Dashboard ----
@@ -106,6 +107,19 @@ export function useBatchCreateDevices() {
       qc.invalidateQueries({ queryKey: ["devices", tenantId] });
       qc.invalidateQueries({ queryKey: ["stats", tenantId] });
     },
+  });
+}
+
+export function useDeviceEnrollmentBatch(batchId?: string | null) {
+  const { tenantId } = useAppSession();
+  return useQuery({
+    queryKey: ["deviceEnrollmentBatch", tenantId, batchId],
+    queryFn: () =>
+      api.get<DeviceEnrollmentBatchResponse>(
+        tenantPathFor(tenantId, `/device-enrollment-batches/${batchId}`),
+      ),
+    enabled: Boolean(batchId),
+    retry: false,
   });
 }
 
