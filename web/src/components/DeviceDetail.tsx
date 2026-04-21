@@ -15,6 +15,7 @@ import {
 import { CopyOutlined } from "@ant-design/icons";
 import { useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import dayjs from "dayjs";
+import { QRCodeSVG } from "qrcode.react";
 import { useDevice, useIssueDeviceEnrollmentToken, useRotateDeviceRegistrationCode } from "../api/hooks";
 import { ShadowPanel } from "./ShadowPanel";
 import { RemoteControlPanel } from "./RemoteControl";
@@ -204,6 +205,19 @@ export const DeviceDetailDrawer: React.FC = () => {
                         </Button>
                         {enrollmentToken ? (
                           <>
+                            {enrollmentUri ? (
+                              <div
+                                style={{
+                                  display: "inline-flex",
+                                  padding: 12,
+                                  background: "#fff",
+                                  borderRadius: 8,
+                                  border: "1px solid #f0f0f0",
+                                }}
+                              >
+                                <QRCodeSVG value={enrollmentUri} size={168} includeMargin />
+                              </div>
+                            ) : null}
                             <Text code copyable={{ text: enrollmentToken }}>{enrollmentToken}</Text>
                             {enrollmentUri ? (
                               <Text code copyable={{ text: enrollmentUri }}>{enrollmentUri}</Text>

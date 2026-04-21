@@ -16,6 +16,7 @@
     "antd": "^5.23.0",
     "dayjs": "^1.11.13",
     "livekit-client": "^2.18.1",
+    "qrcode.react": "^4.2.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "recharts": "^2.15.0"
