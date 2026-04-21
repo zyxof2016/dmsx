@@ -138,7 +138,7 @@ export const DevicesPage: React.FC = () => {
           <Space wrap>
             <Input
               prefix={<SearchOutlined />}
-              placeholder="搜索主机名"
+              placeholder="搜索主机名或注册码"
               style={{ width: 220 }}
               value={search}
               onChange={(e) => {
@@ -262,6 +262,11 @@ export const DevicesPage: React.FC = () => {
               render: (h: string | null) => h ?? "—",
             },
             {
+              title: "注册码",
+              dataIndex: "registration_code",
+              render: (value: string) => <Typography.Text code copyable>{value}</Typography.Text>,
+            },
+            {
               title: "平台",
               dataIndex: "platform",
               render: (p: string) => (
@@ -366,6 +371,14 @@ export const DevicesPage: React.FC = () => {
         okButtonProps={{ disabled: !canWrite }}
       >
         <Form form={form} layout="vertical" onFinish={handleCreate}>
+          <Form.Item
+            name="registration_code"
+            label="注册码"
+            rules={[{ max: 64, message: "最长 64 字符" }]}
+            tooltip="建议填写设备贴纸、工单或安装包上可见的唯一注册码；留空则后端自动生成。"
+          >
+            <Input placeholder="例如 DEV-SH01-000123" />
+          </Form.Item>
           <Form.Item
             name="hostname"
             label="主机名"

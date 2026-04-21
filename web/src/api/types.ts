@@ -3,6 +3,7 @@
 export interface Device {
   id: string;
   tenant_id: string;
+  registration_code: string;
   site_id: string | null;
   primary_group_id: string | null;
   platform:
@@ -118,6 +119,7 @@ export interface ListResponse<T> {
 
 export interface CreateDeviceReq {
   platform: Device["platform"];
+  registration_code?: string;
   hostname?: string;
   os_version?: string;
   agent_version?: string;
