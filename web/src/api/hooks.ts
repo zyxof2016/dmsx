@@ -39,6 +39,8 @@ import type {
   PlatformTenantSummary,
   PlatformQuota,
   PlatformHealth,
+  DeviceEnrollmentToken,
+  IssueDeviceEnrollmentTokenReq,
 } from "./types";
 
 // ---- Dashboard ----
@@ -98,6 +100,36 @@ export function useDeleteDevice() {
       qc.invalidateQueries({ queryKey: ["devices", tenantId] });
       qc.invalidateQueries({ queryKey: ["stats", tenantId] });
     },
+  });
+}
+
+export function useRotateDeviceRegistrationCode() {
+  const { tenantId } = useAppSession();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (deviceId: string) =>
+      api.post<Device>(tenantPathFor(tenantId, `/devices/${deviceId}/registration-code:rotate`), {}),
+    onSuccess: (device) => {
+      qc.invalidateQueries({ queryKey: ["devices", tenantId] });
+      qc.invalidateQueries({ queryKey: ["device", tenantId, device.id] });
+    },
+  });
+}
+
+export function useIssueDeviceEnrollmentToken() {
+  const { tenantId } = useAppSession();
+  return useMutation({
+    mutationFn: ({
+      deviceId,
+      body,
+    }: {
+      deviceId: string;
+      body: IssueDeviceEnrollmentTokenReq;
+    }) =>
+      api.post<DeviceEnrollmentToken>(
+        tenantPathFor(tenantId, `/devices/${deviceId}/enrollment-token`),
+        body,
+      ),
   });
 }
 

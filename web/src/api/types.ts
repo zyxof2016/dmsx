@@ -26,6 +26,17 @@ export interface Device {
   updated_at: string;
 }
 
+export interface DeviceEnrollmentToken {
+  token: string;
+  expires_at: string;
+  registration_code: string;
+  device_id: string;
+}
+
+export interface IssueDeviceEnrollmentTokenReq {
+  ttl_seconds?: number;
+}
+
 export interface Policy {
   id: string;
   tenant_id: string;
