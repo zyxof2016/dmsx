@@ -12,7 +12,7 @@ use crate::auth::AuthContext;
 use crate::dto::*;
 use crate::services::{
     artifacts, audit, commands, compliance, devices, hierarchy, platform, policies, shadow, stats,
-    system_settings,
+    system_settings, tenant_rbac,
 };
 use crate::state::AppState;
 
@@ -477,73 +477,77 @@ pub async fn system_settings_put(
 }
 
 pub async fn rbac_roles_list(
-    Extension(_ctx): Extension<AuthContext>,
+    State(st): State<AppState>,
+    Extension(ctx): Extension<AuthContext>,
 ) -> ApiResult<Json<Vec<RbacRole>>> {
-    Ok(Json(vec![
-        RbacRole {
-            name: "PlatformAdmin".to_string(),
-            scope: "platform".to_string(),
-            description: "平台级完全管理权限，可读写所有平台与租户资源。".to_string(),
-            platform_read: true,
-            platform_write: true,
-            tenant_read: true,
-            tenant_write: true,
-        },
-        RbacRole {
-            name: "PlatformViewer".to_string(),
-            scope: "platform".to_string(),
-            description: "平台级只读权限，可查看平台配置、租户目录、全局审计与平台健康。".to_string(),
-            platform_read: true,
-            platform_write: false,
-            tenant_read: false,
-            tenant_write: false,
-        },
-        RbacRole {
-            name: "TenantAdmin".to_string(),
-            scope: "tenant".to_string(),
-            description: "租户级完全管理权限，可读写当前租户下的大多数资源。".to_string(),
-            platform_read: false,
-            platform_write: false,
-            tenant_read: true,
-            tenant_write: true,
-        },
-        RbacRole {
-            name: "SiteAdmin".to_string(),
-            scope: "tenant".to_string(),
-            description: "租户级运维管理角色，可管理设备、命令、影子与远程桌面；策略、制品、AI 仅只读。".to_string(),
-            platform_read: false,
-            platform_write: false,
-            tenant_read: true,
-            tenant_write: true,
-        },
-        RbacRole {
-            name: "Operator".to_string(),
-            scope: "tenant".to_string(),
-            description: "租户级操作员角色，可执行设备与命令相关操作；策略、制品、AI、合规、统计仅只读。".to_string(),
-            platform_read: false,
-            platform_write: false,
-            tenant_read: true,
-            tenant_write: true,
-        },
-        RbacRole {
-            name: "Auditor".to_string(),
-            scope: "tenant".to_string(),
-            description: "租户级审计角色，仅允许只读访问，不允许远程桌面与 AI。".to_string(),
-            platform_read: false,
-            platform_write: false,
-            tenant_read: true,
-            tenant_write: false,
-        },
-        RbacRole {
-            name: "ReadOnly".to_string(),
-            scope: "tenant".to_string(),
-            description: "租户级只读角色，可查看常规租户资源，不允许写操作、远程桌面与 AI。".to_string(),
-            platform_read: false,
-            platform_write: false,
-            tenant_read: true,
-            tenant_write: false,
-        },
-    ]))
+    let mut roles = crate::tenant_rbac::builtin_rbac_roles();
+    if !ctx.tenant_id.is_nil() {
+        let custom_roles = st
+            .tenant_custom_roles
+            .read()
+            .await
+            .get(&ctx.tenant_id)
+            .cloned()
+            .unwrap_or_default();
+        roles.extend(
+            custom_roles
+                .into_iter()
+                .map(crate::tenant_rbac::custom_role_to_rbac_role),
+        );
+    }
+    Ok(Json(roles))
+}
+
+pub async fn tenant_rbac_roles_get(
+    State(st): State<AppState>,
+    Extension(ctx): Extension<AuthContext>,
+    Path(tenant_id): Path<Uuid>,
+) -> ApiResult<Json<TenantRbacRolesResponse>> {
+    Ok(Json(
+        tenant_rbac::get_tenant_rbac_roles(&st, &ctx, tenant_id).await?,
+    ))
+}
+
+pub async fn tenant_rbac_roles_put(
+    State(st): State<AppState>,
+    Extension(ctx): Extension<AuthContext>,
+    Path(tenant_id): Path<Uuid>,
+    Json(body): Json<TenantRbacRolesUpsertReq>,
+) -> ApiResult<Json<TenantRbacRolesResponse>> {
+    Ok(Json(
+        tenant_rbac::upsert_tenant_rbac_roles(&st, &ctx, tenant_id, body).await?,
+    ))
+}
+
+pub async fn tenant_role_bindings_get(
+    State(st): State<AppState>,
+    Extension(ctx): Extension<AuthContext>,
+    Path(tenant_id): Path<Uuid>,
+) -> ApiResult<Json<TenantRoleBindingsResponse>> {
+    Ok(Json(
+        tenant_rbac::get_tenant_role_bindings(&st, &ctx, tenant_id).await?,
+    ))
+}
+
+pub async fn tenant_role_bindings_put(
+    State(st): State<AppState>,
+    Extension(ctx): Extension<AuthContext>,
+    Path(tenant_id): Path<Uuid>,
+    Json(body): Json<TenantRoleBindingsUpsertReq>,
+) -> ApiResult<Json<TenantRoleBindingsResponse>> {
+    Ok(Json(
+        tenant_rbac::upsert_tenant_role_bindings(&st, &ctx, tenant_id, body).await?,
+    ))
+}
+
+pub async fn tenant_rbac_me_get(
+    State(st): State<AppState>,
+    Extension(ctx): Extension<AuthContext>,
+    Path(tenant_id): Path<Uuid>,
+) -> ApiResult<Json<TenantRbacMeResponse>> {
+    Ok(Json(
+        tenant_rbac::get_tenant_rbac_me(&st, &ctx, tenant_id).await?,
+    ))
 }
 
 pub async fn platform_tenants_list(

@@ -6,7 +6,7 @@
 
 **远程桌面**：音视频与键鼠控制走 **LiveKit WebRTC**（浏览器 `livekit-client` 订阅、Agent SDK 发布）；`dmsx-api` 负责会话创建、LiveKit JWT 签发，并通过命令队列触发 Agent `start_desktop` / `stop_desktop`。**不再提供**经 `dmsx-api` 的桌面 JPEG WebSocket 中继端点。
 
-**认证**：除 `/health`、`/ready` 外，管理接口需 `Authorization: Bearer <JWT>`（路径 `{tenant_id}` 须被该 JWT 允许；平台只读接口 `GET /v1/config/livekit`、`GET /v1/config/rbac/roles`、`GET /v1/config/settings/{key}`、`GET /v1/config/tenants`、`GET /v1/config/audit-logs`、`GET /v1/config/platform-health`、`GET /v1/config/quotas` 需 **PlatformAdmin** 或 **PlatformViewer**；平台写接口如 `PUT /v1/config/settings/{key}`、`POST /v1/tenants` 仅 **PlatformAdmin** 可写）。OpenAPI 根级 **`security: [bearerAuth]`**，并在各操作中声明 **`401` / `403`**；资源类接口另声明 **`404`**；各操作另声明 **`500`**（内部错误）。上述错误均复用 `components.responses` 与 **`ProblemDetails`**（见 `openapi/dmsx-control-plane.yaml`）。
+**认证**：除 `/health`、`/ready` 外，管理接口需 `Authorization: Bearer <JWT>`（路径 `{tenant_id}` 须被该 JWT 允许；平台只读接口 `GET /v1/config/livekit`、`GET /v1/config/rbac/roles`、`GET /v1/config/settings/{key}`、`GET /v1/config/tenants`、`GET /v1/config/audit-logs`、`GET /v1/config/platform-health`、`GET /v1/config/quotas` 需 **PlatformAdmin** 或 **PlatformViewer**；平台写接口如 `PUT /v1/config/settings/{key}`、`POST /v1/tenants` 仅 **PlatformAdmin** 可写）。前端在 JWT 模式下若本地未保存 JWT，会先跳转到 `/login`；这只是 UX 守卫，最终认证仍以后端 Bearer 校验为准。OpenAPI 根级 **`security: [bearerAuth]`**，并在各操作中声明 **`401` / `403`**；资源类接口另声明 **`404`**；各操作另声明 **`500`**（内部错误）。上述错误均复用 `components.responses` 与 **`ProblemDetails`**（见 `openapi/dmsx-control-plane.yaml`）。
 
 **请求关联**：服务端会为每个请求生成或透传 `X-Request-Id`，并在响应中返回同名 header，便于排障时将客户端错误与服务端日志关联。
 
@@ -151,7 +151,16 @@
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/v1/config/rbac/roles` | 返回后端内置 RBAC 角色定义（`PlatformAdmin` / `PlatformViewer` 可读） |
+| GET | `/v1/config/rbac/roles` | 返回后端内置 RBAC 角色定义，并在租户上下文中附带当前租户自定义角色（`PlatformAdmin` / `PlatformViewer` 或租户读角色可读） |
+| GET | `/v1/tenants/{tid}/rbac/roles` | 返回当前租户自定义角色定义（`custom_roles`） |
+| PUT | `/v1/tenants/{tid}/rbac/roles` | 更新当前租户自定义角色定义；角色名不可与内置角色冲突，权限名需来自后端允许列表 |
+| GET | `/v1/tenants/{tid}/rbac/bindings` | 返回当前租户的“用户(subject) -> 角色名数组”绑定配置 |
+| PUT | `/v1/tenants/{tid}/rbac/bindings` | 更新当前租户的用户-角色绑定配置 |
+| GET | `/v1/tenants/{tid}/rbac/me` | 返回当前 Bearer JWT `sub` 在该租户下的 JWT 角色、绑定角色和最终生效角色 |
+
+当前租户自定义角色会持久化到租户级 `system_settings`（key: `tenant_rbac_roles_v1`），并参与后端真实鉴权。也就是说，只要 JWT 在活动租户的 `tenant_roles[{tid}]` 或令牌级 `roles` 中引用了该自定义角色名，后端会按该角色声明的权限集合决定是否允许访问具体资源，而不是只在前端显示。
+
+用户-角色绑定也会持久化到租户级 `system_settings`（key: `tenant_role_bindings_v1`）。当某个 JWT 的 `sub` 在当前租户存在绑定记录且该记录角色数组非空时，后端会优先使用绑定角色作为该租户请求的有效角色；若没有绑定记录或绑定角色为空，则回退到 JWT 自带的租户角色解析结果。这使得平台可以不重新签发每个细粒度租户角色变更，就在控制面内完成租户内授权收口。
 
 ### 平台管理接口
 

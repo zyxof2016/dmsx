@@ -23,6 +23,7 @@ use crate::{
     metrics,
     services::bootstrap,
     state::AppState,
+    tenant_rbac,
 };
 
 fn truthy_env(name: &str) -> bool {
@@ -220,12 +221,29 @@ pub async fn build_state_from_env() -> AppState {
         auth: load_auth_config_from_env()
             .await
             .expect("failed to initialize auth config"),
+        tenant_custom_roles: Arc::new(RwLock::new(HashMap::new())),
+        tenant_role_bindings: Arc::new(RwLock::new(HashMap::new())),
     };
 
     enforce_prod_guardrails(&state.auth);
 
     spawn_jwks_refresh_task(state.auth.clone());
     bootstrap::ensure_default_tenant(&state, dev_tenant, "默认租户").await;
+
+    if let Ok(custom_roles) = tenant_rbac::load_custom_roles_from_db(&state.db, dev_tenant).await {
+        state
+            .tenant_custom_roles
+            .write()
+            .await
+            .insert(dev_tenant, custom_roles);
+    }
+    if let Ok(role_bindings) = tenant_rbac::load_role_bindings_from_db(&state.db, dev_tenant).await {
+        state
+            .tenant_role_bindings
+            .write()
+            .await
+            .insert(dev_tenant, role_bindings);
+    }
 
     crate::result_jetstream_ingest::spawn_background(state.clone());
 
@@ -398,6 +416,18 @@ pub fn build_router(st: AppState) -> Router {
             "/v1/config/rbac/roles",
             get(handlers::rbac_roles_list),
         )
+        .route(
+            "/v1/tenants/{tenant_id}/rbac/roles",
+            get(handlers::tenant_rbac_roles_get).put(handlers::tenant_rbac_roles_put),
+        )
+        .route(
+            "/v1/tenants/{tenant_id}/rbac/bindings",
+            get(handlers::tenant_role_bindings_get).put(handlers::tenant_role_bindings_put),
+        )
+        .route(
+            "/v1/tenants/{tenant_id}/rbac/me",
+            get(handlers::tenant_rbac_me_get),
+        )
         .route("/v1/config/tenants", get(handlers::platform_tenants_list))
         .route("/v1/config/audit-logs", get(handlers::platform_audit_logs_list))
         .route("/v1/config/platform-health", get(handlers::platform_health_get))
@@ -490,6 +520,8 @@ mod tests {
             desktop_sessions: Arc::new(RwLock::new(HashMap::new())),
             device_sessions: Arc::new(RwLock::new(HashMap::new())),
             auth,
+            tenant_custom_roles: Arc::new(RwLock::new(HashMap::new())),
+            tenant_role_bindings: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 

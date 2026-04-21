@@ -20,6 +20,7 @@ use tokio::time::sleep;
 use uuid::Uuid;
 
 use crate::state::AppState;
+use crate::tenant_rbac::builtin_role_permissions;
 
 const DEFAULT_DEV_JWT_SECRET: &str = "dmsx-dev-jwt-secret-change-me-please";
 
@@ -409,9 +410,20 @@ pub async fn auth_middleware(
         None => claims.tenant_id,
     };
 
-    let effective_roles = effective_roles_for_request(&claims, path_tenant_id);
-    if let Err(err) =
-        authorize_request(request.method(), request.uri().path(), &effective_roles)
+    let jwt_roles = effective_roles_for_request(&claims, path_tenant_id);
+    let binding_roles = load_effective_binding_roles(&st, active_tenant_id, &claims.sub).await;
+    let effective_roles = if binding_roles.is_empty() {
+        jwt_roles
+    } else {
+        binding_roles
+    };
+    let custom_roles = load_effective_custom_roles(&st, active_tenant_id).await;
+    if let Err(err) = authorize_request(
+        request.method(),
+        request.uri().path(),
+        &effective_roles,
+        &custom_roles,
+    )
     {
         return err.into_response();
     }
@@ -432,7 +444,66 @@ fn optional_env(name: &str) -> Option<String> {
     std::env::var(name).ok().filter(|value| !value.trim().is_empty())
 }
 
-fn authorize_request(method: &Method, path: &str, roles: &[String]) -> Result<(), DmsxError> {
+async fn load_effective_custom_roles(
+    st: &AppState,
+    active_tenant_id: Uuid,
+) -> Vec<crate::dto::TenantCustomRole> {
+    if active_tenant_id.is_nil() {
+        return Vec::new();
+    }
+
+    if let Some(cached) = st.tenant_custom_roles.read().await.get(&active_tenant_id).cloned() {
+        return cached;
+    }
+
+    let loaded = crate::tenant_rbac::load_custom_roles_from_db(&st.db, active_tenant_id)
+        .await
+        .unwrap_or_default();
+    st.tenant_custom_roles
+        .write()
+        .await
+        .insert(active_tenant_id, loaded.clone());
+    loaded
+}
+
+async fn load_effective_binding_roles(
+    st: &AppState,
+    active_tenant_id: Uuid,
+    subject: &str,
+) -> Vec<String> {
+    if active_tenant_id.is_nil() || subject.trim().is_empty() {
+        return Vec::new();
+    }
+
+    if let Some(cached) = st.tenant_role_bindings.read().await.get(&active_tenant_id).cloned() {
+        return cached
+            .into_iter()
+            .find(|binding| binding.subject == subject)
+            .map(|binding| binding.roles)
+            .unwrap_or_default();
+    }
+
+    let loaded = crate::tenant_rbac::load_role_bindings_from_db(&st.db, active_tenant_id)
+        .await
+        .unwrap_or_default();
+    let matched = loaded
+        .iter()
+        .find(|binding| binding.subject == subject)
+        .map(|binding| binding.roles.clone())
+        .unwrap_or_default();
+    st.tenant_role_bindings
+        .write()
+        .await
+        .insert(active_tenant_id, loaded);
+    matched
+}
+
+fn authorize_request(
+    method: &Method,
+    path: &str,
+    roles: &[String],
+    custom_roles: &[crate::dto::TenantCustomRole],
+) -> Result<(), DmsxError> {
     if !requires_rbac(path) {
         return Ok(());
     }
@@ -445,10 +516,9 @@ fn authorize_request(method: &Method, path: &str, roles: &[String]) -> Result<()
 
     let resource = classify_resource(path);
     let read_only = is_read_request(method);
-
     if roles
         .iter()
-        .any(|role| is_role_allowed(role, resource, read_only))
+        .any(|role| is_role_allowed(role, resource, read_only, custom_roles))
     {
         return Ok(());
     }
@@ -503,7 +573,78 @@ fn classify_resource(path: &str) -> ResourceKind {
     ResourceKind::GenericTenantResource
 }
 
-fn is_role_allowed(role: &str, resource: ResourceKind, read_only: bool) -> bool {
+fn permission_for_resource(resource: ResourceKind, read_only: bool) -> &'static str {
+    match resource {
+        ResourceKind::GlobalConfig => {
+            if read_only { "platform.read" } else { "platform.write" }
+        }
+        ResourceKind::Stats => {
+            if read_only { "stats.read" } else { "stats.write" }
+        }
+        ResourceKind::Devices => {
+            if read_only { "devices.read" } else { "devices.write" }
+        }
+        ResourceKind::Policies => {
+            if read_only { "policies.read" } else { "policies.write" }
+        }
+        ResourceKind::Commands => {
+            if read_only { "commands.read" } else { "commands.write" }
+        }
+        ResourceKind::DeviceShadow => {
+            if read_only { "device_shadow.read" } else { "device_shadow.write" }
+        }
+        ResourceKind::Artifacts => {
+            if read_only { "artifacts.read" } else { "artifacts.write" }
+        }
+        ResourceKind::Compliance => {
+            if read_only { "compliance.read" } else { "compliance.write" }
+        }
+        ResourceKind::RemoteDesktop => {
+            if read_only { "remote_desktop.read" } else { "remote_desktop.write" }
+        }
+        ResourceKind::AiAssist => {
+            if read_only { "ai_assist.read" } else { "ai_assist.write" }
+        }
+        ResourceKind::GenericTenantResource => {
+            if read_only {
+                "generic_tenant_resource.read"
+            } else {
+                "generic_tenant_resource.write"
+            }
+        }
+    }
+}
+
+fn custom_role_allows(
+    role: &str,
+    resource: ResourceKind,
+    read_only: bool,
+    custom_roles: &[crate::dto::TenantCustomRole],
+) -> bool {
+    let Some(custom_role) = custom_roles.iter().find(|item| item.name == role) else {
+        return false;
+    };
+    let permission = permission_for_resource(resource, read_only);
+    custom_role.permissions.iter().any(|item| item == permission)
+}
+
+fn is_role_allowed(
+    role: &str,
+    resource: ResourceKind,
+    read_only: bool,
+    custom_roles: &[crate::dto::TenantCustomRole],
+) -> bool {
+    if builtin_role_permissions(role)
+        .iter()
+        .any(|permission| *permission == permission_for_resource(resource, read_only))
+    {
+        return true;
+    }
+
+    if custom_role_allows(role, resource, read_only, custom_roles) {
+        return true;
+    }
+
     match role {
         "PlatformAdmin" => true,
         "PlatformViewer" => read_only && matches!(resource, ResourceKind::GlobalConfig),
@@ -891,6 +1032,8 @@ mod tests {
             desktop_sessions: Default::default(),
             device_sessions: Default::default(),
             auth,
+            tenant_custom_roles: Default::default(),
+            tenant_role_bindings: Default::default(),
         }
     }
 

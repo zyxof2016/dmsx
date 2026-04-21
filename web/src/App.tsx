@@ -190,8 +190,7 @@ const NAV_ITEMS: NavItem[] = [
     path: "/users",
     labelKey: "nav.usersRoles",
     icon: <UserOutlined />,
-    mode: "platform",
-    platformOnly: true,
+    mode: "tenant",
   },
 ];
 
@@ -290,6 +289,8 @@ const AppShell: React.FC = () => {
     platformRoles,
     subject,
     tenantOptions,
+    authMode,
+    isAuthenticated,
   } = useAppSession();
   const { token } = antdTheme.useToken();
   const platformReadAccess = useResourceAccess("platformRead");
@@ -332,6 +333,21 @@ const AppShell: React.FC = () => {
       navigate({ to: defaultModePath, replace: true });
     }
   }, [defaultModePath, navigate, pathname, selectedKey, selectedNavItem, visibleNavItems]);
+
+  React.useEffect(() => {
+    if (pathname === "/login" || pathname === "/zero-touch-enroll") return;
+    if (authMode === "jwt" && !isAuthenticated) {
+      navigate({ to: "/login", search: { redirect: pathname }, replace: true });
+    }
+  }, [authMode, isAuthenticated, navigate, pathname]);
+
+  if (pathname === "/login") {
+    return <Outlet />;
+  }
+
+  if (authMode === "jwt" && !isAuthenticated) {
+    return null;
+  }
 
   return (
     <Layout style={{ minHeight: "100vh" }}>

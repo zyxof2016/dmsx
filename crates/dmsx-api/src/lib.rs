@@ -19,3 +19,4 @@ pub mod error;
 pub mod helpers;
 pub mod services;
 pub mod state;
+pub mod tenant_rbac;

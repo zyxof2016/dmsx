@@ -345,7 +345,7 @@
 - [x] 系统设置页面（已接入后端：`GET/PUT /v1/config/settings/{key}`；前端支持在 UI 中配置并注入 `Authorization`）
 - [x] 策略编辑器（已接入后端保存：`POST /v1/tenants/{tid}/policies/editor`；前端支持在 UI 中配置活动租户与 `Authorization`）
 - [x] 审计日志查看页（已接入后端：`GET /v1/tenants/{tid}/audit-logs`；前端支持在 UI 中配置活动租户与 `Authorization`）
-- [~] 用户 / 角色管理页（UI 框架 + 表格渲染；后端仅提供 RBAC 角色清单：`GET /v1/config/rbac/roles`；用户/角色管理（CRUD）仍未接入）
+- [x] 用户 / 角色管理页（已接入内置 RBAC 角色清单 + 当前租户自定义角色管理 + 用户-角色绑定管理：`GET/PUT /v1/tenants/{tid}/rbac/roles`、`GET/PUT /v1/tenants/{tid}/rbac/bindings`、`GET /v1/tenants/{tid}/rbac/me`）
 
 ---
 

@@ -10,6 +10,7 @@ pub mod audit;
 pub mod system_settings;
 pub mod shadow;
 pub mod stats;
+pub mod tenant_rbac;
 
 use dmsx_core::DmsxError;
 

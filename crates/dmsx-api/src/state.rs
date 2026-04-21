@@ -7,6 +7,7 @@ use uuid::Uuid;
 
 use crate::auth::AuthConfig;
 use crate::command_jetstream::CommandJetStream;
+use crate::dto::{TenantCustomRole, TenantRoleBinding};
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct DesktopSession {
@@ -27,4 +28,6 @@ pub struct AppState {
     pub desktop_sessions: Arc<RwLock<HashMap<String, DesktopSession>>>,
     pub device_sessions: Arc<RwLock<HashMap<Uuid, String>>>,
     pub auth: AuthConfig,
+    pub tenant_custom_roles: Arc<RwLock<HashMap<Uuid, Vec<TenantCustomRole>>>>,
+    pub tenant_role_bindings: Arc<RwLock<HashMap<Uuid, Vec<TenantRoleBinding>>>>,
 }

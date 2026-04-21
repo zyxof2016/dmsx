@@ -74,3 +74,50 @@ pub async fn upsert_global_setting(
     })
 }
 
+pub async fn upsert_tenant_setting(
+    conn: &mut PgConnection,
+    tenant_id: uuid::Uuid,
+    key: &str,
+    req: SystemSettingUpsertReq,
+) -> Result<SystemSetting, sqlx::Error> {
+    let value = req.value;
+
+    let updated = sqlx::query(
+        "UPDATE system_settings \
+         SET value = $3, updated_at = now() \
+         WHERE tenant_id = $1 AND key = $2 \
+         RETURNING key, value, updated_at",
+    )
+    .bind(tenant_id)
+    .bind(key)
+    .bind(value.clone())
+    .fetch_optional(&mut *conn)
+    .await?;
+
+    if let Some(row) = updated {
+        let updated_at: DateTime<Utc> = row.try_get("updated_at")?;
+        return Ok(SystemSetting {
+            key: row.try_get("key")?,
+            value: row.try_get("value")?,
+            updated_at,
+        });
+    }
+
+    let row = sqlx::query(
+        "INSERT INTO system_settings (tenant_id, key, value) \
+         VALUES ($1, $2, $3) \
+         RETURNING key, value, updated_at",
+    )
+    .bind(tenant_id)
+    .bind(key)
+    .bind(value)
+    .fetch_one(&mut *conn)
+    .await?;
+
+    let updated_at: DateTime<Utc> = row.try_get("updated_at")?;
+    Ok(SystemSetting {
+        key: row.try_get("key")?,
+        value: row.try_get("value")?,
+        updated_at,
+    })
+}

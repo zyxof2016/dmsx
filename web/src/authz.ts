@@ -15,7 +15,66 @@ export type FrontendResourceKind =
   | "compliance"
   | "remoteDesktop"
   | "aiAssist"
-  | "genericTenantResource";
+  | "genericTenantResource"
+  | "tenantRbac";
+
+export const KNOWN_TENANT_PERMISSION_NAMES = [
+  "stats.read",
+  "stats.write",
+  "devices.read",
+  "devices.write",
+  "policies.read",
+  "policies.write",
+  "commands.read",
+  "commands.write",
+  "device_shadow.read",
+  "device_shadow.write",
+  "artifacts.read",
+  "artifacts.write",
+  "compliance.read",
+  "compliance.write",
+  "remote_desktop.read",
+  "remote_desktop.write",
+  "ai_assist.read",
+  "ai_assist.write",
+  "generic_tenant_resource.read",
+  "generic_tenant_resource.write",
+  "tenant_rbac.read",
+  "tenant_rbac.write",
+] as const;
+
+export type KnownTenantPermissionName = (typeof KNOWN_TENANT_PERMISSION_NAMES)[number];
+
+function permissionForResource(resource: FrontendResourceKind, readOnly: boolean): string {
+  switch (resource) {
+    case "platformRead":
+      return readOnly ? "platform.read" : "platform.write";
+    case "platformWrite":
+      return readOnly ? "platform.read" : "platform.write";
+    case "stats":
+      return readOnly ? "stats.read" : "stats.write";
+    case "devices":
+      return readOnly ? "devices.read" : "devices.write";
+    case "policies":
+      return readOnly ? "policies.read" : "policies.write";
+    case "commands":
+      return readOnly ? "commands.read" : "commands.write";
+    case "deviceShadow":
+      return readOnly ? "device_shadow.read" : "device_shadow.write";
+    case "artifacts":
+      return readOnly ? "artifacts.read" : "artifacts.write";
+    case "compliance":
+      return readOnly ? "compliance.read" : "compliance.write";
+    case "remoteDesktop":
+      return readOnly ? "remote_desktop.read" : "remote_desktop.write";
+    case "aiAssist":
+      return readOnly ? "ai_assist.read" : "ai_assist.write";
+    case "tenantRbac":
+      return readOnly ? "tenant_rbac.read" : "tenant_rbac.write";
+    case "genericTenantResource":
+      return readOnly ? "generic_tenant_resource.read" : "generic_tenant_resource.write";
+  }
+}
 
 function siteAdminAllows(resource: FrontendResourceKind, readOnly: boolean) {
   switch (resource) {
@@ -95,4 +154,8 @@ export function useResourceAccess(resource: FrontendResourceKind) {
     canRead: canAccessResource(effectiveRoles, resource, true),
     canWrite: canAccessResource(effectiveRoles, resource, false),
   };
+}
+
+export function customRoleAllows(permissions: string[], resource: FrontendResourceKind, readOnly: boolean) {
+  return permissions.includes(permissionForResource(resource, readOnly));
 }

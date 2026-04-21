@@ -6,10 +6,13 @@ import {
   setStoredJwt,
   setStoredTenantId,
 } from "./api/client";
+import { useTenantRbacMe } from "./api/hooks";
 
 export type ThemeMode = "light" | "dark";
 export type Lang = "zh" | "en";
 export type AppMode = "tenant" | "platform";
+
+export type AuthMode = "disabled" | "jwt";
 
 type ParsedJwtClaims = {
   subject: string | null;
@@ -59,11 +62,15 @@ type SessionContextValue = {
   isPlatformAdmin: boolean;
   platformRoles: string[];
   canWritePlatform: boolean;
+  authMode: AuthMode;
+  setAuthMode: (mode: AuthMode) => void;
+  isAuthenticated: boolean;
 };
 
 const LANG_KEY = "dmsx_lang";
 const THEME_KEY = "dmsx_theme";
 const MODE_KEY = "dmsx.mode";
+const AUTH_MODE_KEY = "dmsx.auth_mode";
 const RECENT_TENANTS_KEY = "dmsx.platform.recent_tenants";
 
 const I18nContext = React.createContext<I18nContextValue | null>(null);
@@ -176,6 +183,10 @@ function getInitialTheme(): ThemeMode {
 
 function getInitialMode(): AppMode {
   return localStorage.getItem(MODE_KEY) === "platform" ? "platform" : "tenant";
+}
+
+function getInitialAuthMode(): AuthMode {
+  return localStorage.getItem(AUTH_MODE_KEY) === "disabled" ? "disabled" : "jwt";
 }
 
 function isValidUuid(value: string): boolean {
@@ -292,6 +303,7 @@ export const AppProviders: React.FC<{ children: React.ReactNode }> = ({
     getInitialTheme(),
   );
   const [appMode, setAppModeState] = React.useState<AppMode>(() => getInitialMode());
+  const [authMode, setAuthModeState] = React.useState<AuthMode>(() => getInitialAuthMode());
   const [tenantId, setTenantIdState] = React.useState<string>(() =>
     getStoredTenantId(),
   );
@@ -299,6 +311,8 @@ export const AppProviders: React.FC<{ children: React.ReactNode }> = ({
   const jwtClaims = React.useMemo(() => parseJwtClaims(jwt), [jwt]);
   const hasJwt = jwt.trim().length > 0;
   const jwtParseError = hasJwt && !jwtClaims;
+  const isAuthenticated = authMode === "disabled" || hasJwt;
+  const tenantRbacMeQuery = useTenantRbacMe({ enabled: authMode === "jwt" && hasJwt && !jwtParseError });
 
   const permittedTenantIds = React.useMemo(
     () =>
@@ -320,12 +334,15 @@ export const AppProviders: React.FC<{ children: React.ReactNode }> = ({
   }, [jwtClaims, permittedTenantIds]);
   const effectiveRoles = React.useMemo(
     () =>
+      tenantRbacMeQuery.data?.effective_roles?.length
+        ? tenantRbacMeQuery.data.effective_roles
+        :
       jwtClaims
         ? getEffectiveRolesForTenant(jwtClaims, tenantId)
         : appMode === "platform"
           ? ["PlatformAdmin"]
           : ["TenantAdmin"],
-    [appMode, jwtClaims, tenantId],
+    [appMode, jwtClaims, tenantId, tenantRbacMeQuery.data?.effective_roles],
   );
   const platformRoles = React.useMemo(() => {
     if (!jwtClaims) return ["PlatformAdmin"];
@@ -356,6 +373,10 @@ export const AppProviders: React.FC<{ children: React.ReactNode }> = ({
       setAppModeState("tenant");
     }
   }, [appMode, canUsePlatformMode]);
+
+  React.useEffect(() => {
+    localStorage.setItem(AUTH_MODE_KEY, authMode);
+  }, [authMode]);
 
   const t = React.useCallback(
     (key: string) => {
@@ -415,12 +436,20 @@ export const AppProviders: React.FC<{ children: React.ReactNode }> = ({
       isPlatformAdmin,
       platformRoles,
       canWritePlatform,
+      authMode,
+      setAuthMode: (mode: AuthMode) => {
+        localStorage.setItem(AUTH_MODE_KEY, mode);
+        setAuthModeState(mode);
+      },
+      isAuthenticated,
     }),
     [
       appMode,
       canUsePlatformMode,
       effectiveRoles,
+      authMode,
       hasJwt,
+      isAuthenticated,
       isPlatformAdmin,
       jwt,
       jwtClaims?.subject,

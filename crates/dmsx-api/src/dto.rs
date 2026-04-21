@@ -710,6 +710,61 @@ pub struct RbacRole {
     pub platform_write: bool,
     pub tenant_read: bool,
     pub tenant_write: bool,
+    #[serde(default)]
+    pub permissions: Vec<String>,
+    #[serde(default)]
+    pub builtin: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TenantCustomRole {
+    pub name: String,
+    pub description: String,
+    #[serde(default)]
+    pub permissions: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct TenantRbacRolesResponse {
+    pub key: String,
+    pub custom_roles: Vec<TenantCustomRole>,
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TenantRbacRolesUpsertReq {
+    #[serde(default)]
+    pub custom_roles: Vec<TenantCustomRole>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TenantRoleBinding {
+    pub subject: String,
+    pub display_name: Option<String>,
+    #[serde(default)]
+    pub roles: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct TenantRoleBindingsResponse {
+    pub key: String,
+    pub bindings: Vec<TenantRoleBinding>,
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TenantRoleBindingsUpsertReq {
+    #[serde(default)]
+    pub bindings: Vec<TenantRoleBinding>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct TenantRbacMeResponse {
+    pub tenant_id: Uuid,
+    pub subject: String,
+    pub jwt_roles: Vec<String>,
+    pub binding_roles: Vec<String>,
+    pub effective_roles: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]

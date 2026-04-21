@@ -297,6 +297,48 @@ export interface RbacRole {
   platform_write: boolean;
   tenant_read: boolean;
   tenant_write: boolean;
+  permissions: string[];
+  builtin: boolean;
+}
+
+export interface TenantCustomRole {
+  name: string;
+  description: string;
+  permissions: string[];
+}
+
+export interface TenantRbacRolesResponse {
+  key: string;
+  custom_roles: TenantCustomRole[];
+  updated_at: string | null;
+}
+
+export interface TenantRbacRolesUpsertReq {
+  custom_roles: TenantCustomRole[];
+}
+
+export interface TenantRoleBinding {
+  subject: string;
+  display_name?: string | null;
+  roles: string[];
+}
+
+export interface TenantRoleBindingsResponse {
+  key: string;
+  bindings: TenantRoleBinding[];
+  updated_at: string | null;
+}
+
+export interface TenantRoleBindingsUpsertReq {
+  bindings: TenantRoleBinding[];
+}
+
+export interface TenantRbacMeResponse {
+  tenant_id: string;
+  subject: string;
+  jwt_roles: string[];
+  binding_roles: string[];
+  effective_roles: string[];
 }
 
 export interface Tenant {

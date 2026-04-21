@@ -115,6 +115,11 @@ const ZeroTouchEnrollPage = React.lazy(async () => {
   return { default: mod.ZeroTouchEnrollPage };
 });
 
+const LoginPage = React.lazy(async () => {
+  const mod = await import("./pages/Login");
+  return { default: mod.LoginPage };
+});
+
 function withLazyBoundary(Component: React.LazyExoticComponent<React.ComponentType>) {
   return function LazyRouteComponent() {
     return (
@@ -283,6 +288,12 @@ const zeroTouchEnrollRoute = createRoute({
   component: withLazyBoundary(ZeroTouchEnrollPage),
 });
 
+const loginRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/login",
+  component: withLazyBoundary(LoginPage),
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   platformRoute,
@@ -302,6 +313,7 @@ const routeTree = rootRoute.addChildren([
   auditLogsRoute,
   usersRolesRoute,
   zeroTouchEnrollRoute,
+  loginRoute,
 ]);
 
 export const router = createRouter({ routeTree });

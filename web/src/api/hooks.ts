@@ -35,6 +35,11 @@ import type {
   SystemSetting,
   SystemSettingUpsertReq,
   RbacRole,
+  TenantRbacRolesResponse,
+  TenantRbacRolesUpsertReq,
+  TenantRoleBindingsResponse,
+  TenantRoleBindingsUpsertReq,
+  TenantRbacMeResponse,
   Tenant,
   PlatformTenantSummary,
   PlatformQuota,
@@ -498,6 +503,62 @@ export function useRbacRoles() {
     queryKey: ["rbacRoles"],
     queryFn: () => api.get<RbacRole[]>("/v1/config/rbac/roles"),
     retry: false,
+  });
+}
+
+export function useTenantRbacRoles() {
+  const { tenantId } = useAppSession();
+  return useQuery({
+    queryKey: ["tenantRbacRoles", tenantId],
+    queryFn: () =>
+      api.get<TenantRbacRolesResponse>(tenantPathFor(tenantId, "/rbac/roles")),
+    retry: false,
+  });
+}
+
+export function useUpsertTenantRbacRoles() {
+  const { tenantId } = useAppSession();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: TenantRbacRolesUpsertReq) =>
+      api.put<TenantRbacRolesResponse>(tenantPathFor(tenantId, "/rbac/roles"), body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["tenantRbacRoles", tenantId] });
+      qc.invalidateQueries({ queryKey: ["rbacRoles"] });
+    },
+  });
+}
+
+export function useTenantRoleBindings() {
+  const { tenantId } = useAppSession();
+  return useQuery({
+    queryKey: ["tenantRoleBindings", tenantId],
+    queryFn: () =>
+      api.get<TenantRoleBindingsResponse>(tenantPathFor(tenantId, "/rbac/bindings")),
+    retry: false,
+  });
+}
+
+export function useUpsertTenantRoleBindings() {
+  const { tenantId } = useAppSession();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: TenantRoleBindingsUpsertReq) =>
+      api.put<TenantRoleBindingsResponse>(tenantPathFor(tenantId, "/rbac/bindings"), body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["tenantRoleBindings", tenantId] });
+      qc.invalidateQueries({ queryKey: ["tenantRbacMe", tenantId] });
+    },
+  });
+}
+
+export function useTenantRbacMe(options?: { enabled?: boolean }) {
+  const { tenantId } = useAppSession();
+  return useQuery({
+    queryKey: ["tenantRbacMe", tenantId],
+    queryFn: () => api.get<TenantRbacMeResponse>(tenantPathFor(tenantId, "/rbac/me")),
+    retry: false,
+    enabled: options?.enabled ?? true,
   });
 }
 

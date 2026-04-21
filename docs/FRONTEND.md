@@ -18,6 +18,7 @@
 
 - 前端将 **活动租户** 持久化在 `localStorage['dmsx.tenant_id']`，所有租户接口通过 `tenantPathFor(tenantId, ...)` 拼出 `/v1/tenants/{tid}/...`。默认值仍为种子租户 `00000000-0000-0000-0000-000000000001`。
 - 前端将 JWT 持久化在 `localStorage['dmsx.jwt']`；若存在则自动附带 `Authorization: Bearer <JWT>`，若用户直接粘贴了带 `Bearer ` 前缀的值也会原样接受。
+- 前端额外将认证模式持久化在 `localStorage['dmsx.auth_mode']`：`jwt` 模式下若没有本地 JWT，会直接跳转到 `/login?redirect=...`；`disabled` 模式则允许本地联调直接进入控制台。
 - 顶栏用户菜单支持直接设置 **活动租户** 与 **JWT**，用于 `disabled` / `jwt` 两种模式下的本地联调；不再需要手改源码中的租户常量。
 - 活动租户切换现在不再要求用户手填 UUID，而是基于当前会话可见的租户候选下拉选择：优先使用 JWT 中的 `tenant_id ∪ allowed_tenant_ids`，并合并当前浏览器最近创建过的租户记录，降低误填和越权切换风险。
 - 租户下拉项现在会尽量展示“租户名称 + UUID + 来源 + 切过去后的有效角色”。当某个租户来自本浏览器最近创建记录时，会显示其创建时的名称；否则回退为 UUID 缩写。角色标签基于当前 JWT 的 `tenant_roles` / `roles` 计算，便于用户在切换前理解权限变化。
@@ -28,6 +29,8 @@
 - 平台页当前接入的真实平台接口包括：`GET /v1/config/rbac/roles`、`GET /v1/config/livekit`、`GET /v1/config/settings/{key}`、`POST /v1/tenants`、`GET /v1/config/tenants`、`GET /v1/config/audit-logs`、`GET /v1/config/platform-health`、`GET /v1/config/quotas`。
 - 平台首页的租户目录卡片已从“一键 demo 创建”升级为真实表单创建：用户可输入租户名称并直接调用 `POST /v1/tenants`，成功后在卡片内展示新租户 ID。
 - 当前前端会从 JWT **本地解析** `tenant_id`、`allowed_tenant_ids`、`roles`、`tenant_roles` 以收敛导航：平台模式由令牌级 `roles` 控制（当前支持 `PlatformAdmin`、`PlatformViewer`）；租户模式继续按活动租户的 `tenant_roles` / `roles` 计算。若当前 JWT 不具备平台级角色，则平台模式入口会被禁用并自动回落到租户模式；若当前活动租户不在 JWT 许可集合内，前端会回退到 JWT 主租户。
+- 租户模式下的“用户 / 角色管理”页已接入当前租户自定义角色管理：前端会读取 `GET /v1/tenants/{tid}/rbac/roles`，支持编辑角色名、说明和权限集合，并通过 `PUT /v1/tenants/{tid}/rbac/roles` 保存。保存后这些角色不仅影响前端按钮态，也会进入后端真实 RBAC 判定。
+- 同一页面还接入了租户内“用户(subject) -> 角色”绑定管理：前端会读写 `GET/PUT /v1/tenants/{tid}/rbac/bindings`，并通过 `GET /v1/tenants/{tid}/rbac/me` 获取当前 JWT `sub` 在该租户的最终生效角色，使页面按钮态尽量以后端真实授权结果为准，而不是只依赖本地解析 JWT。
 - 当用户直接输入 URL 访问不属于当前模式或角色不允许的页面时，前端不再静默跳页，而是展示明确的 **403 风格访问受限页**，并提供“返回当前模式首页 / 切换模式”操作。这样能区分“页面不存在”和“当前模式/权限不匹配”。
 - 系统设置页会直接展示当前 JWT 的本地解析结果，包括主租户、允许租户集合、令牌级 `roles`、按租户覆盖的 `tenant_roles` 以及当前活动租户的有效角色，方便联调 JWT/RBAC 问题。
 - 主要页面和关键设备操作面板已开始做按钮级权限收敛：当当前有效角色只允许读、不允许写时，创建/删除/下发/编辑类按钮会直接禁用，避免菜单已收敛但页面内仍保留写入口。
@@ -65,7 +68,7 @@ web/
     ├── api/
     │   ├── client.ts        # fetch 封装 + JWT / tenant 本地持久化 + 租户路径工具
     │   ├── types.ts         # 所有 DTO TypeScript 接口
-    │   └── hooks.ts         # TanStack Query hooks（设备/策略/命令/影子/远控/桌面等）
+    │   └── hooks.ts         # TanStack Query hooks（设备/策略/命令/影子/远控/桌面/租户 RBAC 等）
     ├── pages/
     │   ├── Dashboard.tsx        # 态势总览
     │   ├── Devices.tsx          # 设备管理列表页
@@ -79,7 +82,8 @@ web/
     │   ├── PlatformTenants.tsx  # 平台租户目录
     │   ├── PlatformQuotas.tsx   # 平台配额
     │   ├── PlatformAuditLogs.tsx# 平台全局审计
-    │   └── PlatformHealth.tsx   # 平台健康
+    │   ├── PlatformHealth.tsx   # 平台健康
+    │   └── Login.tsx            # 登录页（JWT 模式未登录重定向入口）
     └── components/
         ├── DeviceDetail.tsx     # 设备详情抽屉（Tabs：基本信息/影子/远控/远程桌面）
         ├── ShadowPanel.tsx      # 设备影子面板（三列对比 + JSON 编辑器）
@@ -153,7 +157,7 @@ web/
 - **PlatformQuotas**：平台配额表，展示配额项、已用量、总量、单位和使用率。
 - **PlatformAuditLogs**：全局审计表，支持 `action` / `resource_type` 过滤与分页。
 - **PlatformHealth**：平台运行摘要，展示租户数、设备数、策略数、命令数、制品数、审计数，以及 LiveKit / Redis / Command Bus 状态。
-- **UsersRoles**：基于后端 RBAC 角色清单展示平台/租户角色矩阵，支持按范围分组与关键字筛选；用户 CRUD 仍是占位态。
+- **UsersRoles**：平台模式下展示内置 RBAC 角色矩阵；租户模式下可直接维护当前租户自定义角色（角色名、说明、权限集合）以及用户-角色绑定（subject、显示名、角色数组）。
 
 ### 全局 AI 入口
 - 右下角 `FloatButton`（机器人图标）：任意页面一键跳转 AI 中心
