@@ -8,6 +8,9 @@ ALTER TABLE command_results
 
 ALTER TABLE commands RENAME TO commands_legacy;
 
+ALTER INDEX IF EXISTS idx_commands_idempotency RENAME TO idx_commands_legacy_idempotency;
+ALTER INDEX IF EXISTS idx_commands_tenant_device RENAME TO idx_commands_legacy_tenant_device;
+
 CREATE TABLE commands (
     id UUID NOT NULL DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES tenants (id) ON DELETE CASCADE,

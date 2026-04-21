@@ -145,7 +145,7 @@
 - [x] `command_results` 表（命令执行结果 — exit_code/stdout/stderr）
 - [x] 所有枚举类型（`device_platform` / `enroll_status` 等）
 - [x] RLS（Row Level Security）策略（迁移 `migrations/005_rls_tenant_isolation.sql`；`dmsx-api` 在每条写读业务 SQL 上使用 `BEGIN` + `set_config(..., true)` 绑定 `dmsx.tenant_id` / `dmsx.is_platform_admin`，与连接池复用兼容。**验证**：`cargo test -p dmsx-api`；有 Postgres 且已跑迁移时 `DMSX_TEST_DATABASE_URL=... cargo test -p dmsx-api --test rls_tenant_session`）
-- [~] 按 `tenant_id` HASH 分区（**`commands`**：`migrations/006_commands_hash_partition.sql`，`PARTITION BY HASH (tenant_id)` 共 8 分区；`PRIMARY KEY (tenant_id, id)`；`command_results` 外键改为 `(tenant_id, command_id) → (tenant_id, id)`。其余表顺序见 [`POSTGRES_TENANT_PARTITIONING_PLAN.md`](POSTGRES_TENANT_PARTITIONING_PLAN.md)。**验证**：修改迁移后 `cargo build -p dmsx-api` 再启动以嵌入 `sqlx::migrate!`；库上 `\d commands` 应显示 `Partitioned table`）
+- [~] 按 `tenant_id` HASH 分区（**`commands`**：`migrations/006_commands_hash_partition.sql`，`PARTITION BY HASH (tenant_id)` 共 8 分区；`PRIMARY KEY (tenant_id, id)`；`command_results` 外键改为 `(tenant_id, command_id) → (tenant_id, id)`。迁移中会先把 `commands` 旧索引重命名为 `idx_commands_legacy_*`，避免 clean bootstrap 时与新分区表索引重名冲突。其余表顺序见 [`POSTGRES_TENANT_PARTITIONING_PLAN.md`](POSTGRES_TENANT_PARTITIONING_PLAN.md)。**验证**：修改迁移后 `cargo build -p dmsx-api` 再启动以嵌入 `sqlx::migrate!`；库上 `\d commands` 应显示 `Partitioned table`）
 - [ ] 数据库版本迁移工具（sqlx-migrate / refinery）
 
 ### ClickHouse（`migrations/ch/001_init.sql`）
