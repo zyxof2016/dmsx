@@ -119,6 +119,7 @@ mod tests {
             tenant_id: "test-tenant".into(),
             heartbeat_interval: std::time::Duration::from_secs(30),
             command_poll_interval: std::time::Duration::from_secs(10),
+            command_execution_timeout: std::time::Duration::from_secs(300),
             rustdesk_relay: None,
         }
     }

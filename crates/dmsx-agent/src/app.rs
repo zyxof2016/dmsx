@@ -15,6 +15,7 @@ pub(crate) async fn run() {
         tenant = %cfg.tenant_id,
         heartbeat = ?cfg.heartbeat_interval,
         poll = ?cfg.command_poll_interval,
+        command_execution_timeout = ?cfg.command_execution_timeout,
         platform = detect_platform(),
         hostname = %hostname(),
         "DMSX Agent starting"

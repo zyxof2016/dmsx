@@ -66,7 +66,8 @@ async fn execute_command(
         .send()
         .await;
 
-    let (exit_code, stdout, stderr) = match action {
+    let execution = async {
+        match action {
         "start_desktop" => {
             if desktop_session.is_some() {
                 info!("stopping existing desktop session before starting new one");
@@ -145,6 +146,27 @@ async fn execute_command(
         _ => {
             warn!(action = %action, "unknown action");
             (1, String::new(), format!("unknown action: {action}"))
+        }
+    }
+    };
+
+    let (exit_code, stdout, stderr) = match tokio::time::timeout(cfg.command_execution_timeout, execution).await {
+        Ok(result) => result,
+        Err(_) => {
+            error!(
+                command_id = %cmd_id,
+                action = %action,
+                timeout_secs = cfg.command_execution_timeout.as_secs(),
+                "command execution exceeded agent timeout"
+            );
+            (
+                124,
+                String::new(),
+                format!(
+                    "agent command timeout after {}s",
+                    cfg.command_execution_timeout.as_secs()
+                ),
+            )
         }
     };
 

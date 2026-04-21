@@ -4,6 +4,7 @@ pub struct AgentConfig {
     pub tenant_id: String,
     pub heartbeat_interval: std::time::Duration,
     pub command_poll_interval: std::time::Duration,
+    pub command_execution_timeout: std::time::Duration,
     pub rustdesk_relay: Option<String>,
 }
 
@@ -25,6 +26,12 @@ impl AgentConfig {
                     .ok()
                     .and_then(|v| v.parse().ok())
                     .unwrap_or(10),
+            ),
+            command_execution_timeout: std::time::Duration::from_secs(
+                std::env::var("DMSX_COMMAND_EXEC_TIMEOUT_SECS")
+                    .ok()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(300),
             ),
             rustdesk_relay: std::env::var("DMSX_RUSTDESK_RELAY").ok(),
         }
