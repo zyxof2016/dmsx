@@ -3,6 +3,7 @@ pub struct AgentConfig {
     pub api_base: String,
     pub tenant_id: String,
     pub registration_code: Option<String>,
+    pub enrollment_token: Option<String>,
     pub heartbeat_interval: std::time::Duration,
     pub command_poll_interval: std::time::Duration,
     pub command_execution_timeout: std::time::Duration,
@@ -19,6 +20,10 @@ impl AgentConfig {
             registration_code: std::env::var("DMSX_DEVICE_REGISTRATION_CODE")
                 .ok()
                 .map(|value| value.trim().to_ascii_uppercase())
+                .filter(|value| !value.is_empty()),
+            enrollment_token: std::env::var("DMSX_DEVICE_ENROLLMENT_TOKEN")
+                .ok()
+                .map(|value| value.trim().to_string())
                 .filter(|value| !value.is_empty()),
             heartbeat_interval: std::time::Duration::from_secs(
                 std::env::var("DMSX_HEARTBEAT_SECS")

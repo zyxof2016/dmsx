@@ -10,6 +10,15 @@ pub struct CreateDeviceReq {
     pub labels: serde_json::Value,
 }
 
+#[derive(Debug, Serialize)]
+pub struct ClaimDeviceEnrollmentReq {
+    pub enrollment_token: String,
+    pub hostname: Option<String>,
+    pub os_version: Option<String>,
+    pub agent_version: Option<String>,
+    pub labels: serde_json::Value,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct Device {
     pub id: String,

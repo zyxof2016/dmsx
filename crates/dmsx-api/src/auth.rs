@@ -884,6 +884,7 @@ mod tests {
             redis_url: None,
             command_jetstream: None,
             upload_token_hmac_secret: Some("test-upload-token-secret".to_string()),
+            enroll_token_hmac_secret: Some("test-enroll-token-secret".to_string()),
             livekit_url: "ws://127.0.0.1:7880".to_string(),
             livekit_api_key: "key".to_string(),
             livekit_api_secret: "secret".to_string(),

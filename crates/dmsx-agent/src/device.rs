@@ -2,7 +2,7 @@ use chrono::Utc;
 use reqwest::Client;
 use tracing::{info, warn};
 
-use crate::api::{CreateDeviceReq, Device, ListResponse};
+use crate::api::{ClaimDeviceEnrollmentReq, CreateDeviceReq, Device, ListResponse};
 use crate::config::AgentConfig;
 use crate::platform::{detect_platform, hostname, os_version};
 use crate::telemetry::collect_telemetry;
@@ -13,6 +13,33 @@ pub async fn find_or_register_device(
 ) -> Result<String, Box<dyn std::error::Error>> {
     let hostname = hostname();
     let platform = detect_platform();
+
+    if let Some(enrollment_token) = &cfg.enrollment_token {
+        let claim_url = format!(
+            "{}/v1/tenants/{}/devices/claim-with-enrollment-token",
+            cfg.api_base, cfg.tenant_id
+        );
+        let claim_body = ClaimDeviceEnrollmentReq {
+            enrollment_token: enrollment_token.clone(),
+            hostname: Some(hostname.clone()),
+            os_version: os_version(),
+            agent_version: Some(env!("CARGO_PKG_VERSION").into()),
+            labels: serde_json::json!({
+                "agent": "dmsx-agent",
+                "claimed_at": Utc::now().to_rfc3339(),
+            }),
+        };
+        let resp = client.post(&claim_url).json(&claim_body).send().await?;
+        if resp.status().is_success() {
+            let dev: Device = resp.json().await?;
+            info!(device_id = %dev.id, registration_code = %dev.registration_code, "claimed device with enrollment token");
+            return Ok(dev.id);
+        }
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        return Err(format!("claim with enrollment token failed: {status} — {text}").into());
+    }
+
     let search = cfg
         .registration_code
         .as_deref()
@@ -128,6 +155,7 @@ mod tests {
             api_base: server.uri(),
             tenant_id: "test-tenant".into(),
             registration_code: None,
+            enrollment_token: None,
             heartbeat_interval: std::time::Duration::from_secs(30),
             command_poll_interval: std::time::Duration::from_secs(10),
             command_execution_timeout: std::time::Duration::from_secs(300),
@@ -221,6 +249,28 @@ mod tests {
 
         let device_id = find_or_register_device(&client, &cfg).await.unwrap();
         assert_eq!(device_id, "dev-bound");
+    }
+
+    #[tokio::test]
+    async fn find_or_register_device_claims_with_enrollment_token_when_present() {
+        let server = MockServer::start().await;
+        let mut cfg = test_cfg(&server);
+        cfg.enrollment_token = Some("v1.test.payload".into());
+        let client = test_client();
+
+        Mock::given(method("POST"))
+            .and(path("/v1/tenants/test-tenant/devices/claim-with-enrollment-token"))
+            .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({
+                "id": "dev-claimed",
+                "registration_code": "DEV-CLAIM-0001",
+                "hostname": hostname(),
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let device_id = find_or_register_device(&client, &cfg).await.unwrap();
+        assert_eq!(device_id, "dev-claimed");
     }
 
     #[tokio::test]

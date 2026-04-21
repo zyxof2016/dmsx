@@ -1,9 +1,9 @@
+use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use uuid::Uuid;
-use serde::{Deserialize, Serialize};
 
 use crate::auth::AuthConfig;
 use crate::command_jetstream::CommandJetStream;
@@ -20,6 +20,7 @@ pub struct AppState {
     pub redis_url: Option<String>,
     pub command_jetstream: Option<Arc<CommandJetStream>>,
     pub upload_token_hmac_secret: Option<String>,
+    pub enroll_token_hmac_secret: Option<String>,
     pub livekit_url: String,
     pub livekit_api_key: String,
     pub livekit_api_secret: String,

@@ -127,6 +127,61 @@ pub struct UpdateDeviceReq {
     pub labels: Option<serde_json::Value>,
 }
 
+#[derive(Debug, Serialize)]
+pub struct DeviceEnrollmentToken {
+    pub token: String,
+    pub expires_at: DateTime<Utc>,
+    pub registration_code: String,
+    pub device_id: Uuid,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct IssueDeviceEnrollmentTokenReq {
+    pub ttl_seconds: Option<i64>,
+}
+
+impl IssueDeviceEnrollmentTokenReq {
+    pub fn ttl_seconds(&self) -> i64 {
+        self.ttl_seconds.unwrap_or(1800)
+    }
+
+    pub fn validate(&self) -> Result<(), DmsxError> {
+        let ttl = self.ttl_seconds();
+        if !(60..=86400).contains(&ttl) {
+            return Err(DmsxError::Validation(
+                "ttl_seconds must be between 60 and 86400".into(),
+            ));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ClaimDeviceEnrollmentReq {
+    pub enrollment_token: String,
+    pub hostname: Option<String>,
+    pub os_version: Option<String>,
+    pub agent_version: Option<String>,
+    #[serde(default = "default_json_obj")]
+    pub labels: serde_json::Value,
+}
+
+impl ClaimDeviceEnrollmentReq {
+    pub fn validate(&self) -> Result<(), DmsxError> {
+        check_len("enrollment_token", &self.enrollment_token, 10, 4000)?;
+        if let Some(h) = &self.hostname {
+            check_len("hostname", h, 1, 253)?;
+        }
+        if let Some(v) = &self.os_version {
+            check_len("os_version", v, 1, 200)?;
+        }
+        if let Some(v) = &self.agent_version {
+            check_len("agent_version", v, 1, 100)?;
+        }
+        Ok(())
+    }
+}
+
 impl UpdateDeviceReq {
     pub fn validate(&self) -> Result<(), DmsxError> {
         if let Some(code) = &self.registration_code {

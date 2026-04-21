@@ -147,6 +147,33 @@ pub async fn devices_delete(
     Ok(StatusCode::NO_CONTENT)
 }
 
+pub async fn device_registration_code_rotate(
+    State(st): State<AppState>,
+    Extension(ctx): Extension<AuthContext>,
+    Path((tid, did)): Path<(Uuid, Uuid)>,
+) -> ApiResult<Json<Device>> {
+    Ok(Json(devices::rotate_registration_code(&st, &ctx, tid, did).await?))
+}
+
+pub async fn device_enrollment_token_issue(
+    State(st): State<AppState>,
+    Extension(ctx): Extension<AuthContext>,
+    Path((tid, did)): Path<(Uuid, Uuid)>,
+    Json(body): Json<IssueDeviceEnrollmentTokenReq>,
+) -> ApiResult<Response> {
+    let token = devices::issue_device_enrollment_token(&st, &ctx, tid, did, &body).await?;
+    Ok((StatusCode::CREATED, Json(token)).into_response())
+}
+
+pub async fn device_claim_with_enrollment_token(
+    State(st): State<AppState>,
+    Path(tid): Path<Uuid>,
+    Json(body): Json<ClaimDeviceEnrollmentReq>,
+) -> ApiResult<Response> {
+    let device = devices::claim_device_with_enrollment_token(&st, tid, &body).await?;
+    Ok((StatusCode::CREATED, Json(device)).into_response())
+}
+
 // ---------------------------------------------------------------------------
 // Policies
 // ---------------------------------------------------------------------------

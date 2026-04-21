@@ -237,6 +237,7 @@ spec:
 | `DMSX_API_CORS_ALLOWED_ORIGINS` | （未设置） | 允许的 CORS 来源（逗号分隔，完整 scheme+host+port，如 `https://admin.example.com,http://localhost:3000`）。未设置且非 `dev` 环境将拒绝所有跨域请求（浏览器侧阻断）。 |
 | `DMSX_API_CORS_ALLOW_ALL` | `false` | 是否放开所有 CORS 来源（dev-like）；设置为 `1/true/yes` 时 `DMSX_API_CORS_ALLOWED_ORIGINS` 将被忽略。 |
 | `DMSX_API_UPLOAD_TOKEN_HMAC_SECRET` | （未设置） | 控制面签发 `UploadEvidence` token 的 HMAC secret；应与网关 `DMSX_GW_UPLOAD_TOKEN_HMAC_SECRET` 保持一致。若未设置，`POST /v1/tenants/{tid}/commands/{cid}/evidence-upload-token` 返回 **500** |
+| `DMSX_API_ENROLL_TOKEN_HMAC_SECRET` | （未设置） | 控制面签发设备 enrollment token 的 HMAC secret；若未设置，设备 enrollment token 接口返回 **500** |
 | `DMSX_CLICKHOUSE_HTTP_URL` | （未设置） | ClickHouse HTTP 接口地址（未设置则不写入 CH）。示例：`http://127.0.0.1:8123` |
 | `DMSX_CLICKHOUSE_HTTP_USER` / `DMSX_CLICKHOUSE_HTTP_PASSWORD` | （可选） | ClickHouse HTTP Basic Auth 用户名/密码；仅当上述 URL 配置了且两项都存在时才启用 |
 | `DMSX_REDIS_URL` | （未设置） | Redis URL（未设置则不使用缓存/持久化）。当前用于桌面会话映射持久化：`session_id → {tenant_id, device_id}` 与 `device_id → session_id` |
@@ -296,6 +297,7 @@ spec:
 | `DMSX_API_URL` | `http://127.0.0.1:8080` | 控制面 API 地址 |
 | `DMSX_TENANT_ID` | `00000000-0000-0000-0000-000000000001` | 租户 ID |
 | `DMSX_DEVICE_REGISTRATION_CODE` | （未设置） | Agent 首次绑定时使用的人可见设备注册码；设置后会优先按该码复用已预注册设备 |
+| `DMSX_DEVICE_ENROLLMENT_TOKEN` | （未设置） | Agent 首次绑定时使用的 enrollment token；设置后会优先走 token 认领流程 |
 | `DMSX_HEARTBEAT_SECS` | `30` | 心跳间隔（秒） |
 | `DMSX_POLL_SECS` | `10` | 命令轮询间隔（秒） |
 | `DMSX_RUSTDESK_RELAY` | （可选）| RustDesk 自建中继服务器地址 |

@@ -193,6 +193,16 @@ pub async fn build_state_from_env() -> AppState {
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty())
         });
+    let enroll_token_hmac_secret = std::env::var("DMSX_API_ENROLL_TOKEN_HMAC_SECRET")
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .or_else(|| {
+            std::env::var("DMSX_GW_ENROLL_HMAC_SECRET")
+                .ok()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+        });
 
     let command_jetstream = crate::command_jetstream::CommandJetStream::try_from_env().await;
 
@@ -201,6 +211,7 @@ pub async fn build_state_from_env() -> AppState {
         redis_url,
         command_jetstream,
         upload_token_hmac_secret,
+        enroll_token_hmac_secret,
         livekit_url,
         livekit_api_key,
         livekit_api_secret,
@@ -256,6 +267,10 @@ pub fn build_router(st: AppState) -> Router {
         .route("/health", get(handlers::health))
         .route("/ready", get(handlers::ready))
         .route("/metrics", get(metrics::metrics_handler))
+        .route(
+            "/v1/tenants/{tenant_id}/devices/claim-with-enrollment-token",
+            post(handlers::device_claim_with_enrollment_token),
+        )
         .with_state(st.clone());
 
     let mut api = Router::new()
@@ -279,6 +294,14 @@ pub fn build_router(st: AppState) -> Router {
             get(handlers::devices_get)
                 .patch(handlers::devices_patch)
                 .delete(handlers::devices_delete),
+        )
+        .route(
+            "/v1/tenants/{tenant_id}/devices/{device_id}/registration-code:rotate",
+            post(handlers::device_registration_code_rotate),
+        )
+        .route(
+            "/v1/tenants/{tenant_id}/devices/{device_id}/enrollment-token",
+            post(handlers::device_enrollment_token_issue),
         )
         .route(
             "/v1/tenants/{tenant_id}/policies",
@@ -448,6 +471,7 @@ mod tests {
             redis_url: None,
             command_jetstream: None,
             upload_token_hmac_secret: Some("test-upload-token-secret".to_string()),
+            enroll_token_hmac_secret: Some("test-enroll-token-secret".to_string()),
             livekit_url: "ws://127.0.0.1:7880".to_string(),
             livekit_api_key: "test-livekit-key".to_string(),
             livekit_api_secret: "test-livekit-secret".to_string(),

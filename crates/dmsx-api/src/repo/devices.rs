@@ -128,3 +128,20 @@ pub async fn delete_device(conn: &mut PgConnection, tid: Uuid, did: Uuid) -> Res
         .await?;
     Ok(res.rows_affected() > 0)
 }
+
+pub async fn rotate_registration_code(
+    conn: &mut PgConnection,
+    tid: Uuid,
+    did: Uuid,
+) -> Result<Option<Device>, sqlx::Error> {
+    sqlx::query_as(
+        "UPDATE devices SET \
+         registration_code = CONCAT('DEV-', UPPER(SUBSTRING(REPLACE($1::text, '-', '') FROM 1 FOR 4)), '-', UPPER(RIGHT(REPLACE(gen_random_uuid()::text, '-', ''), 12))), \
+         updated_at = now() \
+         WHERE tenant_id = $1 AND id = $2 RETURNING *",
+    )
+    .bind(tid)
+    .bind(did)
+    .fetch_optional(&mut *conn)
+    .await
+}

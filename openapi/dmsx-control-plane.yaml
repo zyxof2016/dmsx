@@ -312,6 +312,39 @@ paths:
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalServerError'
+  /v1/tenants/{tenant_id}/devices/{device_id}/registration-code:rotate:
+    post:
+      summary: Rotate device registration code
+      operationId: rotateDeviceRegistrationCode
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Device'
+  /v1/tenants/{tenant_id}/devices/{device_id}/enrollment-token:
+    post:
+      summary: Issue device enrollment token
+      operationId: issueDeviceEnrollmentToken
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceEnrollmentToken'
+  /v1/tenants/{tenant_id}/devices/claim-with-enrollment-token:
+    post:
+      summary: Claim device with enrollment token
+      operationId: claimDeviceWithEnrollmentToken
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Device'
     patch:
       summary: Update device (labels, groups, etc.)
       operationId: patchDevice
@@ -1733,6 +1766,7 @@ components:
       required:
       - id
       - tenant_id
+      - registration_code
       - platform
       - enroll_status
       - online_state
@@ -1747,6 +1781,8 @@ components:
         tenant_id:
           type: string
           format: uuid
+        registration_code:
+          type: string
         site_id:
           type: string
           format: uuid
@@ -1786,6 +1822,24 @@ components:
         updated_at:
           type: string
           format: date-time
+    DeviceEnrollmentToken:
+      type: object
+      required:
+      - token
+      - expires_at
+      - registration_code
+      - device_id
+      properties:
+        token:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+        registration_code:
+          type: string
+        device_id:
+          type: string
+          format: uuid
     CreateDeviceReq:
       type: object
       required:
