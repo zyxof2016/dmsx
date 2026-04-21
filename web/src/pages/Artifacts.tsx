@@ -13,6 +13,8 @@ import {
   Spin,
   Alert,
   Empty,
+  Checkbox,
+  Collapse,
 } from "antd";
 import {
   UploadOutlined,
@@ -26,12 +28,25 @@ import { formatApiError } from "../api/errors";
 import { useResourceAccess } from "../authz";
 import { GuardedButton } from "../components/GuardedButton";
 import { ReadonlyBanner } from "../components/ReadonlyBanner";
+import { buildArtifactMeta, parseArtifactMeta } from "../artifactMeta";
 
 const { Title } = Typography;
 
+type ArtifactFormValues = CreateArtifactReq & {
+  platforms?: Array<"linux" | "windows" | "android">;
+  download_url?: string;
+  installer_kind?: string;
+  install_linux?: string;
+  install_windows?: string;
+  install_android?: string;
+  upgrade_linux?: string;
+  upgrade_windows?: string;
+  upgrade_android?: string;
+};
+
 export const ArtifactsPage: React.FC = () => {
   const { message } = App.useApp();
-  const [form] = Form.useForm<CreateArtifactReq>();
+  const [form] = Form.useForm<ArtifactFormValues>();
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
@@ -50,9 +65,30 @@ export const ArtifactsPage: React.FC = () => {
   const items = data?.items ?? [];
   const total = data?.total ?? 0;
 
-  const handleCreate = async (values: CreateArtifactReq) => {
+  const handleCreate = async (values: ArtifactFormValues) => {
     try {
-      await createMut.mutateAsync(values);
+      await createMut.mutateAsync({
+        name: values.name,
+        version: values.version,
+        sha256: values.sha256,
+        channel: values.channel,
+        object_key: values.object_key,
+        metadata: buildArtifactMeta({
+          platforms: values.platforms ?? [],
+          download_url: values.download_url,
+          installer_kind: values.installer_kind,
+          install_commands: {
+            linux: values.install_linux,
+            windows: values.install_windows,
+            android: values.install_android,
+          },
+          upgrade_commands: {
+            linux: values.upgrade_linux,
+            windows: values.upgrade_windows,
+            android: values.upgrade_android,
+          },
+        }),
+      });
       message.success("制品创建成功");
       setOpen(false);
       form.resetFields();
@@ -152,6 +188,20 @@ export const ArtifactsPage: React.FC = () => {
               dataIndex: "created_at",
               render: (t: string) => dayjs(t).format("YYYY-MM-DD HH:mm"),
             },
+            {
+              title: "升级元数据",
+              dataIndex: "metadata",
+              render: (metadata: Record<string, unknown>) => {
+                const parsed = parseArtifactMeta(metadata);
+                const tags = [
+                  parsed.download_url ? "下载地址" : null,
+                  parsed.installer_kind ? parsed.installer_kind : null,
+                  Object.keys(parsed.install_commands).length ? "首装模板" : null,
+                  Object.keys(parsed.upgrade_commands).length ? "升级模板" : null,
+                ].filter(Boolean);
+                return tags.length ? <Space wrap>{tags.map((tag) => <Tag key={String(tag)}>{tag}</Tag>)}</Space> : <Typography.Text type="secondary">—</Typography.Text>;
+              },
+            },
           ]}
         />
       </Card>
@@ -164,8 +214,8 @@ export const ArtifactsPage: React.FC = () => {
         confirmLoading={createMut.isPending}
         okButtonProps={{ disabled: !canWrite }}
       >
-        <Form form={form} layout="vertical" onFinish={handleCreate}>
-          <Form.Item name="name" label="名称" rules={[{ required: true }]}>
+          <Form form={form} layout="vertical" onFinish={handleCreate} initialValues={{ channel: "stable", platforms: [] }}>
+          <Form.Item name="name" label="名称" rules={[{ required: true }]}> 
             <Input />
           </Form.Item>
           <Form.Item name="version" label="版本" rules={[{ required: true }]}>
@@ -184,7 +234,7 @@ export const ArtifactsPage: React.FC = () => {
           >
             <Input />
           </Form.Item>
-          <Form.Item name="channel" label="渠道" initialValue="stable">
+          <Form.Item name="channel" label="渠道">
             <Input />
           </Form.Item>
           <Form.Item
@@ -194,6 +244,53 @@ export const ArtifactsPage: React.FC = () => {
           >
             <Input />
           </Form.Item>
+          <Collapse
+            items={[
+              {
+                key: "metadata",
+                label: "安装 / 升级元数据",
+                children: (
+                  <Space direction="vertical" style={{ width: "100%" }}>
+                    <Form.Item name="platforms" label="适用平台">
+                      <Checkbox.Group
+                        options={[
+                          { label: "Linux/macOS", value: "linux" },
+                          { label: "Windows", value: "windows" },
+                          { label: "Android", value: "android" },
+                        ]}
+                      />
+                    </Form.Item>
+                    <Form.Item name="download_url" label="下载地址">
+                      <Input placeholder="https://downloads.example.com/dmsx-agent/linux/update.sh" />
+                    </Form.Item>
+                    <Form.Item name="installer_kind" label="安装器类型">
+                      <Input placeholder="例如 sh / ps1 / msi / exe / deb / rpm / pkg / apk" />
+                    </Form.Item>
+                    <Typography.Text strong>首装命令模板</Typography.Text>
+                    <Form.Item name="install_linux" label="Linux/macOS">
+                      <Input.TextArea rows={2} placeholder="curl -fsSL {{download_url}} | sh" />
+                    </Form.Item>
+                    <Form.Item name="install_windows" label="Windows">
+                      <Input.TextArea rows={2} placeholder="powershell -ExecutionPolicy Bypass -File .\\install-agent.ps1" />
+                    </Form.Item>
+                    <Form.Item name="install_android" label="Android">
+                      <Input.TextArea rows={2} placeholder="adb shell sh /data/local/tmp/install-agent.sh" />
+                    </Form.Item>
+                    <Typography.Text strong>升级命令模板</Typography.Text>
+                    <Form.Item name="upgrade_linux" label="Linux/macOS">
+                      <Input.TextArea rows={2} placeholder="sh {{file_path}} --upgrade" />
+                    </Form.Item>
+                    <Form.Item name="upgrade_windows" label="Windows">
+                      <Input.TextArea rows={2} placeholder="powershell -ExecutionPolicy Bypass -File {{file_path}}" />
+                    </Form.Item>
+                    <Form.Item name="upgrade_android" label="Android">
+                      <Input.TextArea rows={2} placeholder="pm install -r {{file_path}}" />
+                    </Form.Item>
+                  </Space>
+                ),
+              },
+            ]}
+          />
         </Form>
       </Modal>
     </Spin>

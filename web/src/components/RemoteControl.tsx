@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   Card,
   Row,
@@ -16,6 +16,7 @@ import {
   Tooltip,
   App,
   Typography,
+  Form,
 } from "antd";
 import {
   ReloadOutlined,
@@ -33,15 +34,56 @@ import {
   useDeviceAction,
   useDeviceCommands,
   useCommandResult,
+  useArtifacts,
 } from "../api/hooks";
-import type { DeviceActionType, Command } from "../api/types";
+import type { Artifact, Device, DeviceActionType, Command } from "../api/types";
 import { formatApiError } from "../api/errors";
 import { useResourceAccess, WRITE_DISABLED_REASON } from "../authz";
 import { GuardedButton } from "./GuardedButton";
 import { ReadonlyBanner } from "./ReadonlyBanner";
+import { TerminalBlock } from "./TerminalBlock";
+import { buildArtifactLabel, chooseArtifactCommand, inferInstallerKind, normalizeDevicePlatform } from "../artifactMeta";
 
 const { TextArea } = Input;
 const { Text } = Typography;
+
+type InstallUpdateForm = {
+  artifactId?: string;
+  downloadUrl?: string;
+  sha256?: string;
+  expectedVersion?: string;
+  installerKind?: string;
+  installCommand?: string;
+  interpreter?: string;
+  timeout?: number;
+};
+
+function defaultInterpreter(installerKind?: string): string | undefined {
+  if (!installerKind) return undefined;
+  if (["msi", "exe", "ps1"].includes(installerKind)) return "powershell";
+  if (["sh", "deb", "rpm", "pkg", "apk"].includes(installerKind)) return "sh";
+  return undefined;
+}
+
+function buildInstallParamsFromArtifact(artifact: Artifact, devicePlatform?: Device["platform"]): InstallUpdateForm {
+  const platform = normalizeDevicePlatform(devicePlatform);
+  const installCommand = chooseArtifactCommand(artifact, "upgrade", platform)
+    ?? chooseArtifactCommand(artifact, "install", platform);
+  const downloadUrl = typeof artifact.metadata?.download_url === "string"
+    ? artifact.metadata.download_url
+    : undefined;
+  const installerKind = inferInstallerKind(artifact);
+  return {
+    artifactId: artifact.id,
+    downloadUrl,
+    sha256: artifact.sha256,
+    expectedVersion: artifact.version,
+    installerKind,
+    installCommand,
+    interpreter: defaultInterpreter(installerKind),
+    timeout: 900,
+  };
+}
 
 interface ActionDef {
   type: DeviceActionType;
@@ -97,15 +139,27 @@ const ResultDrawer: React.FC<{ commandId: string; onClose: () => void }> = ({
             </Tag>
             <div style={{ marginTop: 12 }}>
               <Text strong>stdout:</Text>
-              <pre style={{ background: "#f5f5f5", padding: 8, borderRadius: 4, maxHeight: 200, overflow: "auto", fontSize: 12 }}>
-                {result.stdout || "(empty)"}
-              </pre>
+              <TerminalBlock 
+                code={result.stdout || "(empty)"}
+                style={{ 
+                  marginTop: 4, 
+                  maxHeight: 200, 
+                  background: result.stdout ? "#f6ffed" : undefined,
+                  borderColor: result.stdout ? "#b7eb8f" : undefined,
+                }}
+              />
             </div>
             <div style={{ marginTop: 8 }}>
               <Text strong>stderr:</Text>
-              <pre style={{ background: "#fff2f0", padding: 8, borderRadius: 4, maxHeight: 200, overflow: "auto", fontSize: 12 }}>
-                {result.stderr || "(empty)"}
-              </pre>
+              <TerminalBlock 
+                code={result.stderr || "(empty)"}
+                style={{ 
+                  marginTop: 4, 
+                  maxHeight: 200, 
+                  background: result.stderr ? "#fff2f0" : undefined,
+                  borderColor: result.stderr ? "#ffa39e" : undefined,
+                }}
+              />
             </div>
             <Text type="secondary" style={{ fontSize: 12 }}>
               上报时间: {dayjs(result.reported_at).format("YYYY-MM-DD HH:mm:ss")}
@@ -120,7 +174,10 @@ const ResultDrawer: React.FC<{ commandId: string; onClose: () => void }> = ({
 export const RemoteControlPanel: React.FC<{
   deviceId: string;
   deviceHostname?: string;
-}> = ({ deviceId, deviceHostname }) => {
+  devicePlatform?: Device["platform"];
+  initialInstallUpdateArtifactId?: string;
+  installUpdateTrigger?: number;
+}> = ({ deviceId, deviceHostname, devicePlatform, initialInstallUpdateArtifactId, installUpdateTrigger }) => {
   const sendAction = useDeviceAction();
   const { message, modal } = App.useApp();
   const { canWrite } = useResourceAccess("commands");
@@ -128,15 +185,30 @@ export const RemoteControlPanel: React.FC<{
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [scriptOpen, setScriptOpen] = useState(false);
+  const [installUpdateOpen, setInstallUpdateOpen] = useState(false);
   const [script, setScript] = useState("");
   const [interpreter, setInterpreter] = useState("bash");
   const [timeout, setScriptTimeout] = useState(60);
   const [resultCmdId, setResultCmdId] = useState<string | null>(null);
+  const [installUpdateForm] = Form.useForm<InstallUpdateForm>();
   const wipeHostnameRef = React.useRef("");
   const { data: cmds, isLoading } = useDeviceCommands(deviceId, {
     limit: pageSize,
     offset: (page - 1) * pageSize,
   });
+  const artifactsQuery = useArtifacts({ limit: 100, offset: 0 });
+  const artifactOptions = useMemo(
+    () => (artifactsQuery.data?.items ?? []).map((artifact) => ({ value: artifact.id, label: buildArtifactLabel(artifact) })),
+    [artifactsQuery.data?.items],
+  );
+  React.useEffect(() => {
+    const initialId = initialInstallUpdateArtifactId;
+    if (!initialId || !artifactsQuery.data?.items?.length) return;
+    const artifact = artifactsQuery.data.items.find((item) => item.id === initialId);
+    if (!artifact) return;
+    installUpdateForm.setFieldsValue(buildInstallParamsFromArtifact(artifact, devicePlatform));
+    setInstallUpdateOpen(true);
+  }, [artifactsQuery.data?.items, devicePlatform, initialInstallUpdateArtifactId, installUpdateForm, installUpdateTrigger]);
 
   const doAction = (action: DeviceActionType, params: Record<string, unknown> = {}) => {
     sendAction.mutate(
@@ -187,6 +259,10 @@ export const RemoteControlPanel: React.FC<{
       setScriptOpen(true);
       return;
     }
+    if (def.type === "install_update") {
+      setInstallUpdateOpen(true);
+      return;
+    }
     modal.confirm({
       title: `确认 ${def.label}?`,
       icon: <ExclamationCircleFilled />,
@@ -203,6 +279,30 @@ export const RemoteControlPanel: React.FC<{
     doAction("run_script", { interpreter, script, timeout });
     setScriptOpen(false);
     setScript("");
+  };
+
+  const handleInstallUpdate = async () => {
+    try {
+      const values = await installUpdateForm.validateFields();
+      if (!values.downloadUrl?.trim()) {
+        message.warning("请输入下载地址，或先从制品带入");
+        return;
+      }
+      doAction("install_update", {
+        artifact_id: values.artifactId,
+        download_url: values.downloadUrl.trim(),
+        sha256: values.sha256?.trim() || undefined,
+        expected_version: values.expectedVersion?.trim() || undefined,
+        installer_kind: values.installerKind?.trim() || undefined,
+        install_command: values.installCommand?.trim() || undefined,
+        interpreter: values.interpreter?.trim() || undefined,
+        timeout: values.timeout ?? 900,
+      });
+      setInstallUpdateOpen(false);
+      installUpdateForm.resetFields();
+    } catch {
+      return;
+    }
   };
 
   const columns = [
@@ -337,6 +437,94 @@ export const RemoteControlPanel: React.FC<{
             placeholder="输入要在远端设备上执行的脚本..."
             style={{ fontFamily: "monospace", fontSize: 12 }}
           />
+        </Space>
+      </Modal>
+
+      <Modal
+        title="安装更新"
+        open={installUpdateOpen}
+        onCancel={() => setInstallUpdateOpen(false)}
+        onOk={handleInstallUpdate}
+        okText="下发更新"
+        okButtonProps={{ disabled: !canWrite, icon: <CloudUploadOutlined /> }}
+        width={720}
+      >
+        <Space direction="vertical" style={{ width: "100%" }}>
+          <Alert
+            type="info"
+            showIcon
+            message="Agent 现在会下载更新包、按可选 SHA256 校验，并执行默认安装器或自定义安装命令。"
+          />
+          <Form form={installUpdateForm} layout="vertical" initialValues={{ timeout: 900 }}>
+            <Form.Item label="从制品带入" name="artifactId">
+              <Select
+                allowClear
+                showSearch
+                placeholder="选择已上传制品，自动带入下载地址/校验值/安装命令"
+                options={artifactOptions}
+                loading={artifactsQuery.isLoading}
+                filterOption={(input, option) => String(option?.label ?? "").toLowerCase().includes(input.toLowerCase())}
+                  onChange={(artifactId) => {
+                    const artifact = artifactsQuery.data?.items.find((item) => item.id === artifactId);
+                    if (!artifact) return;
+                  installUpdateForm.setFieldsValue(buildInstallParamsFromArtifact(artifact, devicePlatform));
+                }}
+              />
+            </Form.Item>
+            <Form.Item name="downloadUrl" label="下载地址" rules={[{ required: true, message: "请输入下载地址" }]}>
+              <Input placeholder="https://downloads.example.com/dmsx-agent/update.sh" />
+            </Form.Item>
+            <Form.Item
+              name="sha256"
+              label="SHA256"
+              rules={[
+                {
+                  pattern: /^$|^[0-9a-fA-F]{64}$/,
+                  message: "必须为空或 64 位十六进制字符串",
+                },
+              ]}
+            >
+              <Input placeholder="可选，建议填写" />
+            </Form.Item>
+            <Form.Item name="expectedVersion" label="期望版本">
+              <Input placeholder="例如 1.2.3；用于升级后版本确认" />
+            </Form.Item>
+            <Form.Item name="installerKind" label="安装器类型">
+              <Select
+                allowClear
+                options={[
+                  { value: "sh", label: "sh 脚本" },
+                  { value: "ps1", label: "PowerShell 脚本" },
+                  { value: "msi", label: "MSI" },
+                  { value: "exe", label: "EXE" },
+                  { value: "deb", label: "DEB" },
+                  { value: "rpm", label: "RPM" },
+                  { value: "pkg", label: "macOS PKG" },
+                  { value: "apk", label: "Android APK" },
+                ]}
+              />
+            </Form.Item>
+            <Form.Item name="interpreter" label="自定义安装命令解释器">
+              <Select
+                allowClear
+                options={[
+                  { value: "sh", label: "Sh" },
+                  { value: "bash", label: "Bash" },
+                  { value: "powershell", label: "PowerShell" },
+                ]}
+              />
+            </Form.Item>
+            <Form.Item
+              name="installCommand"
+              label="自定义安装命令"
+              tooltip="可选。可使用 {{file_path}}、{{download_url}}、{{sha256}} 占位符。留空则按安装器类型走 Agent 默认安装命令。"
+            >
+              <TextArea rows={4} placeholder="sh {{file_path}} --tenant example" />
+            </Form.Item>
+            <Form.Item name="timeout" label="超时(秒)">
+              <InputNumber min={60} max={3600} style={{ width: 160 }} />
+            </Form.Item>
+          </Form>
         </Space>
       </Modal>
 

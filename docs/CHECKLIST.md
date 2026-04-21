@@ -329,17 +329,19 @@
 - [x] 设备预注册增强：注册码、单设备 enrollment token、批量预注册与批量导出 Agent 启动命令
 - [x] 策略中心（Policies）— 列表 + 服务端搜索 + 创建/删除 + 批量操作 + CSV 导出
 - [x] 远程命令（Commands）— 列表 + 状态筛选 + 下发(含二次确认) + CSV 导出
-- [x] 应用分发（Artifacts）— 列表 + 搜索 + 上传 + SHA256 校验 + CSV 导出
+- [x] 应用分发（Artifacts）— 列表 + 搜索 + 上传 + SHA256 校验 + CSV 导出 + 结构化安装/升级元数据表单
 - [x] 安全合规（Compliance）— 统计 + 严重度/状态筛选 + 合规率(按设备去重) + CSV 导出
 - [x] 网络管控（Network）— 站点 + 隧道 + 带宽 + ⚠️演示数据标记
 - [x] AI 智慧中心（AiCenter）— 四 Tab + ⚠️演示数据标记
 - [x] 全局 AI 悬浮按钮
 - [x] 设备详情抽屉（Tabs：基本信息 / 设备影子 / 远控面板 / 远程桌面）
 - [x] 设备影子面板（ShadowPanel — 三列对比 Reported/Desired/Delta + JSON 编辑器 + 乐观并发）
-- [x] 远控面板（RemoteControl — 快捷操作网格 + 脚本执行器 + 操作历史 + 结果查看 + 擦除三重确认）
+- [x] 远控面板（RemoteControl — 快捷操作网格 + 脚本执行器 + install_update 预填弹窗 + 操作历史 + 结果查看 + 擦除三重确认）
 - [x] 远程桌面面板（RemoteDesktop — LiveKit WebRTC 订阅 + Data Channel 键鼠 + 状态反馈 / 重连 + RustDesk 备选）
 - [x] 策略详情抽屉（完整信息 + 作用域字段）
-- [x] 命令详情抽屉（payload JSON 高亮、状态标签、目标设备信息 + 执行结果展示 exit_code/stdout/stderr）
+- [x] 命令详情抽屉（payload JSON 高亮、install_update 版本确认、目标设备信息 + 执行结果展示 exit_code/stdout/stderr）
+- [x] 零接触安装页（按平台推荐首装/升级命令，联动租户制品 metadata）
+- [x] 通用终端代码块（命令/JSON/stdout/stderr 一键复制与统一展示）
 - [x] 系统设置页面（已接入后端：`GET/PUT /v1/config/settings/{key}`；前端支持在 UI 中配置并注入 `Authorization`）
 - [x] 策略编辑器（已接入后端保存：`POST /v1/tenants/{tid}/policies/editor`；前端支持在 UI 中配置活动租户与 `Authorization`）
 - [x] 审计日志查看页（已接入后端：`GET /v1/tenants/{tid}/audit-logs`；前端支持在 UI 中配置活动租户与 `Authorization`）

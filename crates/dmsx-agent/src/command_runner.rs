@@ -5,12 +5,13 @@ use tokio::process::Command as TokioCommand;
 use tracing::{error, info, warn};
 use dmsx_agent::api::{CommandItem, ListResponse, SubmitResultReq, UpdateStatusReq};
 use dmsx_agent::config::AgentConfig;
+use dmsx_agent::install_update::run_install_update;
 use dmsx_agent::script::run_script;
 
 use crate::desktop::{start_desktop_session, DesktopSession};
 
 fn should_apply_runner_timeout(action: &str) -> bool {
-    !matches!(action, "start_desktop" | "stop_desktop" | "reboot" | "shutdown")
+    !matches!(action, "start_desktop" | "stop_desktop" | "reboot" | "shutdown" | "install_update")
 }
 
 pub(crate) async fn poll_and_execute(
@@ -141,7 +142,7 @@ async fn execute_command(
         }
         "install_update" => {
             info!("install_update requested");
-            (0, "update acknowledged (stub)".into(), String::new())
+            run_install_update(client, &params).await
         }
         "smoke_noop" => {
             info!("smoke_noop — no side effects");

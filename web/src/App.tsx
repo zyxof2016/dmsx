@@ -242,7 +242,20 @@ export const AppLayout: React.FC = () => {
       locale={locale}
       theme={{
         algorithm,
-        token: { colorPrimary: "#1677ff", borderRadius: 6 },
+        token: {
+          colorPrimary: "#1677ff",
+          borderRadius: 6,
+          colorBgContainer: themeMode === "dark" ? "#141414" : "#ffffff",
+          colorBgElevated: themeMode === "dark" ? "#1f1f1f" : "#ffffff",
+        },
+        components: {
+          Card: {
+            borderRadiusLG: 8,
+          },
+          Modal: {
+            borderRadiusLG: 8,
+          },
+        },
       }}
     >
       <AntApp>

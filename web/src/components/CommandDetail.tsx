@@ -10,12 +10,14 @@ import {
   Tooltip,
   Card,
   Divider,
+  Space,
 } from "antd";
 import { CopyOutlined, CheckCircleOutlined, CloseCircleOutlined, LoadingOutlined } from "@ant-design/icons";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import dayjs from "dayjs";
 import { useCommand, useDevice, useCommandResult } from "../api/hooks";
 import { formatApiError } from "../api/errors";
+import { TerminalBlock } from "./TerminalBlock";
 
 const { Text } = Typography;
 
@@ -46,6 +48,13 @@ export const CommandDetailDrawer: React.FC = () => {
   const navigate = useNavigate();
   const { data: command, isLoading, error } = useCommand(commandId);
   const { data: targetDevice } = useDevice(command?.target_device_id);
+  const expectedVersion = command?.payload?.params && typeof command.payload.params === "object"
+    ? (command.payload.params as Record<string, unknown>).expected_version
+    : undefined;
+  const expectedVersionText = typeof expectedVersion === "string" ? expectedVersion : null;
+  const isInstallUpdate = (command?.payload?.action as string | undefined) === "install_update";
+  const versionConfirmed = Boolean(expectedVersionText && targetDevice?.agent_version === expectedVersionText);
+  const versionMismatch = Boolean(expectedVersionText && targetDevice?.agent_version && targetDevice.agent_version !== expectedVersionText);
 
   const isTerminal = command && ["succeeded", "failed", "expired", "cancelled"].includes(command.status);
   const isRunning = command && ["queued", "delivered", "acked", "running"].includes(command.status);
@@ -97,6 +106,16 @@ export const CommandDetailDrawer: React.FC = () => {
                   {targetDevice?.hostname ?? command.target_device_id}
                 </Text>
               </Descriptions.Item>
+              {isInstallUpdate && expectedVersionText ? (
+                <Descriptions.Item label="升级版本确认">
+                  <Space wrap>
+                    <Text>期望版本 {expectedVersionText}</Text>
+                    <Tag color={versionConfirmed ? "success" : versionMismatch ? "error" : "processing"}>
+                      {versionConfirmed ? "设备已确认新版本" : versionMismatch ? `当前为 ${targetDevice?.agent_version}` : "等待设备新心跳确认"}
+                    </Tag>
+                  </Space>
+                </Descriptions.Item>
+              ) : null}
               <Descriptions.Item label="目标设备 ID">
                 <Text code copyable={{ text: command.target_device_id }}>
                   {command.target_device_id}
@@ -114,19 +133,10 @@ export const CommandDetailDrawer: React.FC = () => {
                 </Descriptions.Item>
               )}
               <Descriptions.Item label="Payload (JSON)">
-                <pre
-                  style={{
-                    margin: 0,
-                    padding: 8,
-                    background: "#f5f5f5",
-                    borderRadius: 4,
-                    fontSize: 12,
-                    maxHeight: 300,
-                    overflow: "auto",
-                  }}
-                >
-                  {JSON.stringify(command.payload, null, 2)}
-                </pre>
+                <TerminalBlock 
+                  code={JSON.stringify(command.payload, null, 2)} 
+                  style={{ maxHeight: 300 }}
+                />
               </Descriptions.Item>
               <Descriptions.Item label="创建时间">
                 {dayjs(command.created_at).format("YYYY-MM-DD HH:mm:ss")}
@@ -176,37 +186,37 @@ export const CommandDetailDrawer: React.FC = () => {
                       上报: {dayjs(result.reported_at).format("YYYY-MM-DD HH:mm:ss")}
                     </Text>
                   </div>
+                  {isInstallUpdate && expectedVersionText ? (
+                    <Alert
+                      style={{ marginBottom: 12 }}
+                      type={versionConfirmed ? "success" : versionMismatch ? "warning" : "info"}
+                      showIcon
+                      message={versionConfirmed ? "设备已上报目标 Agent 版本" : versionMismatch ? "安装命令已结束，但设备当前版本与期望版本不一致" : "安装命令已结束，正在等待设备下一次心跳上报新版本"}
+                    />
+                  ) : null}
                   <div style={{ marginBottom: 8 }}>
                     <Text strong>stdout:</Text>
-                    <pre
-                      style={{
-                        background: "#f6ffed",
-                        padding: 8,
-                        borderRadius: 4,
-                        maxHeight: 200,
-                        overflow: "auto",
-                        fontSize: 12,
-                        border: "1px solid #b7eb8f",
-                      }}
-                    >
-                      {result.stdout || "(empty)"}
-                    </pre>
+                    <TerminalBlock 
+                      code={result.stdout || "(empty)"} 
+                      style={{ 
+                        marginTop: 4, 
+                        maxHeight: 200, 
+                        background: result.stdout ? "#f6ffed" : undefined,
+                        borderColor: result.stdout ? "#b7eb8f" : undefined,
+                      }} 
+                    />
                   </div>
                   <div>
                     <Text strong>stderr:</Text>
-                    <pre
-                      style={{
-                        background: "#fff2f0",
-                        padding: 8,
-                        borderRadius: 4,
-                        maxHeight: 200,
-                        overflow: "auto",
-                        fontSize: 12,
-                        border: "1px solid #ffa39e",
-                      }}
-                    >
-                      {result.stderr || "(empty)"}
-                    </pre>
+                    <TerminalBlock 
+                      code={result.stderr || "(empty)"} 
+                      style={{ 
+                        marginTop: 4, 
+                        maxHeight: 200, 
+                        background: result.stderr ? "#fff2f0" : undefined,
+                        borderColor: result.stderr ? "#ffa39e" : undefined,
+                      }} 
+                    />
                   </div>
                 </>
               )}

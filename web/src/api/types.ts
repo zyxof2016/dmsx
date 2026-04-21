@@ -181,6 +181,7 @@ export interface CreateArtifactReq {
   sha256: string;
   channel?: string;
   object_key: string;
+  metadata?: Record<string, unknown>;
 }
 
 // ---- Device Shadow ----

@@ -403,8 +403,9 @@ export function useUpdateCommandStatus() {
 
 // ---- Artifacts ----
 
-export function useArtifacts(params?: ListParams) {
-  const { tenantId } = useAppSession();
+export function useArtifacts(params?: ListParams, options?: { tenantId?: string; enabled?: boolean }) {
+  const session = useAppSession();
+  const tenantId = options?.tenantId ?? session.tenantId;
   return useQuery({
     queryKey: ["artifacts", tenantId, params ?? {}],
     queryFn: () =>
@@ -412,6 +413,7 @@ export function useArtifacts(params?: ListParams) {
         tenantPathFor(tenantId, `/artifacts${buildQuery(params)}`),
       ),
     placeholderData: keepPreviousData,
+    enabled: options?.enabled ?? true,
   });
 }
 

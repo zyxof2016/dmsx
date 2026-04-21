@@ -17,9 +17,10 @@ uuid.workspace = true
 chrono.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
-reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+reqwest = { version = "0.12", features = ["json", "rustls-tls", "stream"], default-features = false }
 sysinfo = "0.33"
 futures-util = "0.3"
+sha2 = "0.10"
 livekit = { version = "0.7", features = ["rustls-tls-webpki-roots"] }
 libwebrtc = "0.3"
 scrap = "0.5"

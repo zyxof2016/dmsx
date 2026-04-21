@@ -11,16 +11,19 @@ import {
   Tabs,
   Space,
   App,
+  Divider,
 } from "antd";
 import { CopyOutlined } from "@ant-design/icons";
 import { useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import dayjs from "dayjs";
 import { QRCodeSVG } from "qrcode.react";
-import { useDevice, useIssueDeviceEnrollmentToken, useRotateDeviceRegistrationCode } from "../api/hooks";
+import { useArtifacts, useDevice, useIssueDeviceEnrollmentToken, useRotateDeviceRegistrationCode } from "../api/hooks";
 import { ShadowPanel } from "./ShadowPanel";
 import { RemoteControlPanel } from "./RemoteControl";
+import { TerminalBlock } from "./TerminalBlock";
 import { formatApiError } from "../api/errors";
 import { useResourceAccess } from "../authz";
+import { normalizeDevicePlatform, selectRecommendedArtifact } from "../artifactMeta";
 
 const RemoteDesktopPanel = React.lazy(async () => {
   const mod = await import("./RemoteDesktop");
@@ -69,6 +72,8 @@ export const DeviceDetailDrawer: React.FC = () => {
   const rotateRegistrationCode = useRotateDeviceRegistrationCode();
   const issueEnrollmentToken = useIssueDeviceEnrollmentToken();
   const [enrollmentToken, setEnrollmentToken] = React.useState<string | null>(null);
+  const [recommendedUpgradeArtifactId, setRecommendedUpgradeArtifactId] = React.useState<string | undefined>(undefined);
+  const [upgradeTrigger, setUpgradeTrigger] = React.useState(0);
   const activeTab = search.tab ?? "info";
   const agentApiUrl = React.useMemo(
     () => window.localStorage.getItem("dmsx.agent_api_url") || "http://127.0.0.1:8080",
@@ -82,9 +87,15 @@ export const DeviceDetailDrawer: React.FC = () => {
       tenant_id: device.tenant_id,
       enrollment_token: enrollmentToken,
       mode: "zero-touch",
+      platform: device.platform === "macos" ? "linux" : device.platform,
     });
     return `dmsx://enroll?${params.toString()}`;
   }, [agentApiUrl, device, enrollmentToken]);
+  const artifactsQuery = useArtifacts({ limit: 100, offset: 0 }, { enabled: Boolean(device) });
+  const recommendedArtifact = React.useMemo(
+    () => device ? selectRecommendedArtifact(artifactsQuery.data?.items ?? [], normalizeDevicePlatform(device.platform)) : null,
+    [artifactsQuery.data?.items, device],
+  );
 
   return (
     <Drawer
@@ -165,7 +176,27 @@ export const DeviceDetailDrawer: React.FC = () => {
                       {device.os_version ?? "—"}
                     </Descriptions.Item>
                     <Descriptions.Item label="Agent 版本">
-                      {device.agent_version ?? "—"}
+                      <Space wrap>
+                        <Text>{device.agent_version ?? "—"}</Text>
+                        {recommendedArtifact ? (
+                          <Button
+                            size="small"
+                            disabled={!canWrite}
+                            onClick={() => {
+                              setRecommendedUpgradeArtifactId(recommendedArtifact.id);
+                              setUpgradeTrigger((value) => value + 1);
+                              navigate({
+                                to: "/devices/$deviceId",
+                                params: { deviceId: device.id },
+                                search: { tab: "remote" },
+                                replace: true,
+                              });
+                            }}
+                          >
+                            升级到 {recommendedArtifact.version}
+                          </Button>
+                        ) : null}
+                      </Space>
                     </Descriptions.Item>
                     <Descriptions.Item label="在线状态">
                       {stateTag(device.online_state)}
@@ -185,10 +216,10 @@ export const DeviceDetailDrawer: React.FC = () => {
                       {device.primary_group_id ?? "—"}
                     </Descriptions.Item>
                     <Descriptions.Item label="标签 (labels)">
-                      <Text code>{JSON.stringify(device.labels, null, 2)}</Text>
+                      <TerminalBlock code={JSON.stringify(device.labels, null, 2)} style={{ maxHeight: 200 }} />
                     </Descriptions.Item>
                     <Descriptions.Item label="能力 (capabilities)">
-                      <Text code>{JSON.stringify(device.capabilities, null, 2)}</Text>
+                      <TerminalBlock code={JSON.stringify(device.capabilities, null, 2)} style={{ maxHeight: 200 }} />
                     </Descriptions.Item>
                     <Descriptions.Item label="创建时间">
                       {dayjs(device.created_at).format("YYYY-MM-DD HH:mm:ss")}
@@ -248,16 +279,12 @@ export const DeviceDetailDrawer: React.FC = () => {
                                 打开零接触安装页
                               </Button>
                             ) : null}
-                            <Button
-                              size="small"
-                              onClick={async () => {
-                                const command = `DMSX_API_URL=${agentApiUrl} DMSX_TENANT_ID=${device.tenant_id} DMSX_DEVICE_ENROLLMENT_TOKEN='${enrollmentToken}' cargo run -p dmsx-agent`;
-                                await navigator.clipboard.writeText(command);
-                                message.success("Agent 启动命令已复制");
-                              }}
-                            >
-                              复制 Agent 启动命令
-                            </Button>
+                            <Divider style={{ margin: "12px 0" }} />
+                            <Text strong>Agent 启动命令 (开发测试用)</Text>
+                            <TerminalBlock 
+                              code={`DMSX_API_URL=${agentApiUrl} DMSX_TENANT_ID=${device.tenant_id} DMSX_DEVICE_ENROLLMENT_TOKEN='${enrollmentToken}' cargo run -p dmsx-agent`}
+                              style={{ width: "100%" }}
+                            />
                           </>
                         ) : (
                           <Text type="secondary">生成后可复制 token 或 enrollment URI 给设备侧 Agent 首次绑定使用。</Text>
@@ -279,6 +306,9 @@ export const DeviceDetailDrawer: React.FC = () => {
                   <RemoteControlPanel
                     deviceId={device.id}
                     deviceHostname={device.hostname ?? undefined}
+                    devicePlatform={device.platform}
+                    initialInstallUpdateArtifactId={recommendedUpgradeArtifactId}
+                    installUpdateTrigger={upgradeTrigger}
                   />
                 ),
               },

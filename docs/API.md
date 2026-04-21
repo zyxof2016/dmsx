@@ -92,8 +92,10 @@
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/v1/tenants/{tid}/devices/{did}/actions` | 下发设备操作（reboot / shutdown / lock_screen / run_script 等） |
+| POST | `/v1/tenants/{tid}/devices/{did}/actions` | 下发设备操作（reboot / shutdown / lock_screen / run_script / install_update 等） |
 | GET | `/v1/tenants/{tid}/devices/{did}/commands` | 查询该设备的命令历史 |
+
+补充说明：`install_update` 当前已支持最小可用参数集。建议在 `params` 中传入 `download_url`，并尽量同时传入 `sha256`；可选 `expected_version`、`installer_kind`（如 `sh` / `ps1` / `msi` / `exe` / `deb` / `rpm` / `pkg` / `apk`）、`install_command`（支持 `{{file_path}}`、`{{download_url}}`、`{{sha256}}` 占位符）、`interpreter` 与 `timeout`。Agent 会先下载到本地临时文件、校验 SHA256（若提供），再执行默认安装器或自定义安装命令，并在结束后清理临时文件。若传入 `expected_version`，前端可在命令结束后继续基于设备下一次心跳上报的 `agent_version` 做版本确认。
 
 ### 远程桌面（Remote Desktop）
 

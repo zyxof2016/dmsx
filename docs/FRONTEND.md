@@ -37,7 +37,12 @@
 - 设备列表现在展示 `registration_code`（注册码），搜索框也支持按注册码查找；注册弹窗可显式录入该码，留空则后端自动生成，便于用户先在平台预注册、再在设备侧 Agent 输入同一注册码完成精确绑定。
 - 设备详情抽屉现在支持：复制注册码、重置注册码、签发 enrollment token，并展示可直接复制的 enrollment URI 文本，便于给安装中的 Agent 做首次绑定。
 - 设备详情抽屉还支持直接复制 Agent 启动命令，并可跳转到独立“零接触安装页”；设备列表新增“批量预注册”弹窗，支持下载 CSV 模板、表头自动识别、粘贴或上传 CSV/TXT 批量导入、列级校验错误提示、最近批次历史回填，以及导出 `enrollment_token`、`enrollment_uri`、Agent 启动命令 CSV，同时支持一键复制 Linux/macOS、Windows、Android ADB 三种零接触启动脚本，覆盖批量部署与零接触注册场景。
-- 零接触安装页现在支持平台切换（Linux/macOS、Windows、Android/ADB）并带 OTA/制品建议，帮助把首装与后续 Agent OTA 升级串成一条运维路径。
+- 零接触安装页现在支持平台切换（Linux/macOS、Windows、Android/ADB），并会基于链接中的 `tenant_id` 直接查询该租户 `GET /v1/tenants/{tid}/artifacts` 制品列表，按平台优先推荐最近的稳定渠道 Agent 制品。若制品 `metadata` 中提供 `install_commands` / `upgrade_commands` / `download_url` 等字段，页面会直接生成“推荐首装命令”和“升级命令”，把注册和后续升级步骤压缩到复制两条命令即可；若未提供这些元数据，则回退为标准 Enrollment 环境变量启动命令或平台默认升级命令。当前 Agent 侧 `install_update` 已支持最小下载 / SHA256 校验 / 安装执行链路，但仍属于最小 OTA 基础能力，而不是完整的灰度发布 / 回滚体系。
+- “应用分发”页上传制品时现在改为结构化填写安装/升级元数据，不再要求用户手写整段 `metadata` JSON。可分别录入适用平台、`download_url`、`installer_kind`、按平台区分的 `install_commands` / `upgrade_commands`，再由前端统一组装为后端 `metadata`。
+- 设备详情页现在会基于设备平台自动推荐一个最合适的 stable 制品；在基本信息区可直接点“升级到 x.y.z”跳到远控面板并预填升级参数，减少“找制品 -> 选制品 -> 带参数”的步骤。
+- 命令详情页现在会对 `install_update` 额外展示“期望版本”和“设备当前 Agent 版本”的确认状态：命令执行成功后若设备下一次心跳把 `agent_version` 更新到 `expected_version`，前端会显示“设备已确认新版本”；否则会继续提示等待心跳或显示版本不一致。
+- 前端新增 `TerminalBlock` 通用组件，统一承载零接触命令、Enrollment URI、命令 payload、stdout/stderr 等长文本展示。该组件默认提供复制按钮、自动换行、水平滚动和与 Ant Design 主题联动的背景/边框色，避免 `<pre>`、`<Text code>` 在不同页面里重复堆样式。
+- `App.tsx` 的全局主题 token 也同步微调：卡片与弹窗圆角统一抬高到 `borderRadiusLG: 8`，并针对暗色模式单独设置 `colorBgContainer` 与 `colorBgElevated`，保证零接触命令块、远控结果和详情抽屉在亮暗主题下都有一致层次感。
 - 平台首页会在本地 `localStorage` 中记录最近创建成功的租户（仅浏览器侧会话辅助，不代表后端存在租户列表接口），用于弥补当前控制面还缺少 `GET /v1/tenants` 的可见性空白。
 - 平台租户目录页展示跨租户汇总视图：支持按租户名称或 UUID 搜索、分页浏览，并可一键切换当前活动租户后跳转到设备页继续排查。
 - 平台配额页当前提供统一配额表和使用率条形进度：已用量来自后端真实计数（租户 / 设备 / 命令 / 制品），上限由控制面环境变量配置。
@@ -109,6 +114,11 @@ web/
 
 **基本信息 Tab**：设备全量字段 Descriptions 展示。
 
+补充交互：
+- 可直接生成 Enrollment Token 与二维码。
+- 若当前租户下存在匹配平台的稳定制品，会在 Agent 版本旁显示“升级到 x.y.z”入口，并跳转到远控面板预填升级参数。
+- `labels` / `capabilities` / Agent 启动命令改用统一终端块展示，便于复制和查看长文本。
+
 **设备影子 Tab**（ShadowPanel）：
 - 三列对比：Reported（Agent 上报） / Desired（期望状态）/ Delta（差异）
 - JSON 语法高亮（灰色背景）
@@ -117,8 +127,10 @@ web/
 **远控面板 Tab**（RemoteControl）：
 - 快捷操作网格：重启、锁屏、关机、收集日志、安装更新等
 - 脚本执行器：选解释器、输入脚本、超时设置
+- 安装更新弹窗：可直接选择已上传制品，自动带入 `download_url`、`sha256`、`expected_version`、`installer_kind`、自定义安装命令与推荐解释器
 - 危险操作（wipe）三重确认：弹框 + 主机名输入 + 二次确认
 - 命令历史表格 + 执行结果查看（exit_code / stdout / stderr）
+- 执行结果里的 `stdout` / `stderr` 统一使用终端块组件展示，并保留成功/失败流的颜色区分
 
 **远程桌面 Tab**（RemoteDesktop）：
 - **LiveKit 主链路**：点击「连接」→ POST 创建会话 → 浏览器基于 `token/livekit_url` 入房 → 订阅远端视频轨

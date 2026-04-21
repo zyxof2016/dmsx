@@ -2218,7 +2218,8 @@ components:
         action:
           type: string
           description: 'One of reboot, lock_screen, shutdown, wipe, run_script, install_update, collect_logs. run_script requires
-            params.script; wipe requires params.confirm = true.
+            params.script; wipe requires params.confirm = true; install_update requires params.download_url and may additionally use
+            params.sha256, params.expected_version, params.installer_kind, params.install_command, params.interpreter, params.timeout.
 
             '
           enum:
