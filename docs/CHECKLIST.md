@@ -96,7 +96,7 @@
 - [x] `dmsx-agent` 首轮模块化拆分（`config` / `api` / `telemetry` / `rustdesk` / `command_runner` / `desktop`）
 - [x] `dmsx-agent` 第二轮模块化拆分（`app` / `device` / `platform`，`main.rs` 仅保留入口）
 - [x] `dmsx-agent` 第三轮模块化拆分（`desktop` 细分为 `capture` / `input` / `session`，停止逻辑收口为方法）
-- [x] `dmsx-agent` 远程桌面输入注入稳态增强（坐标按 `remoteWidth/remoteHeight` 缩放 + clamp；修饰键状态同步防粘住；普通按键/鼠标按钮丢释放的超时兜底；滚轮支持 `deltaX` 水平滚动并对超大 delta 归一化；超时阈值可通过 `DMSX_AGENT_DESKTOP_STUCK_KEY_TIMEOUT_SECONDS` / `DMSX_AGENT_DESKTOP_STUCK_MOUSE_TIMEOUT_SECONDS` 调优；输入通道会定期记录 active / idle 健康日志，并在会话退出时输出 `input_event_count` 与 `last_input_age_secs` 摘要，便于排查“画面存在但长时间无输入”场景；`cargo test -p dmsx-agent --lib`、`cargo check -p dmsx-agent` 已通过）
+- [x] `dmsx-agent` 远程桌面输入注入稳态增强（坐标按 `remoteWidth/remoteHeight` 缩放 + clamp；修饰键状态同步防粘住；普通按键/鼠标按钮丢释放的超时兜底；滚轮支持 `deltaX` 水平滚动并对超大 delta 归一化；超时阈值可通过 `DMSX_AGENT_DESKTOP_STUCK_KEY_TIMEOUT_SECONDS` / `DMSX_AGENT_DESKTOP_STUCK_MOUSE_TIMEOUT_SECONDS` 调优；输入通道会定期记录 active / idle 健康日志，并在会话退出时输出 `input_event_count` 与 `last_input_age_secs` 摘要；active / idle 日志间隔可通过 `DMSX_AGENT_DESKTOP_INPUT_ACTIVE_LOG_INTERVAL_SECS` / `DMSX_AGENT_DESKTOP_INPUT_IDLE_WARN_INTERVAL_SECS` 调整，便于排查“画面存在但长时间无输入”场景；`cargo test -p dmsx-agent --lib`、`cargo check -p dmsx-agent` 已通过）
 - [x] `dmsx-agent` 首批测试用例已补充（`device` 注册/心跳 + `script` 参数分支，`cargo test -p dmsx-agent --lib` 已通过）
 - [x] `dmsx-agent` `run_script` 超时语义已收紧：超过 `params.timeout` 后 Agent 会主动终止子进程并回报 `124 timeout ... process terminated`，避免控制面已判超时但设备侧脚本仍继续后台运行；已补超时测试覆盖（`cargo test -p dmsx-agent --lib`）
 - [x] `dmsx-agent` 命令轮询已支持单命令执行上限：通过 `DMSX_COMMAND_EXEC_TIMEOUT_SECS`（默认 300s）限制单条命令在 runner 层占用时间，超限后直接回报 `124 agent command timeout ...`，避免个别长命令拖住整个轮询批次；`cargo test -p dmsx-agent --lib`、`cargo build -p dmsx-agent` 已通过

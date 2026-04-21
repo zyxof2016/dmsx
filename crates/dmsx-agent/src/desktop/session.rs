@@ -17,6 +17,9 @@ pub struct DesktopSession {
     handle: tokio::task::JoinHandle<()>,
 }
 
+const DEFAULT_INPUT_ACTIVE_LOG_INTERVAL: Duration = Duration::from_secs(10);
+const DEFAULT_INPUT_IDLE_WARN_INTERVAL: Duration = Duration::from_secs(30);
+
 impl DesktopSession {
     pub async fn stop(self) {
         self.stop_flag.store(true, Ordering::Relaxed);
@@ -163,6 +166,14 @@ async fn desktop_stream_loop(
     let mut last_input_at: Option<Instant> = None;
     let mut last_input_log_at: Option<Instant> = None;
     let mut last_idle_warn_at: Option<Instant> = None;
+    let active_log_interval = env_duration_seconds(
+        "DMSX_AGENT_DESKTOP_INPUT_ACTIVE_LOG_INTERVAL_SECS",
+        DEFAULT_INPUT_ACTIVE_LOG_INTERVAL,
+    );
+    let idle_warn_interval = env_duration_seconds(
+        "DMSX_AGENT_DESKTOP_INPUT_IDLE_WARN_INTERVAL_SECS",
+        DEFAULT_INPUT_IDLE_WARN_INTERVAL,
+    );
 
     if let Some(tx) = ready_tx {
         let _ = tx.send(Ok(()));
@@ -188,7 +199,7 @@ async fn desktop_stream_loop(
                 input_event_count += 1;
                 last_input_at = Some(now);
                 if last_input_log_at
-                    .map(|at| now.duration_since(at) >= Duration::from_secs(10))
+                    .map(|at| now.duration_since(at) >= active_log_interval)
                     .unwrap_or(true)
                 {
                     debug!(session_id = %session_id, room = %room_name, "desktop input channel active");
@@ -202,9 +213,9 @@ async fn desktop_stream_loop(
 
         let now = Instant::now();
         if let Some(last_input) = last_input_at {
-            if now.duration_since(last_input) >= Duration::from_secs(30)
+            if now.duration_since(last_input) >= idle_warn_interval
                 && last_idle_warn_at
-                    .map(|at| now.duration_since(at) >= Duration::from_secs(30))
+                    .map(|at| now.duration_since(at) >= idle_warn_interval)
                     .unwrap_or(true)
             {
                 warn!(
@@ -231,4 +242,13 @@ async fn desktop_stream_loop(
         "desktop session input summary"
     );
     Ok(())
+}
+
+fn env_duration_seconds(name: &str, default: Duration) -> Duration {
+    std::env::var(name)
+        .ok()
+        .and_then(|value| value.trim().parse::<u64>().ok())
+        .map(Duration::from_secs)
+        .filter(|value| !value.is_zero())
+        .unwrap_or(default)
 }
