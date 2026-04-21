@@ -185,7 +185,7 @@
 - [x] `GET/POST /v1/tenants/{tid}/artifacts` 制品列表/创建（sqlx 持久化）
 - [x] `GET /v1/tenants/{tid}/compliance/findings` 合规发现列表（sqlx 持久化）
 - [x] `GET /v1/tenants/{tid}/stats` Dashboard 聚合统计（sqlx）
-- [x] `POST /v1/tenants/{tid}/devices/{did}/desktop/session` 创建远程桌面会话（LiveKit Token + Agent `start_desktop`；**2026-04-20** 已在本机对 `dmsx-api` + LiveKit + Redis + 真实 `dmsx-agent` 做最小闭环验证）
+- [x] `POST /v1/tenants/{tid}/devices/{did}/desktop/session` 创建远程桌面会话（LiveKit Token + Agent `start_desktop`；**2026-04-20** 已在本机对 `dmsx-api` + LiveKit + Redis + 真实 `dmsx-agent` 做最小闭环验证；Agent 现仅在 **屏幕轨发布成功且输入注入器初始化成功** 后才回报 ready，避免“能看屏但无法输入”仍被判成功）
 - [x] `DELETE /v1/tenants/{tid}/devices/{did}/desktop/session?session_id=` 终止指定远程桌面会话（`stop_desktop`）
 - [x] `GET /v1/config/livekit` LiveKit 配置查询
 - [~] `POST /v1/tenants/{tid}/ai/anomalies` AI 异常检测（规则引擎 stub）

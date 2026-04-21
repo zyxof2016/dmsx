@@ -153,15 +153,15 @@ async fn desktop_stream_loop(
         "connected to LiveKit room and published screen track"
     );
 
+    let mut enigo = enigo::Enigo::new(&enigo::Settings::default())
+        .map_err(|e| format!("failed to create input injector: {e:?}"))?;
+    let mut input_state = InputState::default();
+
     if let Some(tx) = ready_tx {
         let _ = tx.send(Ok(()));
     }
 
     let capture_task = spawn_capture_loop(video_source.clone(), stop_flag.clone());
-
-    let mut enigo = enigo::Enigo::new(&enigo::Settings::default())
-        .map_err(|e| format!("failed to create input injector: {e:?}"))?;
-    let mut input_state = InputState::default();
 
     while !stop_flag.load(Ordering::Relaxed) {
         match tokio::time::timeout(std::time::Duration::from_millis(250), room_events.recv()).await {
