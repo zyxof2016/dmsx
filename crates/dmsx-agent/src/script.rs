@@ -1,7 +1,8 @@
 use std::process::Stdio;
 
+use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::process::Command as TokioCommand;
-use tracing::info;
+use tracing::{info, warn};
 
 pub async fn run_script(params: &serde_json::Value) -> (i32, String, String) {
     let script = match params.get("script").and_then(|v| v.as_str()) {
@@ -31,26 +32,42 @@ pub async fn run_script(params: &serde_json::Value) -> (i32, String, String) {
         .stderr(Stdio::piped())
         .spawn();
 
-    let child = match child {
+    let mut child = match child {
         Ok(c) => c,
         Err(e) => return (1, String::new(), format!("spawn failed: {e}")),
     };
 
-    match tokio::time::timeout(
-        std::time::Duration::from_secs(timeout_secs),
-        child.wait_with_output(),
-    )
-    .await
-    {
-        Ok(Ok(output)) => {
-            let code = output.status.code().unwrap_or(-1);
-            let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    let mut stdout = child.stdout.take();
+    let mut stderr = child.stderr.take();
+
+    match tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), child.wait()).await {
+        Ok(Ok(status)) => {
+            let stdout = read_pipe_to_string(&mut stdout).await;
+            let stderr = read_pipe_to_string(&mut stderr).await;
+            let code = status.code().unwrap_or(-1);
             (code, stdout, stderr)
         }
         Ok(Err(e)) => (1, String::new(), format!("process error: {e}")),
-        Err(_) => (124, String::new(), format!("timeout after {timeout_secs}s")),
+        Err(_) => {
+            warn!(interpreter, timeout_secs, "script exceeded timeout; terminating child process");
+            if let Err(e) = child.kill().await {
+                warn!(interpreter, timeout_secs, error = %e, "failed to kill timed out script process");
+            }
+            let _ = child.wait().await;
+            (124, String::new(), format!("timeout after {timeout_secs}s; process terminated"))
+        }
     }
+}
+
+async fn read_pipe_to_string<R>(pipe: &mut Option<R>) -> String
+where
+    R: AsyncRead + Unpin,
+{
+    let mut bytes = Vec::new();
+    if let Some(reader) = pipe.as_mut() {
+        let _ = reader.read_to_end(&mut bytes).await;
+    }
+    String::from_utf8_lossy(&bytes).to_string()
 }
 
 pub fn resolve_script_command(
@@ -103,5 +120,27 @@ mod tests {
         assert_eq!(result.0, 1);
         assert!(result.1.is_empty());
         assert_eq!(result.2, "missing script parameter");
+    }
+
+    #[tokio::test]
+    async fn run_script_kills_process_on_timeout() {
+        let params = if cfg!(target_os = "windows") {
+            serde_json::json!({
+                "script": "Start-Sleep -Seconds 3",
+                "interpreter": "powershell",
+                "timeout": 1
+            })
+        } else {
+            serde_json::json!({
+                "script": "sleep 3",
+                "interpreter": "sh",
+                "timeout": 1
+            })
+        };
+
+        let result = run_script(&params).await;
+        assert_eq!(result.0, 124);
+        assert!(result.1.is_empty());
+        assert!(result.2.contains("process terminated"));
     }
 }
