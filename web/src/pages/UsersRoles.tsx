@@ -1,9 +1,11 @@
 import React from "react";
-import { Alert, Button, Card, Empty, Space, Table, Typography, Spin, Tag } from "antd";
+import { Alert, Button, Card, Empty, Input, Segmented, Space, Table, Typography, Spin, Tag } from "antd";
+import { SearchOutlined } from "@ant-design/icons";
 import { useAppI18n } from "../appProviders";
 import { useRbacRoles } from "../api/hooks";
 import { useResourceAccess } from "../authz";
 import { ReadonlyBanner } from "../components/ReadonlyBanner";
+import type { RbacRole } from "../api/types";
 
 type UserRow = {
   id: string;
@@ -15,6 +17,8 @@ type UserRow = {
 export const UsersRolesPage: React.FC = () => {
   const { t } = useAppI18n();
   const { canWrite } = useResourceAccess("platformWrite");
+  const [scopeFilter, setScopeFilter] = React.useState<"all" | "platform" | "tenant">("all");
+  const [search, setSearch] = React.useState("");
 
   const { data: roles, isLoading: rolesLoading, error: rolesError, refetch } = useRbacRoles();
 
@@ -26,6 +30,39 @@ export const UsersRolesPage: React.FC = () => {
       roles: ["TenantAdmin"],
     },
   ]);
+
+  const filteredRoles = React.useMemo(() => {
+    const keyword = search.trim().toLowerCase();
+    return (roles ?? []).filter((role) => {
+      if (scopeFilter !== "all" && role.scope !== scopeFilter) return false;
+      if (!keyword) return true;
+      return [role.name, role.scope, role.description].some((value) =>
+        value.toLowerCase().includes(keyword),
+      );
+    });
+  }, [roles, scopeFilter, search]);
+
+  const groupedRoles = React.useMemo(() => {
+    return {
+      platform: filteredRoles.filter((role) => role.scope === "platform"),
+      tenant: filteredRoles.filter((role) => role.scope === "tenant"),
+    };
+  }, [filteredRoles]);
+
+  const roleColumns = [
+    { title: "角色", dataIndex: "name", key: "name" },
+    { title: "说明", dataIndex: "description", key: "description" },
+    {
+      title: "平台权限",
+      key: "platformAccess",
+      render: (_: unknown, row: RbacRole) => `${row.platform_read ? "读" : "-"}${row.platform_write ? "/写" : ""}`,
+    },
+    {
+      title: "租户权限",
+      key: "tenantAccess",
+      render: (_: unknown, row: RbacRole) => `${row.tenant_read ? "读" : "-"}${row.tenant_write ? "/写" : ""}`,
+    },
+  ];
 
   return (
     <Space direction="vertical" style={{ width: "100%" }}>
@@ -54,35 +91,45 @@ export const UsersRolesPage: React.FC = () => {
           <Spin spinning={rolesLoading}>
             <Space direction="vertical" style={{ width: "100%" }}>
               <Space wrap>
-                {(roles ?? []).map((r) => (
+                <Input
+                  prefix={<SearchOutlined />}
+                  placeholder="搜索角色名或说明"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  allowClear
+                  style={{ width: 260 }}
+                />
+                <Segmented
+                  value={scopeFilter}
+                  onChange={(value) => setScopeFilter(value as "all" | "platform" | "tenant")}
+                  options={[
+                    { label: "全部", value: "all" },
+                    { label: "平台", value: "platform" },
+                    { label: "租户", value: "tenant" },
+                  ]}
+                />
+              </Space>
+              <Space wrap>
+                {filteredRoles.map((r) => (
                   <Tag key={r.name}>{r.name}</Tag>
                 ))}
-                {!rolesLoading && (roles?.length ?? 0) === 0 && (
+                {!rolesLoading && filteredRoles.length === 0 && (
                   <Typography.Text type="secondary">暂无数据</Typography.Text>
                 )}
               </Space>
-              {(roles?.length ?? 0) > 0 && (
-                <Table
-                  size="small"
-                  pagination={false}
-                  rowKey="name"
-                  dataSource={roles}
-                  columns={[
-                    { title: "角色", dataIndex: "name", key: "name" },
-                    { title: "范围", dataIndex: "scope", key: "scope" },
-                    { title: "说明", dataIndex: "description", key: "description" },
-                    {
-                      title: "平台权限",
-                      key: "platformAccess",
-                      render: (_, row) => `${row.platform_read ? "读" : "-"}${row.platform_write ? "/写" : ""}`,
-                    },
-                    {
-                      title: "租户权限",
-                      key: "tenantAccess",
-                      render: (_, row) => `${row.tenant_read ? "读" : "-"}${row.tenant_write ? "/写" : ""}`,
-                    },
-                  ]}
-                />
+              {(filteredRoles.length ?? 0) > 0 && (
+                <Space direction="vertical" style={{ width: "100%" }} size="large">
+                  {(scopeFilter === "all" || scopeFilter === "platform") && groupedRoles.platform.length > 0 && (
+                    <Card size="small" title="平台角色">
+                      <Table size="small" pagination={false} rowKey="name" dataSource={groupedRoles.platform} columns={roleColumns} />
+                    </Card>
+                  )}
+                  {(scopeFilter === "all" || scopeFilter === "tenant") && groupedRoles.tenant.length > 0 && (
+                    <Card size="small" title="租户角色">
+                      <Table size="small" pagination={false} rowKey="name" dataSource={groupedRoles.tenant} columns={roleColumns} />
+                    </Card>
+                  )}
+                </Space>
               )}
             </Space>
           </Spin>

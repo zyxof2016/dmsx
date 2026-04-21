@@ -137,6 +137,7 @@ web/
 - **PlatformQuotas**：平台配额表，展示配额项、已用量、总量、单位和使用率。
 - **PlatformAuditLogs**：全局审计表，支持 `action` / `resource_type` 过滤与分页。
 - **PlatformHealth**：平台运行摘要，展示租户数、设备数、策略数、命令数、制品数、审计数，以及 LiveKit / Redis / Command Bus 状态。
+- **UsersRoles**：基于后端 RBAC 角色清单展示平台/租户角色矩阵，支持按范围分组与关键字筛选；用户 CRUD 仍是占位态。
 
 ### 全局 AI 入口
 - 右下角 `FloatButton`（机器人图标）：任意页面一键跳转 AI 中心
