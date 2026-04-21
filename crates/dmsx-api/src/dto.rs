@@ -88,6 +88,7 @@ impl DeviceListParams {
 #[derive(Debug, Deserialize)]
 pub struct CreateDeviceReq {
     pub platform: DevicePlatform,
+    pub registration_code: Option<String>,
     pub hostname: Option<String>,
     pub os_version: Option<String>,
     pub agent_version: Option<String>,
@@ -102,6 +103,9 @@ impl CreateDeviceReq {
         if let Some(h) = &self.hostname {
             check_len("hostname", h, 1, 253)?;
         }
+        if let Some(code) = &self.registration_code {
+            check_len("registration_code", code, 4, 64)?;
+        }
         if let Some(v) = &self.os_version {
             check_len("os_version", v, 1, 200)?;
         }
@@ -114,6 +118,7 @@ impl CreateDeviceReq {
 
 #[derive(Debug, Deserialize)]
 pub struct UpdateDeviceReq {
+    pub registration_code: Option<String>,
     pub hostname: Option<String>,
     pub os_version: Option<String>,
     pub agent_version: Option<String>,
@@ -124,6 +129,9 @@ pub struct UpdateDeviceReq {
 
 impl UpdateDeviceReq {
     pub fn validate(&self) -> Result<(), DmsxError> {
+        if let Some(code) = &self.registration_code {
+            check_len("registration_code", code, 4, 64)?;
+        }
         if let Some(h) = &self.hostname {
             check_len("hostname", h, 1, 253)?;
         }

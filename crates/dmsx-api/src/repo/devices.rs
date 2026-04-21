@@ -6,10 +6,16 @@ use crate::dto::{CreateDeviceReq, DeviceListParams, UpdateDeviceReq};
 
 const DEVICE_WHERE: &str = "\
     WHERE tenant_id = $1 \
-    AND ($2::text IS NULL OR hostname ILIKE '%' || $2 || '%') \
+    AND ($2::text IS NULL OR hostname ILIKE '%' || $2 || '%' OR registration_code ILIKE '%' || $2 || '%') \
     AND ($3::device_platform IS NULL OR platform = $3) \
     AND ($4::enroll_status IS NULL OR enroll_status = $4) \
     AND ($5::online_state IS NULL OR online_state = $5)";
+
+fn normalized_registration_code(raw: Option<&str>) -> Option<String> {
+    raw.map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_ascii_uppercase())
+}
 
 pub async fn list_devices(
     conn: &mut PgConnection,
@@ -66,12 +72,13 @@ pub async fn create_device(
     r: &CreateDeviceReq,
 ) -> Result<Device, sqlx::Error> {
     sqlx::query_as(
-        "INSERT INTO devices (tenant_id, platform, hostname, os_version, agent_version, \
+        "INSERT INTO devices (tenant_id, platform, registration_code, hostname, os_version, agent_version, \
          site_id, primary_group_id, labels) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *",
+         VALUES ($1, $2, COALESCE($3, CONCAT('DEV-', UPPER(SUBSTRING(REPLACE($1::text, '-', '') FROM 1 FOR 4)), '-', UPPER(RIGHT(REPLACE(gen_random_uuid()::text, '-', ''), 12)))), $4, $5, $6, $7, $8, $9) RETURNING *",
     )
     .bind(tid)
     .bind(r.platform)
+    .bind(normalized_registration_code(r.registration_code.as_deref()))
     .bind(&r.hostname)
     .bind(&r.os_version)
     .bind(&r.agent_version)
@@ -90,17 +97,19 @@ pub async fn update_device(
 ) -> Result<Option<Device>, sqlx::Error> {
     sqlx::query_as(
         "UPDATE devices SET \
-         hostname       = COALESCE($3, hostname), \
-         os_version     = COALESCE($4, os_version), \
-         agent_version  = COALESCE($5, agent_version), \
-         enroll_status  = COALESCE($6, enroll_status), \
-         online_state   = COALESCE($7, online_state), \
-         labels         = COALESCE($8, labels), \
+         registration_code = COALESCE($3, registration_code), \
+         hostname       = COALESCE($4, hostname), \
+         os_version     = COALESCE($5, os_version), \
+         agent_version  = COALESCE($6, agent_version), \
+         enroll_status  = COALESCE($7, enroll_status), \
+         online_state   = COALESCE($8, online_state), \
+         labels         = COALESCE($9, labels), \
          updated_at     = now() \
          WHERE tenant_id = $1 AND id = $2 RETURNING *",
     )
     .bind(tid)
     .bind(did)
+    .bind(normalized_registration_code(r.registration_code.as_deref()))
     .bind(&r.hostname)
     .bind(&r.os_version)
     .bind(&r.agent_version)

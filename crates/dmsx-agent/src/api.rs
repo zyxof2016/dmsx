@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Serialize)]
 pub struct CreateDeviceReq {
     pub platform: String,
+    pub registration_code: Option<String>,
     pub hostname: Option<String>,
     pub os_version: Option<String>,
     pub agent_version: Option<String>,
@@ -12,6 +13,7 @@ pub struct CreateDeviceReq {
 #[derive(Debug, Deserialize)]
 pub struct Device {
     pub id: String,
+    pub registration_code: String,
     pub hostname: Option<String>,
 }
 

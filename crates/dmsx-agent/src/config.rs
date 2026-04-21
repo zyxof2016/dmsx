@@ -2,6 +2,7 @@
 pub struct AgentConfig {
     pub api_base: String,
     pub tenant_id: String,
+    pub registration_code: Option<String>,
     pub heartbeat_interval: std::time::Duration,
     pub command_poll_interval: std::time::Duration,
     pub command_execution_timeout: std::time::Duration,
@@ -15,6 +16,10 @@ impl AgentConfig {
                 .unwrap_or_else(|_| "http://127.0.0.1:8080".into()),
             tenant_id: std::env::var("DMSX_TENANT_ID")
                 .unwrap_or_else(|_| "00000000-0000-0000-0000-000000000001".into()),
+            registration_code: std::env::var("DMSX_DEVICE_REGISTRATION_CODE")
+                .ok()
+                .map(|value| value.trim().to_ascii_uppercase())
+                .filter(|value| !value.is_empty()),
             heartbeat_interval: std::time::Duration::from_secs(
                 std::env::var("DMSX_HEARTBEAT_SECS")
                     .ok()

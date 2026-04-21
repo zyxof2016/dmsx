@@ -180,6 +180,7 @@ pub struct Group {
 pub struct Device {
     pub id: DeviceId,
     pub tenant_id: TenantId,
+    pub registration_code: String,
     pub site_id: Option<SiteId>,
     pub primary_group_id: Option<GroupId>,
     pub platform: DevicePlatform,

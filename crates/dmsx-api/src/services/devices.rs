@@ -52,7 +52,11 @@ pub async fn create_device(
         "create",
         "device",
         &device.id.0.to_string(),
-        json!({"platform": format!("{:?}", body.platform), "hostname": &body.hostname}),
+        json!({
+            "platform": format!("{:?}", body.platform),
+            "hostname": &body.hostname,
+            "registration_code": &device.registration_code,
+        }),
     )
     .await
     .ok();
@@ -92,7 +96,17 @@ pub async fn update_device(
         .await
         .map_err(map_db_error)?
         .ok_or_else(|| DmsxError::NotFound(format!("device {did}")))?;
-    audit::write_audit(&mut *tx, tid, "update", "device", &did.to_string(), json!({}))
+    audit::write_audit(
+        &mut *tx,
+        tid,
+        "update",
+        "device",
+        &did.to_string(),
+        json!({
+            "registration_code": &device.registration_code,
+            "hostname": &device.hostname,
+        }),
+    )
         .await
         .ok();
     tx.commit().await.map_err(map_db_error)?;

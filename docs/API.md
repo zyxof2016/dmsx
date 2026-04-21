@@ -64,9 +64,11 @@
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/v1/tenants/{tid}/devices` | 列表（支持 `search`, `platform`, `enroll_status`, `online_state` 筛选 + 分页） |
-| POST | `/v1/tenants/{tid}/devices` | 注册/预置设备 |
+| GET | `/v1/tenants/{tid}/devices` | 列表（支持 `search`, `platform`, `enroll_status`, `online_state` 筛选 + 分页；`search` 同时匹配 `hostname` 与 `registration_code`） |
+| POST | `/v1/tenants/{tid}/devices` | 注册/预置设备（支持可选 `registration_code`；留空时后端自动生成稳定注册码） |
 | GET/PATCH/DELETE | `/v1/tenants/{tid}/devices/{did}` | 查询/更新标签分组/吊销 |
+
+补充说明：设备模型支持稳定的人可见绑定标识 `registration_code`。建议平台预注册设备时显式录入该码，后续 Agent 首次启动通过同一注册码精确复用该设备记录，而不是仅靠 `hostname` 模糊匹配。
 
 ### 设备影子（Device Shadow）
 

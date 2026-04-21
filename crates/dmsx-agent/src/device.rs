@@ -13,16 +13,25 @@ pub async fn find_or_register_device(
 ) -> Result<String, Box<dyn std::error::Error>> {
     let hostname = hostname();
     let platform = detect_platform();
+    let search = cfg
+        .registration_code
+        .as_deref()
+        .unwrap_or(hostname.as_str());
 
     let url = cfg.tenant_url(&format!(
-        "/devices?search={hostname}&platform={platform}&limit=5"
+        "/devices?search={search}&platform={platform}&limit=5"
     ));
     let resp: ListResponse<Device> = client.get(&url).send().await?.json().await?;
 
     if let Some(existing) = resp
         .items
         .into_iter()
-        .find(|device| device.hostname.as_deref() == Some(hostname.as_str()))
+        .find(|device| {
+            cfg.registration_code
+                .as_deref()
+                .map(|code| device.registration_code == code)
+                .unwrap_or_else(|| device.hostname.as_deref() == Some(hostname.as_str()))
+        })
     {
         info!(device_id = %existing.id, "found existing device registration");
         return Ok(existing.id);
@@ -31,6 +40,7 @@ pub async fn find_or_register_device(
     info!("no existing device found, registering new device...");
     let body = CreateDeviceReq {
         platform: platform.into(),
+        registration_code: cfg.registration_code.clone(),
         hostname: Some(hostname.clone()),
         os_version: os_version(),
         agent_version: Some(env!("CARGO_PKG_VERSION").into()),
@@ -117,6 +127,7 @@ mod tests {
         AgentConfig {
             api_base: server.uri(),
             tenant_id: "test-tenant".into(),
+            registration_code: None,
             heartbeat_interval: std::time::Duration::from_secs(30),
             command_poll_interval: std::time::Duration::from_secs(10),
             command_execution_timeout: std::time::Duration::from_secs(300),
@@ -145,7 +156,7 @@ mod tests {
             .and(query_param("limit", "5"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "items": [
-                    { "id": "dev-existing", "hostname": current_hostname }
+                    { "id": "dev-existing", "registration_code": "DEV-EXISTING01", "hostname": current_hostname }
                 ]
             })))
             .expect(1)
@@ -176,6 +187,7 @@ mod tests {
             .and(path("/v1/tenants/test-tenant/devices"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "id": "dev-new",
+                "registration_code": "DEV-NEW000001",
                 "hostname": current_hostname
             })))
             .expect(1)
@@ -184,6 +196,31 @@ mod tests {
 
         let device_id = find_or_register_device(&client, &cfg).await.unwrap();
         assert_eq!(device_id, "dev-new");
+    }
+
+    #[tokio::test]
+    async fn find_or_register_device_prefers_registration_code_when_present() {
+        let server = MockServer::start().await;
+        let mut cfg = test_cfg(&server);
+        cfg.registration_code = Some("DEV-BIND-0001".into());
+        let client = test_client();
+
+        Mock::given(method("GET"))
+            .and(path("/v1/tenants/test-tenant/devices"))
+            .and(query_param("search", "DEV-BIND-0001"))
+            .and(query_param("platform", detect_platform()))
+            .and(query_param("limit", "5"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "items": [
+                    { "id": "dev-bound", "registration_code": "DEV-BIND-0001", "hostname": "different-host" }
+                ]
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let device_id = find_or_register_device(&client, &cfg).await.unwrap();
+        assert_eq!(device_id, "dev-bound");
     }
 
     #[tokio::test]
