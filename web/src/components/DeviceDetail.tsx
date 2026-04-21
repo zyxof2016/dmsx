@@ -235,6 +235,19 @@ export const DeviceDetailDrawer: React.FC = () => {
                             {enrollmentUri ? (
                               <Text code copyable={{ text: enrollmentUri }}>{enrollmentUri}</Text>
                             ) : null}
+                            {enrollmentUri ? (
+                              <Button
+                                size="small"
+                                onClick={() => {
+                                  const url = new URL("/zero-touch-enroll", window.location.origin);
+                                  const search = enrollmentUri.replace("dmsx://enroll?", "");
+                                  url.search = search;
+                                  window.open(url.toString(), "_blank", "noopener,noreferrer");
+                                }}
+                              >
+                                打开零接触安装页
+                              </Button>
+                            ) : null}
                             <Button
                               size="small"
                               onClick={async () => {

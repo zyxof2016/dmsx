@@ -62,7 +62,7 @@ chmod +x ~/.termux/boot/start-agent.sh
 
 ## 方案 B：PC 交叉编译 + ADB 推送
 
-适用于批量设备部署、零接触注册或无法在设备上编译的场景。
+适用于批量设备部署、零接触注册、ADB 批量下发或无法在设备上编译的场景。
 
 ### 前提条件
 - Android NDK（通过 Android Studio 或独立下载）

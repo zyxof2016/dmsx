@@ -67,6 +67,24 @@ const platformOptions = [
   { value: "other", label: "其他" },
 ];
 
+type BatchValidationError = {
+  line: number;
+  reason: string;
+  raw: string;
+};
+
+const BATCH_RESULT_KEY = "dmsx.devices.batch_result";
+
+function downloadTextFile(filename: string, content: string) {
+  const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 export const DevicesPage: React.FC = () => {
   const navigate = useNavigate();
   const { message } = App.useApp();
@@ -74,8 +92,17 @@ export const DevicesPage: React.FC = () => {
   const [open, setOpen] = useState(false);
   const [batchOpen, setBatchOpen] = useState(false);
   const [batchText, setBatchText] = useState("");
-  const [batchResult, setBatchResult] = useState<BatchCreateDevicesResponse | null>(null);
+  const [batchResult, setBatchResult] = useState<BatchCreateDevicesResponse | null>(() => {
+    const raw = window.localStorage.getItem(BATCH_RESULT_KEY);
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw) as BatchCreateDevicesResponse;
+    } catch {
+      return null;
+    }
+  });
   const [batchIssueTokens, setBatchIssueTokens] = useState(true);
+  const [batchErrors, setBatchErrors] = useState<BatchValidationError[]>([]);
   const [agentApiUrl, setAgentApiUrl] = useState(
     () => window.localStorage.getItem("dmsx.agent_api_url") || "http://127.0.0.1:8080",
   );
@@ -133,24 +160,37 @@ export const DevicesPage: React.FC = () => {
 
   const handleBatchCreate = async () => {
     try {
+      const validationErrors: BatchValidationError[] = [];
       const items = batchText
         .split("\n")
-        .map((line) => line.trim())
-        .filter(Boolean)
-        .map((line) => {
-          const [registration_code, hostname, platform] = line.split(",").map((v) => v.trim());
+        .map((line, index) => ({ raw: line, line: index + 1, value: line.trim() }))
+        .filter((entry) => entry.value)
+        .map((entry) => {
+          const [registration_code, hostname, platform] = entry.value.split(",").map((v) => v.trim());
+          if (!hostname) {
+            validationErrors.push({ line: entry.line, reason: "缺少主机名", raw: entry.raw });
+          }
+          if (platform && !platformOptions.some((option) => option.value === platform)) {
+            validationErrors.push({ line: entry.line, reason: `不支持的平台 ${platform}`, raw: entry.raw });
+          }
           return {
             registration_code: registration_code || undefined,
             hostname: hostname || undefined,
             platform: (platform || "other") as CreateDeviceReq["platform"],
           };
         });
+      setBatchErrors(validationErrors);
+      if (validationErrors.length > 0) {
+        message.error(`批量数据存在 ${validationErrors.length} 处问题，请先修正`);
+        return;
+      }
       const result = await batchCreateMut.mutateAsync({
         items,
         issue_enrollment_tokens: batchIssueTokens,
         ttl_seconds: 1800,
       });
       setBatchResult(result);
+      window.localStorage.setItem(BATCH_RESULT_KEY, JSON.stringify(result));
       message.success(`已批量预注册 ${result.devices.length} 台设备`);
     } catch (e: unknown) {
       message.error(formatApiError(e));
@@ -534,6 +574,17 @@ export const DevicesPage: React.FC = () => {
           <Typography.Text type="secondary">
             每行一台设备，格式：`注册码,主机名,平台`。例如：`DEV-BJ-0001,BJ-KIOSK-01,windows`
           </Typography.Text>
+          <Button
+            icon={<DownloadOutlined />}
+            onClick={() =>
+              downloadTextFile(
+                "device-batch-template.csv",
+                "registration_code,hostname,platform\nDEV-BJ-0001,BJ-KIOSK-01,windows\nDEV-BJ-0002,BJ-KIOSK-02,linux\n",
+              )
+            }
+          >
+            下载 CSV 模板
+          </Button>
           <Input
             value={agentApiUrl}
             onChange={(e) => {
@@ -563,6 +614,22 @@ export const DevicesPage: React.FC = () => {
             onChange={(e) => setBatchText(e.target.value)}
             placeholder="DEV-BJ-0001,BJ-KIOSK-01,windows"
           />
+          {batchErrors.length > 0 ? (
+            <Alert
+              type="error"
+              showIcon
+              message="批量数据校验失败"
+              description={
+                <Space direction="vertical">
+                  {batchErrors.map((item) => (
+                    <Typography.Text key={`${item.line}-${item.reason}`}>
+                      第 {item.line} 行：{item.reason}，原始内容：`{item.raw || "(空行)"}`
+                    </Typography.Text>
+                  ))}
+                </Space>
+              }
+            />
+          ) : null}
           {batchResult ? (
             <>
               <Typography.Text strong>批量结果</Typography.Text>
@@ -618,6 +685,15 @@ export const DevicesPage: React.FC = () => {
                 }}
               >
                 复制 Android ADB 脚本
+              </Button>
+              <Button
+                onClick={() => {
+                  setBatchResult(null);
+                  window.localStorage.removeItem(BATCH_RESULT_KEY);
+                  message.success("已清空批量结果缓存");
+                }}
+              >
+                清空批量结果缓存
               </Button>
             </>
           ) : null}
