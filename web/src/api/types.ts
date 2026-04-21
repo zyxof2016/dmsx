@@ -260,6 +260,29 @@ export interface Tenant {
   updated_at?: string;
 }
 
+export interface PlatformTenantSummary {
+  id: string;
+  name: string;
+  created_at: string;
+  device_count: number;
+  policy_count: number;
+  command_count: number;
+}
+
+export interface PlatformQuota {
+  key: string;
+  limit: number;
+  used: number;
+  unit: string;
+}
+
+export interface PlatformHealth {
+  status: string;
+  tenant_count: number;
+  device_count: number;
+  command_count: number;
+}
+
 export interface PolicyRevision {
   id: string;
   policy_id: string;

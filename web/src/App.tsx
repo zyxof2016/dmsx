@@ -19,6 +19,7 @@ import {
   SafetyOutlined,
   SettingOutlined,
   AppstoreOutlined,
+  ClusterOutlined,
   CloudServerOutlined,
   AuditOutlined,
   RobotOutlined,
@@ -68,6 +69,38 @@ const NAV_ITEMS: NavItem[] = [
     path: "/platform",
     labelKey: "mode.platform",
     icon: <SettingOutlined />,
+    mode: "platform",
+    requiresPlatformAdmin: true,
+  },
+  {
+    key: "platformTenants",
+    path: "/platform/tenants",
+    labelKey: "nav.platformTenants",
+    icon: <ClusterOutlined />,
+    mode: "platform",
+    requiresPlatformAdmin: true,
+  },
+  {
+    key: "platformQuotas",
+    path: "/platform/quotas",
+    labelKey: "nav.platformQuotas",
+    icon: <AppstoreOutlined />,
+    mode: "platform",
+    requiresPlatformAdmin: true,
+  },
+  {
+    key: "platformAudit",
+    path: "/platform/audit",
+    labelKey: "nav.platformAudit",
+    icon: <AuditOutlined />,
+    mode: "platform",
+    requiresPlatformAdmin: true,
+  },
+  {
+    key: "platformHealth",
+    path: "/platform/health",
+    labelKey: "nav.platformHealth",
+    icon: <DashboardOutlined />,
     mode: "platform",
     requiresPlatformAdmin: true,
   },
@@ -187,6 +220,15 @@ function evaluateItemAccess(
     : { allowed: false, reason: "role" };
 }
 
+function matchNavItem(pathname: string): NavItem | undefined {
+  return [...NAV_ITEMS]
+    .sort((a, b) => b.path.length - a.path.length)
+    .find((item) => {
+      if (item.path === "/") return pathname === "/";
+      return pathname === item.path || pathname.startsWith(`${item.path}/`);
+    });
+}
+
 export const AppLayout: React.FC = () => {
   const { lang } = useAppI18n();
   const { themeMode } = useThemeMode();
@@ -216,10 +258,8 @@ const AppShell: React.FC = () => {
     select: (s) => s.location.pathname,
   });
 
-  const topSegment = "/" + (pathname.split("/")[1] || "");
-  const selectedKey =
-    NAV_ITEMS.find((item) => item.path === topSegment)?.key ??
-    "dashboard";
+  const selectedNavItem = matchNavItem(pathname);
+  const selectedKey = selectedNavItem?.key ?? "dashboard";
 
   const { t, lang, setLang } = useAppI18n();
   const { themeMode, setThemeMode } = useThemeMode();
@@ -245,10 +285,9 @@ const AppShell: React.FC = () => {
       ),
     [appMode, canUsePlatformMode, effectiveRoles],
   );
-  const breadcrumbLabel = t(`nav.${selectedKey}`);
+  const breadcrumbLabel = selectedNavItem ? t(selectedNavItem.labelKey) : t("nav.dashboard");
   const modeLabel = t(`mode.${appMode}`);
   const defaultModePath = visibleNavItems[0]?.path ?? "/";
-  const selectedNavItem = NAV_ITEMS.find((item) => item.key === selectedKey);
   const selectedAccess = evaluateItemAccess(
     selectedNavItem,
     appMode,

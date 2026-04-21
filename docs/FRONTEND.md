@@ -24,8 +24,8 @@
 - 生产语义不变：签发方在 JWT 中写入路径租户许可（**`tenant_id` ∪ `allowed_tenant_ids`**）及可选 **`tenant_roles`**（按活动租户覆盖角色）；前端切换租户本质上仍是切换请求路径中的 `{tenant_id}`。
 - 前端显式区分 **平台管理模式** 与 **租户管理模式**：平台模式仅展示全局配置类入口（如系统设置、RBAC 角色），租户模式展示 `/v1/tenants/{tenant_id}/...` 资源页。模式切换仅影响导航和默认落点，后端 JWT/RBAC 仍是唯一权限裁决者。
 - 平台模式现在有独立首页 `/platform`，用于承载平台级摘要和后续扩展入口，不再默认直接落到“系统设置”。
-- 平台首页当前已加入平台视角的占位分区（租户目录 / 平台审计 / 容量配额），用于和租户模式下的设备/策略/命令视角明确分层。
-- 平台首页当前也开始接入真实平台接口：`GET /v1/config/rbac/roles`、`GET /v1/config/livekit`、`GET /v1/config/settings/{key}`，以及 `POST /v1/tenants`（创建租户）。由于后端尚未提供租户列表接口，租户目录卡片目前仍以“当前会话 + 创建能力”形式呈现。
+- 平台模式已补齐 4 个独立平台子页：`/platform/tenants`、`/platform/quotas`、`/platform/audit`、`/platform/health`，分别对应平台租户目录、平台配额、全局审计和平台健康视图。
+- 平台页当前接入的真实平台接口包括：`GET /v1/config/rbac/roles`、`GET /v1/config/livekit`、`GET /v1/config/settings/{key}`、`POST /v1/tenants`、`GET /v1/config/tenants`、`GET /v1/config/audit-logs`、`GET /v1/config/platform-health`、`GET /v1/config/quotas`。
 - 平台首页的租户目录卡片已从“一键 demo 创建”升级为真实表单创建：用户可输入租户名称并直接调用 `POST /v1/tenants`，成功后在卡片内展示新租户 ID。
 - 当前前端会从 JWT **本地解析** `tenant_id`、`allowed_tenant_ids`、`roles`、`tenant_roles` 以收敛导航：若当前 JWT 不具备 `PlatformAdmin`，则平台模式入口会被禁用并自动回落到租户模式；若当前活动租户不在 JWT 许可集合内，前端会回退到 JWT 主租户。
 - 当用户直接输入 URL 访问不属于当前模式或角色不允许的页面时，前端不再静默跳页，而是展示明确的 **403 风格访问受限页**，并提供“返回当前模式首页 / 切换模式”操作。这样能区分“页面不存在”和“当前模式/权限不匹配”。
@@ -35,6 +35,10 @@
 - 对于主要租户页面（设备 / 策略 / 命令 / 制品 / 策略编辑器）以及平台首页，当前若角色只读，页面顶部会直接出现统一的只读提示条，不必等到 hover 按钮才知道当前页不可写。
 - 设备详情中的三个写面板（设备影子 / 远控面板 / 远程桌面）也已补上同样的只读提示条，保证从列表页到详情页的权限反馈一致。
 - 平台首页会在本地 `localStorage` 中记录最近创建成功的租户（仅浏览器侧会话辅助，不代表后端存在租户列表接口），用于弥补当前控制面还缺少 `GET /v1/tenants` 的可见性空白。
+- 平台租户目录页展示跨租户汇总视图：每个租户的设备数、策略数、命令数与创建时间，帮助平台管理员快速识别活跃租户。
+- 平台配额页当前提供统一配额表和使用率条形进度，配额值仍为控制面内置静态配置，后续可再替换为真实计量来源。
+- 平台全局审计页支持按 `action`、`resource_type` 过滤 `GET /v1/config/audit-logs`，作为租户级审计页之外的跨租户排障入口。
+- 平台健康页聚合 `GET /v1/config/platform-health` 与 `GET /v1/config/livekit`，展示 API / LiveKit 的平台级运行摘要。
 - 远程桌面页已额外做两处稳定化：卸载清理不再因 callback 引用变化而误触发；高频 `mousemove` 输入改为按 `requestAnimationFrame` 节流，减少切 tab 和连接后主线程被输入事件洪峰压住的风险。
 
 ## 目录结构
@@ -61,7 +65,12 @@ web/
     │   ├── Artifacts.tsx        # 应用分发列表页
     │   ├── Compliance.tsx       # 安全合规页
     │   ├── Network.tsx          # 网络管控页
-    │   └── AiCenter.tsx         # AI 智慧中心
+    │   ├── AiCenter.tsx         # AI 智慧中心
+    │   ├── PlatformOverview.tsx # 平台首页
+    │   ├── PlatformTenants.tsx  # 平台租户目录
+    │   ├── PlatformQuotas.tsx   # 平台配额
+    │   ├── PlatformAuditLogs.tsx# 平台全局审计
+    │   └── PlatformHealth.tsx   # 平台健康
     └── components/
         ├── DeviceDetail.tsx     # 设备详情抽屉（Tabs：基本信息/影子/远控/远程桌面）
         ├── ShadowPanel.tsx      # 设备影子面板（三列对比 + JSON 编辑器）
@@ -122,6 +131,13 @@ web/
 3. **智能助手**：对话式交互（NL → API 操作）+ 操作按钮
 4. **预测维护**：时间线展示预测风险 + 概率 + ETA + 智能处置
 
+### 平台页（Platform）
+- **PlatformOverview**：平台会话摘要、平台角色模板、租户权限覆盖、创建租户入口、最近创建租户记录。
+- **PlatformTenants**：跨租户目录表，展示租户名称、ID、设备数、策略数、命令数、创建时间。
+- **PlatformQuotas**：平台配额表，展示配额项、已用量、总量、单位和使用率。
+- **PlatformAuditLogs**：全局审计表，支持 `action` / `resource_type` 过滤与分页。
+- **PlatformHealth**：平台运行摘要，展示租户数、设备数、命令数、LiveKit 启用状态。
+
 ### 全局 AI 入口
 - 右下角 `FloatButton`（机器人图标）：任意页面一键跳转 AI 中心
 
@@ -144,6 +160,13 @@ web/
 | `useArtifacts` / `useCreateArtifact` | 制品管理 |
 | `useFindings` | 合规发现 |
 | `useStats` | Dashboard 统计（15s 轮询） |
+| `useRbacRoles` | RBAC 角色模板 |
+| `useSystemSetting` / `useUpsertSystemSetting` | 系统设置 |
+| `useCreateTenant` | 创建租户 |
+| `usePlatformTenants` | 平台租户目录 |
+| `usePlatformQuotas` | 平台配额 |
+| `usePlatformAuditLogs` | 平台全局审计 |
+| `usePlatformHealth` | 平台健康摘要 |
 
 ## 与后端对接
 

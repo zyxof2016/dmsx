@@ -36,6 +36,9 @@ import type {
   SystemSettingUpsertReq,
   RbacRole,
   Tenant,
+  PlatformTenantSummary,
+  PlatformQuota,
+  PlatformHealth,
 } from "./types";
 
 // ---- Dashboard ----
@@ -421,6 +424,46 @@ export function useRbacRoles() {
 export function useCreateTenant() {
   return useMutation({
     mutationFn: (body: { name: string }) => api.post<Tenant>("/v1/tenants", body),
+  });
+}
+
+export function usePlatformTenants() {
+  return useQuery({
+    queryKey: ["platformTenants"],
+    queryFn: () => api.get<PlatformTenantSummary[]>("/v1/config/tenants"),
+    retry: false,
+  });
+}
+
+export function usePlatformAuditLogs(params?: AuditLogListParams) {
+  const q: Record<string, string | number | undefined> = {
+    limit: params?.limit,
+    offset: params?.offset,
+    action: params?.action,
+    resource_type: params?.resource_type,
+  };
+  return useQuery({
+    queryKey: ["platformAuditLogs", params ?? {}],
+    queryFn: () => api.get<ListResponse<AuditLog>>(`/v1/config/audit-logs${buildQuery(q)}`),
+    placeholderData: keepPreviousData,
+    retry: false,
+  });
+}
+
+export function usePlatformHealth() {
+  return useQuery({
+    queryKey: ["platformHealth"],
+    queryFn: () => api.get<PlatformHealth>("/v1/config/platform-health"),
+    refetchInterval: 15_000,
+    retry: false,
+  });
+}
+
+export function usePlatformQuotas() {
+  return useQuery({
+    queryKey: ["platformQuotas"],
+    queryFn: () => api.get<ListResponse<PlatformQuota>>("/v1/config/quotas"),
+    retry: false,
   });
 }
 

@@ -20,6 +20,26 @@ const PlatformOverviewPage = React.lazy(async () => {
   return { default: mod.PlatformOverviewPage };
 });
 
+const PlatformTenantsPage = React.lazy(async () => {
+  const mod = await import("./pages/PlatformTenants");
+  return { default: mod.PlatformTenantsPage };
+});
+
+const PlatformQuotasPage = React.lazy(async () => {
+  const mod = await import("./pages/PlatformQuotas");
+  return { default: mod.PlatformQuotasPage };
+});
+
+const PlatformAuditLogsPage = React.lazy(async () => {
+  const mod = await import("./pages/PlatformAuditLogs");
+  return { default: mod.PlatformAuditLogsPage };
+});
+
+const PlatformHealthPage = React.lazy(async () => {
+  const mod = await import("./pages/PlatformHealth");
+  return { default: mod.PlatformHealthPage };
+});
+
 const DevicesPage = React.lazy(async () => {
   const mod = await import("./pages/Devices");
   return { default: mod.DevicesPage };
@@ -131,6 +151,30 @@ const platformRoute = createRoute({
   component: withLazyBoundary(PlatformOverviewPage),
 });
 
+const platformTenantsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/platform/tenants",
+  component: withLazyBoundary(PlatformTenantsPage),
+});
+
+const platformQuotasRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/platform/quotas",
+  component: withLazyBoundary(PlatformQuotasPage),
+});
+
+const platformAuditLogsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/platform/audit",
+  component: withLazyBoundary(PlatformAuditLogsPage),
+});
+
+const platformHealthRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/platform/health",
+  component: withLazyBoundary(PlatformHealthPage),
+});
+
 // --- Devices (nested: list + detail drawer) ---
 const devicesRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -231,6 +275,10 @@ const usersRolesRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   indexRoute,
   platformRoute,
+  platformTenantsRoute,
+  platformQuotasRoute,
+  platformAuditLogsRoute,
+  platformHealthRoute,
   devicesRoute.addChildren([devicesIndexRoute, deviceDetailRoute]),
   policiesRoute.addChildren([policiesIndexRoute, policyDetailRoute]),
   commandsRoute.addChildren([commandsIndexRoute, commandDetailRoute]),
