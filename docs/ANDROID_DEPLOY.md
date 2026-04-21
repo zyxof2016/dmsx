@@ -25,6 +25,8 @@ cargo build --bin dmsx-agent --release
 
 # 5. 运行 Agent
 export DMSX_API_URL="http://<PC局域网IP>:8080"
+# 若平台已预注册并生成 enrollment token，推荐同时注入：
+# export DMSX_DEVICE_ENROLLMENT_TOKEN="<token>"
 ./target/release/dmsx-agent
 ```
 
@@ -88,7 +90,7 @@ adb push target/aarch64-linux-android/release/dmsx-agent /data/local/tmp/
 adb shell chmod +x /data/local/tmp/dmsx-agent
 
 # 6. 在设备上运行
-adb shell "DMSX_API_URL=http://<PC_IP>:8080 /data/local/tmp/dmsx-agent"
+adb shell "DMSX_API_URL=http://<PC_IP>:8080 DMSX_DEVICE_ENROLLMENT_TOKEN=<token> /data/local/tmp/dmsx-agent"
 ```
 
 ---

@@ -15,6 +15,8 @@ import {
   Spin,
   Alert,
   Empty,
+  Upload,
+  Checkbox,
 } from "antd";
 import {
   SearchOutlined,
@@ -27,6 +29,8 @@ import {
   DeleteOutlined,
   DownloadOutlined,
   EyeOutlined,
+  UploadOutlined,
+  CopyOutlined,
 } from "@ant-design/icons";
 import { Outlet, useNavigate } from "@tanstack/react-router";
 import dayjs from "dayjs";
@@ -71,6 +75,7 @@ export const DevicesPage: React.FC = () => {
   const [batchOpen, setBatchOpen] = useState(false);
   const [batchText, setBatchText] = useState("");
   const [batchResult, setBatchResult] = useState<BatchCreateDevicesResponse | null>(null);
+  const [batchIssueTokens, setBatchIssueTokens] = useState(true);
   const [search, setSearch] = useState("");
   const [platformFilter, setPlatformFilter] = useState<string>();
   const [stateFilter, setStateFilter] = useState<string>();
@@ -139,7 +144,7 @@ export const DevicesPage: React.FC = () => {
         });
       const result = await batchCreateMut.mutateAsync({
         items,
-        issue_enrollment_tokens: true,
+        issue_enrollment_tokens: batchIssueTokens,
         ttl_seconds: 1800,
       });
       setBatchResult(result);
@@ -147,6 +152,39 @@ export const DevicesPage: React.FC = () => {
     } catch (e: unknown) {
       message.error(formatApiError(e));
     }
+  };
+
+  const buildEnrollmentUri = (tenantId: string, token: string) => {
+    const params = new URLSearchParams({
+      api_url: "http://127.0.0.1:8080",
+      tenant_id: tenantId,
+      enrollment_token: token,
+      mode: "zero-touch",
+    });
+    return `dmsx://enroll?${params.toString()}`;
+  };
+
+  const buildAgentCommand = (tenantId: string, token: string) =>
+    `DMSX_API_URL=http://127.0.0.1:8080 DMSX_TENANT_ID=${tenantId} DMSX_DEVICE_ENROLLMENT_TOKEN='${token}' cargo run -p dmsx-agent`;
+
+  const buildZeroTouchScript = () => {
+    if (!batchResult) return "";
+    const tokenMap = new Map(
+      batchResult.enrollment_tokens.map((token) => [token.device_id, token]),
+    );
+    return batchResult.devices
+      .map((device) => {
+        const token = tokenMap.get(device.id)?.token ?? "";
+        return [
+          `# ${device.hostname ?? device.registration_code}`,
+          `export DMSX_API_URL=http://127.0.0.1:8080`,
+          `export DMSX_TENANT_ID=${device.tenant_id}`,
+          `export DMSX_DEVICE_ENROLLMENT_TOKEN='${token}'`,
+          `cargo run -p dmsx-agent`,
+          "",
+        ].join("\n");
+      })
+      .join("\n");
   };
 
   if (error) {
@@ -456,6 +494,20 @@ export const DevicesPage: React.FC = () => {
           <Typography.Text type="secondary">
             每行一台设备，格式：`注册码,主机名,平台`。例如：`DEV-BJ-0001,BJ-KIOSK-01,windows`
           </Typography.Text>
+          <Upload
+            beforeUpload={async (file) => {
+              const text = await file.text();
+              setBatchText(text.replace(/\r\n/g, "\n"));
+              return false;
+            }}
+            showUploadList={false}
+            accept=".csv,.txt"
+          >
+            <Button icon={<UploadOutlined />}>上传 CSV / TXT</Button>
+          </Upload>
+          <Checkbox checked={batchIssueTokens} onChange={(e) => setBatchIssueTokens(e.target.checked)}>
+            同时签发 enrollment token（推荐零接触注册）
+          </Checkbox>
           <Input.TextArea
             rows={10}
             value={batchText}
@@ -478,13 +530,27 @@ export const DevicesPage: React.FC = () => {
                       hostname: device.hostname,
                       platform: device.platform,
                       enrollment_token: tokenMap.get(device.id)?.token ?? "",
-                      enrollment_command: `DMSX_API_URL=http://127.0.0.1:8080 DMSX_TENANT_ID=${device.tenant_id} DMSX_DEVICE_ENROLLMENT_TOKEN='${tokenMap.get(device.id)?.token ?? ""}' cargo run -p dmsx-agent`,
+                      enrollment_uri: tokenMap.get(device.id)
+                        ? buildEnrollmentUri(device.tenant_id, tokenMap.get(device.id)?.token ?? "")
+                        : "",
+                      enrollment_command: tokenMap.get(device.id)
+                        ? buildAgentCommand(device.tenant_id, tokenMap.get(device.id)?.token ?? "")
+                        : "",
                     })),
                     "device-batch-enrollment.csv",
                   );
                 }}
               >
                 导出 token / 启动命令 CSV
+              </Button>
+              <Button
+                icon={<CopyOutlined />}
+                onClick={async () => {
+                  await navigator.clipboard.writeText(buildZeroTouchScript());
+                  message.success("零接触启动脚本已复制");
+                }}
+              >
+                复制零接触启动脚本
               </Button>
             </>
           ) : null}

@@ -71,7 +71,16 @@ export const DeviceDetailDrawer: React.FC = () => {
   const [enrollmentToken, setEnrollmentToken] = React.useState<string | null>(null);
   const activeTab = search.tab ?? "info";
 
-  const enrollmentUri = enrollmentToken ? `dmsx://enroll?tenant_id=${device?.tenant_id}&token=${encodeURIComponent(enrollmentToken)}` : null;
+  const enrollmentUri = React.useMemo(() => {
+    if (!enrollmentToken || !device) return null;
+    const params = new URLSearchParams({
+      api_url: "http://127.0.0.1:8080",
+      tenant_id: device.tenant_id,
+      enrollment_token: enrollmentToken,
+      mode: "zero-touch",
+    });
+    return `dmsx://enroll?${params.toString()}`;
+  }, [device, enrollmentToken]);
 
   return (
     <Drawer
