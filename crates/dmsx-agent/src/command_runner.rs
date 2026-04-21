@@ -9,6 +9,10 @@ use dmsx_agent::script::run_script;
 
 use crate::desktop::{start_desktop_session, DesktopSession};
 
+fn should_apply_runner_timeout(action: &str) -> bool {
+    !matches!(action, "start_desktop" | "stop_desktop" | "reboot" | "shutdown")
+}
+
 pub(crate) async fn poll_and_execute(
     client: &Client,
     cfg: &AgentConfig,
@@ -150,24 +154,29 @@ async fn execute_command(
     }
     };
 
-    let (exit_code, stdout, stderr) = match tokio::time::timeout(cfg.command_execution_timeout, execution).await {
-        Ok(result) => result,
-        Err(_) => {
-            error!(
-                command_id = %cmd_id,
-                action = %action,
-                timeout_secs = cfg.command_execution_timeout.as_secs(),
-                "command execution exceeded agent timeout"
-            );
-            (
-                124,
-                String::new(),
-                format!(
-                    "agent command timeout after {}s",
-                    cfg.command_execution_timeout.as_secs()
-                ),
-            )
+    let (exit_code, stdout, stderr) = if should_apply_runner_timeout(action) {
+        match tokio::time::timeout(cfg.command_execution_timeout, execution).await {
+            Ok(result) => result,
+            Err(_) => {
+                error!(
+                    command_id = %cmd_id,
+                    action = %action,
+                    timeout_secs = cfg.command_execution_timeout.as_secs(),
+                    "command execution exceeded agent timeout"
+                );
+                (
+                    124,
+                    String::new(),
+                    format!(
+                        "agent command timeout after {}s",
+                        cfg.command_execution_timeout.as_secs()
+                    ),
+                )
+            }
         }
+    } else {
+        info!(command_id = %cmd_id, action = %action, "skipping global runner timeout for command type");
+        execution.await
     };
 
     let result_url = cfg.tenant_url(&format!("/commands/{cmd_id}/result"));
