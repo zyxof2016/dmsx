@@ -56,6 +56,13 @@ export interface DeviceEnrollmentBatchResponse {
   created_at: string;
 }
 
+export interface DeviceEnrollmentBatchSummary {
+  batch_id: string;
+  devices: Device[];
+  enrollment_tokens: DeviceEnrollmentToken[];
+  created_at: string;
+}
+
 export interface Policy {
   id: string;
   tenant_id: string;

@@ -39,6 +39,7 @@ import {
   useCreateDevice,
   useBatchCreateDevices,
   useDeviceEnrollmentBatch,
+  useDeviceEnrollmentBatches,
   useDeleteDevice,
   exportCsv,
 } from "../api/hooks";
@@ -173,6 +174,7 @@ export const DevicesPage: React.FC = () => {
     }
   });
   const { data: storedBatchResult } = useDeviceEnrollmentBatch(storedBatch?.batchId);
+  const { data: batchHistory } = useDeviceEnrollmentBatches({ limit: 10, offset: 0 });
   const [batchResult, setBatchResult] = useState<BatchCreateDevicesResponse | DeviceEnrollmentBatchResponse | null>(null);
   const [batchIssueTokens, setBatchIssueTokens] = useState(true);
   const [batchErrors, setBatchErrors] = useState<BatchValidationError[]>([]);
@@ -777,6 +779,32 @@ export const DevicesPage: React.FC = () => {
                 清空批量结果缓存
               </Button>
             </>
+          ) : null}
+          {batchHistory?.items?.length ? (
+            <Card size="small" title="最近批次历史">
+              <Space direction="vertical" style={{ width: "100%" }}>
+                {batchHistory.items.map((batch) => (
+                  <Space key={batch.batch_id} wrap>
+                    <Typography.Text code>{batch.batch_id}</Typography.Text>
+                    <Typography.Text>{new Date(batch.created_at).toLocaleString()}</Typography.Text>
+                    <Typography.Text>{batch.devices.length} 台设备</Typography.Text>
+                    <Button
+                      size="small"
+                      onClick={() => {
+                        setStoredBatch({ batchId: batch.batch_id });
+                        setBatchResult(batch);
+                        window.localStorage.setItem(
+                          BATCH_RESULT_KEY,
+                          JSON.stringify({ batchId: batch.batch_id }),
+                        );
+                      }}
+                    >
+                      回填本批次
+                    </Button>
+                  </Space>
+                ))}
+              </Space>
+            </Card>
           ) : null}
         </Space>
       </Modal>

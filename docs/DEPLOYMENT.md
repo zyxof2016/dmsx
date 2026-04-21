@@ -299,7 +299,7 @@ spec:
 | `DMSX_DEVICE_REGISTRATION_CODE` | （未设置） | Agent 首次绑定时使用的人可见设备注册码；设置后会优先按该码复用已预注册设备 |
 | `DMSX_DEVICE_ENROLLMENT_TOKEN` | （未设置） | Agent 首次绑定时使用的 enrollment token；设置后会优先走 token 认领流程 |
 
-批量部署建议：平台侧批量预注册并导入/导出 CSV，每行可包含 `registration_code`、`hostname`、`platform`；前端提供 CSV 模板下载、列级校验提示与批量结果本地缓存。结果中导出 `enrollment_token`、`enrollment_uri` 与启动命令模板，并支持独立零接触安装页。前端还支持本地配置 Agent API URL，并直接复制 Linux/macOS、Windows、Android ADB 三种脚本。设备侧可由脚本、MDM、工厂预置或扫码流程直接注入 `DMSX_DEVICE_ENROLLMENT_TOKEN` 启动 Agent，实现零接触注册。
+批量部署建议：平台侧批量预注册并导入/导出 CSV，每行可包含 `registration_code`、`hostname`、`platform`；前端提供 CSV 模板下载、表头自动识别、列级校验提示与最近批次历史回填。结果中导出 `enrollment_token`、`enrollment_uri` 与启动命令模板，并支持独立零接触安装页。前端还支持本地配置 Agent API URL，并直接复制 Linux/macOS、Windows、Android ADB 三种脚本。设备侧可由脚本、MDM、工厂预置或扫码流程直接注入 `DMSX_DEVICE_ENROLLMENT_TOKEN` 启动 Agent，实现零接触注册。首装完成后，建议将 Agent 二进制纳入制品渠道做 OTA 升级。
 | `DMSX_HEARTBEAT_SECS` | `30` | 心跳间隔（秒） |
 | `DMSX_POLL_SECS` | `10` | 命令轮询间隔（秒） |
 | `DMSX_RUSTDESK_RELAY` | （可选）| RustDesk 自建中继服务器地址 |

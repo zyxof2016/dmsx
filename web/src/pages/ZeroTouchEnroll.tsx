@@ -1,5 +1,5 @@
 import React from "react";
-import { Alert, Button, Card, Descriptions, Divider, Space, Steps, Typography } from "antd";
+import { Alert, Button, Card, Descriptions, Divider, Segmented, Space, Steps, Tag, Typography } from "antd";
 import { useRouterState } from "@tanstack/react-router";
 
 const { Title, Text } = Typography;
@@ -12,6 +12,14 @@ export const ZeroTouchEnrollPage: React.FC = () => {
   const tenantId = params.get("tenant_id") ?? "";
   const enrollmentToken = params.get("enrollment_token") ?? "";
   const mode = params.get("mode") ?? "manual";
+  const [platform, setPlatform] = React.useState<"linux" | "windows" | "android">("linux");
+
+  const command =
+    platform === "windows"
+      ? `set DMSX_API_URL=${apiUrl} && set DMSX_TENANT_ID=${tenantId} && set DMSX_DEVICE_ENROLLMENT_TOKEN=${enrollmentToken} && cargo run -p dmsx-agent`
+      : platform === "android"
+        ? `adb shell \"DMSX_API_URL=${apiUrl} DMSX_TENANT_ID=${tenantId} DMSX_DEVICE_ENROLLMENT_TOKEN=${enrollmentToken} /data/local/tmp/dmsx-agent\"`
+        : `DMSX_API_URL=${apiUrl} DMSX_TENANT_ID=${tenantId} DMSX_DEVICE_ENROLLMENT_TOKEN='${enrollmentToken}' cargo run -p dmsx-agent`;
 
   return (
     <Space direction="vertical" style={{ width: "100%" }}>
@@ -33,6 +41,16 @@ export const ZeroTouchEnrollPage: React.FC = () => {
       </Card>
       <Card>
         <Typography.Title level={5}>安装参数</Typography.Title>
+        <Segmented
+          value={platform}
+          onChange={(value) => setPlatform(value as "linux" | "windows" | "android")}
+          options={[
+            { label: "Linux/macOS", value: "linux" },
+            { label: "Windows", value: "windows" },
+            { label: "Android/ADB", value: "android" },
+          ]}
+          style={{ marginBottom: 16 }}
+        />
         <Descriptions bordered column={1} size="small">
           <Descriptions.Item label="模式">{mode}</Descriptions.Item>
           <Descriptions.Item label="API URL">
@@ -48,13 +66,19 @@ export const ZeroTouchEnrollPage: React.FC = () => {
             <Text
               code
               copyable={{
-                text: `DMSX_API_URL=${apiUrl} DMSX_TENANT_ID=${tenantId} DMSX_DEVICE_ENROLLMENT_TOKEN='${enrollmentToken}' cargo run -p dmsx-agent`,
+                text: command,
               }}
             >
-              {`DMSX_API_URL=${apiUrl} DMSX_TENANT_ID=${tenantId} DMSX_DEVICE_ENROLLMENT_TOKEN='${enrollmentToken}' cargo run -p dmsx-agent`}
+              {command}
             </Text>
           </Descriptions.Item>
         </Descriptions>
+        <Divider />
+        <Typography.Title level={5}>OTA / 制品建议</Typography.Title>
+        <Space wrap>
+          <Tag color="blue">首装完成后，建议将 Agent 制品纳入稳定渠道进行 OTA 升级</Tag>
+          <Tag color="purple">Android 设备建议结合 ADB/MDM 预置二进制，再走 Enrollment Token 首次认领</Tag>
+        </Space>
         <Divider />
         <Typography.Title level={5}>推荐安装方式</Typography.Title>
         <Space direction="vertical">
@@ -68,7 +92,7 @@ export const ZeroTouchEnrollPage: React.FC = () => {
           type="primary"
           onClick={async () => {
             await navigator.clipboard.writeText(
-              `DMSX_API_URL=${apiUrl} DMSX_TENANT_ID=${tenantId} DMSX_DEVICE_ENROLLMENT_TOKEN='${enrollmentToken}' cargo run -p dmsx-agent`,
+              command,
             );
           }}
         >

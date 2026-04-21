@@ -44,6 +44,7 @@ import type {
   BatchCreateDevicesReq,
   BatchCreateDevicesResponse,
   DeviceEnrollmentBatchResponse,
+  DeviceEnrollmentBatchSummary,
 } from "./types";
 
 // ---- Dashboard ----
@@ -119,6 +120,19 @@ export function useDeviceEnrollmentBatch(batchId?: string | null) {
         tenantPathFor(tenantId, `/device-enrollment-batches/${batchId}`),
       ),
     enabled: Boolean(batchId),
+    retry: false,
+  });
+}
+
+export function useDeviceEnrollmentBatches(params?: ListParams) {
+  const { tenantId } = useAppSession();
+  return useQuery({
+    queryKey: ["deviceEnrollmentBatches", tenantId, params ?? {}],
+    queryFn: () =>
+      api.get<ListResponse<DeviceEnrollmentBatchSummary>>(
+        tenantPathFor(tenantId, `/device-enrollment-batches${buildQuery(params)}`),
+      ),
+    placeholderData: keepPreviousData,
     retry: false,
   });
 }
