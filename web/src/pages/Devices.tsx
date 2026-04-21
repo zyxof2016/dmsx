@@ -76,6 +76,9 @@ export const DevicesPage: React.FC = () => {
   const [batchText, setBatchText] = useState("");
   const [batchResult, setBatchResult] = useState<BatchCreateDevicesResponse | null>(null);
   const [batchIssueTokens, setBatchIssueTokens] = useState(true);
+  const [agentApiUrl, setAgentApiUrl] = useState(
+    () => window.localStorage.getItem("dmsx.agent_api_url") || "http://127.0.0.1:8080",
+  );
   const [search, setSearch] = useState("");
   const [platformFilter, setPlatformFilter] = useState<string>();
   const [stateFilter, setStateFilter] = useState<string>();
@@ -156,7 +159,7 @@ export const DevicesPage: React.FC = () => {
 
   const buildEnrollmentUri = (tenantId: string, token: string) => {
     const params = new URLSearchParams({
-      api_url: "http://127.0.0.1:8080",
+      api_url: agentApiUrl,
       tenant_id: tenantId,
       enrollment_token: token,
       mode: "zero-touch",
@@ -165,7 +168,7 @@ export const DevicesPage: React.FC = () => {
   };
 
   const buildAgentCommand = (tenantId: string, token: string) =>
-    `DMSX_API_URL=http://127.0.0.1:8080 DMSX_TENANT_ID=${tenantId} DMSX_DEVICE_ENROLLMENT_TOKEN='${token}' cargo run -p dmsx-agent`;
+    `DMSX_API_URL=${agentApiUrl} DMSX_TENANT_ID=${tenantId} DMSX_DEVICE_ENROLLMENT_TOKEN='${token}' cargo run -p dmsx-agent`;
 
   const buildZeroTouchScript = () => {
     if (!batchResult) return "";
@@ -177,10 +180,47 @@ export const DevicesPage: React.FC = () => {
         const token = tokenMap.get(device.id)?.token ?? "";
         return [
           `# ${device.hostname ?? device.registration_code}`,
-          `export DMSX_API_URL=http://127.0.0.1:8080`,
+          `export DMSX_API_URL=${agentApiUrl}`,
           `export DMSX_TENANT_ID=${device.tenant_id}`,
           `export DMSX_DEVICE_ENROLLMENT_TOKEN='${token}'`,
           `cargo run -p dmsx-agent`,
+          "",
+        ].join("\n");
+      })
+      .join("\n");
+  };
+
+  const buildWindowsScript = () => {
+    if (!batchResult) return "";
+    const tokenMap = new Map(
+      batchResult.enrollment_tokens.map((token) => [token.device_id, token]),
+    );
+    return batchResult.devices
+      .map((device) => {
+        const token = tokenMap.get(device.id)?.token ?? "";
+        return [
+          `REM ${device.hostname ?? device.registration_code}`,
+          `set DMSX_API_URL=${agentApiUrl}`,
+          `set DMSX_TENANT_ID=${device.tenant_id}`,
+          `set DMSX_DEVICE_ENROLLMENT_TOKEN=${token}`,
+          `cargo run -p dmsx-agent`,
+          "",
+        ].join("\n");
+      })
+      .join("\n");
+  };
+
+  const buildAndroidScript = () => {
+    if (!batchResult) return "";
+    const tokenMap = new Map(
+      batchResult.enrollment_tokens.map((token) => [token.device_id, token]),
+    );
+    return batchResult.devices
+      .map((device) => {
+        const token = tokenMap.get(device.id)?.token ?? "";
+        return [
+          `# ${device.hostname ?? device.registration_code}`,
+          `adb shell \"DMSX_API_URL=${agentApiUrl} DMSX_TENANT_ID=${device.tenant_id} DMSX_DEVICE_ENROLLMENT_TOKEN=${token} /data/local/tmp/dmsx-agent\"`,
           "",
         ].join("\n");
       })
@@ -494,6 +534,15 @@ export const DevicesPage: React.FC = () => {
           <Typography.Text type="secondary">
             每行一台设备，格式：`注册码,主机名,平台`。例如：`DEV-BJ-0001,BJ-KIOSK-01,windows`
           </Typography.Text>
+          <Input
+            value={agentApiUrl}
+            onChange={(e) => {
+              const next = e.target.value;
+              setAgentApiUrl(next);
+              window.localStorage.setItem("dmsx.agent_api_url", next);
+            }}
+            placeholder="Agent API URL，例如 https://api.example.com"
+          />
           <Upload
             beforeUpload={async (file) => {
               const text = await file.text();
@@ -547,10 +596,28 @@ export const DevicesPage: React.FC = () => {
                 icon={<CopyOutlined />}
                 onClick={async () => {
                   await navigator.clipboard.writeText(buildZeroTouchScript());
-                  message.success("零接触启动脚本已复制");
+                  message.success("Linux/macOS 启动脚本已复制");
                 }}
               >
-                复制零接触启动脚本
+                复制 Linux/macOS 脚本
+              </Button>
+              <Button
+                icon={<CopyOutlined />}
+                onClick={async () => {
+                  await navigator.clipboard.writeText(buildWindowsScript());
+                  message.success("Windows 启动脚本已复制");
+                }}
+              >
+                复制 Windows 脚本
+              </Button>
+              <Button
+                icon={<CopyOutlined />}
+                onClick={async () => {
+                  await navigator.clipboard.writeText(buildAndroidScript());
+                  message.success("Android ADB 脚本已复制");
+                }}
+              >
+                复制 Android ADB 脚本
               </Button>
             </>
           ) : null}

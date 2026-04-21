@@ -70,17 +70,21 @@ export const DeviceDetailDrawer: React.FC = () => {
   const issueEnrollmentToken = useIssueDeviceEnrollmentToken();
   const [enrollmentToken, setEnrollmentToken] = React.useState<string | null>(null);
   const activeTab = search.tab ?? "info";
+  const agentApiUrl = React.useMemo(
+    () => window.localStorage.getItem("dmsx.agent_api_url") || "http://127.0.0.1:8080",
+    [],
+  );
 
   const enrollmentUri = React.useMemo(() => {
     if (!enrollmentToken || !device) return null;
     const params = new URLSearchParams({
-      api_url: "http://127.0.0.1:8080",
+      api_url: agentApiUrl,
       tenant_id: device.tenant_id,
       enrollment_token: enrollmentToken,
       mode: "zero-touch",
     });
     return `dmsx://enroll?${params.toString()}`;
-  }, [device, enrollmentToken]);
+  }, [agentApiUrl, device, enrollmentToken]);
 
   return (
     <Drawer
@@ -234,7 +238,7 @@ export const DeviceDetailDrawer: React.FC = () => {
                             <Button
                               size="small"
                               onClick={async () => {
-                                const command = `DMSX_API_URL=http://127.0.0.1:8080 DMSX_TENANT_ID=${device.tenant_id} DMSX_DEVICE_ENROLLMENT_TOKEN='${enrollmentToken}' cargo run -p dmsx-agent`;
+                                const command = `DMSX_API_URL=${agentApiUrl} DMSX_TENANT_ID=${device.tenant_id} DMSX_DEVICE_ENROLLMENT_TOKEN='${enrollmentToken}' cargo run -p dmsx-agent`;
                                 await navigator.clipboard.writeText(command);
                                 message.success("Agent 启动命令已复制");
                               }}
