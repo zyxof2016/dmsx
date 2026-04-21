@@ -37,6 +37,17 @@ export interface IssueDeviceEnrollmentTokenReq {
   ttl_seconds?: number;
 }
 
+export interface BatchCreateDevicesReq {
+  items: CreateDeviceReq[];
+  issue_enrollment_tokens?: boolean;
+  ttl_seconds?: number;
+}
+
+export interface BatchCreateDevicesResponse {
+  devices: Device[];
+  enrollment_tokens: DeviceEnrollmentToken[];
+}
+
 export interface Policy {
   id: string;
   tenant_id: string;

@@ -41,6 +41,8 @@ import type {
   PlatformHealth,
   DeviceEnrollmentToken,
   IssueDeviceEnrollmentTokenReq,
+  BatchCreateDevicesReq,
+  BatchCreateDevicesResponse,
 } from "./types";
 
 // ---- Dashboard ----
@@ -84,6 +86,22 @@ export function useCreateDevice() {
   return useMutation({
     mutationFn: (data: CreateDeviceReq) =>
       api.post<Device>(tenantPathFor(tenantId, "/devices"), data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["devices", tenantId] });
+      qc.invalidateQueries({ queryKey: ["stats", tenantId] });
+    },
+  });
+}
+
+export function useBatchCreateDevices() {
+  const { tenantId } = useAppSession();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: BatchCreateDevicesReq) =>
+      api.post<BatchCreateDevicesResponse>(
+        tenantPathFor(tenantId, "/devices:batch-create"),
+        data,
+      ),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["devices", tenantId] });
       qc.invalidateQueries({ queryKey: ["stats", tenantId] });

@@ -33,10 +33,11 @@ import dayjs from "dayjs";
 import {
   useDevices,
   useCreateDevice,
+  useBatchCreateDevices,
   useDeleteDevice,
   exportCsv,
 } from "../api/hooks";
-import type { Device, CreateDeviceReq, ListParams } from "../api/types";
+import type { BatchCreateDevicesResponse, Device, CreateDeviceReq, ListParams } from "../api/types";
 import { formatApiError } from "../api/errors";
 import { useResourceAccess } from "../authz";
 import { GuardedButton } from "../components/GuardedButton";
@@ -67,6 +68,9 @@ export const DevicesPage: React.FC = () => {
   const { message } = App.useApp();
   const [form] = Form.useForm<CreateDeviceReq>();
   const [open, setOpen] = useState(false);
+  const [batchOpen, setBatchOpen] = useState(false);
+  const [batchText, setBatchText] = useState("");
+  const [batchResult, setBatchResult] = useState<BatchCreateDevicesResponse | null>(null);
   const [search, setSearch] = useState("");
   const [platformFilter, setPlatformFilter] = useState<string>();
   const [stateFilter, setStateFilter] = useState<string>();
@@ -85,6 +89,7 @@ export const DevicesPage: React.FC = () => {
 
   const { data, isLoading, error, refetch } = useDevices(params);
   const createMut = useCreateDevice();
+  const batchCreateMut = useBatchCreateDevices();
   const deleteMut = useDeleteDevice();
 
   const items = data?.items ?? [];
@@ -116,6 +121,32 @@ export const DevicesPage: React.FC = () => {
     }
     setSelectedRowKeys([]);
     message.success(`已删除 ${selectedRowKeys.length} 台设备`);
+  };
+
+  const handleBatchCreate = async () => {
+    try {
+      const items = batchText
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .map((line) => {
+          const [registration_code, hostname, platform] = line.split(",").map((v) => v.trim());
+          return {
+            registration_code: registration_code || undefined,
+            hostname: hostname || undefined,
+            platform: (platform || "other") as CreateDeviceReq["platform"],
+          };
+        });
+      const result = await batchCreateMut.mutateAsync({
+        items,
+        issue_enrollment_tokens: true,
+        ttl_seconds: 1800,
+      });
+      setBatchResult(result);
+      message.success(`已批量预注册 ${result.devices.length} 台设备`);
+    } catch (e: unknown) {
+      message.error(formatApiError(e));
+    }
   };
 
   if (error) {
@@ -182,6 +213,9 @@ export const DevicesPage: React.FC = () => {
               allowed={canWrite}
             >
               注册设备
+            </GuardedButton>
+            <GuardedButton onClick={() => setBatchOpen(true)} allowed={canWrite}>
+              批量预注册
             </GuardedButton>
             {canWrite && selectedRowKeys.length > 0 && (
               <>
@@ -407,6 +441,54 @@ export const DevicesPage: React.FC = () => {
             <Input />
           </Form.Item>
         </Form>
+      </Modal>
+
+      <Modal
+        title="批量预注册设备"
+        open={batchOpen}
+        onCancel={() => setBatchOpen(false)}
+        onOk={handleBatchCreate}
+        confirmLoading={batchCreateMut.isPending}
+        width={860}
+        okButtonProps={{ disabled: !canWrite }}
+      >
+        <Space direction="vertical" style={{ width: "100%" }}>
+          <Typography.Text type="secondary">
+            每行一台设备，格式：`注册码,主机名,平台`。例如：`DEV-BJ-0001,BJ-KIOSK-01,windows`
+          </Typography.Text>
+          <Input.TextArea
+            rows={10}
+            value={batchText}
+            onChange={(e) => setBatchText(e.target.value)}
+            placeholder="DEV-BJ-0001,BJ-KIOSK-01,windows"
+          />
+          {batchResult ? (
+            <>
+              <Typography.Text strong>批量结果</Typography.Text>
+              <Button
+                icon={<DownloadOutlined />}
+                onClick={() => {
+                  const tokenMap = new Map(
+                    batchResult.enrollment_tokens.map((token) => [token.device_id, token]),
+                  );
+                  exportCsv(
+                    batchResult.devices.map((device) => ({
+                      id: device.id,
+                      registration_code: device.registration_code,
+                      hostname: device.hostname,
+                      platform: device.platform,
+                      enrollment_token: tokenMap.get(device.id)?.token ?? "",
+                      enrollment_command: `DMSX_API_URL=http://127.0.0.1:8080 DMSX_TENANT_ID=${device.tenant_id} DMSX_DEVICE_ENROLLMENT_TOKEN='${tokenMap.get(device.id)?.token ?? ""}' cargo run -p dmsx-agent`,
+                    })),
+                    "device-batch-enrollment.csv",
+                  );
+                }}
+              >
+                导出 token / 启动命令 CSV
+              </Button>
+            </>
+          ) : null}
+        </Space>
       </Modal>
 
       <Outlet />

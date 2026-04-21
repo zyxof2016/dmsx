@@ -222,6 +222,16 @@ export const DeviceDetailDrawer: React.FC = () => {
                             {enrollmentUri ? (
                               <Text code copyable={{ text: enrollmentUri }}>{enrollmentUri}</Text>
                             ) : null}
+                            <Button
+                              size="small"
+                              onClick={async () => {
+                                const command = `DMSX_API_URL=http://127.0.0.1:8080 DMSX_TENANT_ID=${device.tenant_id} DMSX_DEVICE_ENROLLMENT_TOKEN='${enrollmentToken}' cargo run -p dmsx-agent`;
+                                await navigator.clipboard.writeText(command);
+                                message.success("Agent 启动命令已复制");
+                              }}
+                            >
+                              复制 Agent 启动命令
+                            </Button>
                           </>
                         ) : (
                           <Text type="secondary">生成后可复制 token 或 enrollment URI 给设备侧 Agent 首次绑定使用。</Text>
