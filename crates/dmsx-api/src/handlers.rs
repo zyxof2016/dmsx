@@ -446,8 +446,9 @@ pub async fn rbac_roles_list(
 pub async fn platform_tenants_list(
     State(st): State<AppState>,
     Extension(ctx): Extension<AuthContext>,
-) -> ApiResult<Json<Vec<PlatformTenantSummary>>> {
-    Ok(Json(platform::list_tenants(&st, &ctx).await?))
+    Query(params): Query<PlatformTenantListParams>,
+) -> ApiResult<Json<ListResponse<PlatformTenantSummary>>> {
+    Ok(Json(platform::list_tenants_paginated(&st, &ctx, &params).await?))
 }
 
 pub async fn platform_audit_logs_list(

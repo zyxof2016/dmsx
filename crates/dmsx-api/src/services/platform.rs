@@ -1,5 +1,5 @@
 use crate::auth::AuthContext;
-use crate::dto::{AuditLog, AuditLogListParams, ListResponse, PlatformHealth, PlatformQuota, PlatformTenantSummary};
+use crate::dto::{AuditLog, AuditLogListParams, ListResponse, PlatformHealth, PlatformQuota, PlatformTenantListParams, PlatformTenantSummary};
 use crate::error::map_db_error;
 use crate::repo::platform;
 use crate::repo::platform::PlatformUsageCounts;
@@ -50,12 +50,21 @@ fn build_platform_quotas(counts: PlatformUsageCounts) -> ListResponse<PlatformQu
     }
 }
 
-pub async fn list_tenants(
+pub async fn list_tenants_paginated(
     st: &AppState,
     _ctx: &AuthContext,
-) -> ServiceResult<Vec<PlatformTenantSummary>> {
+    params: &PlatformTenantListParams,
+) -> ServiceResult<ListResponse<PlatformTenantSummary>> {
     let mut conn = st.db.acquire().await.map_err(map_db_error)?;
-    platform::tenant_summaries(&mut conn).await.map_err(map_db_error)
+    let (items, total) = platform::tenant_summaries(&mut conn, params)
+        .await
+        .map_err(map_db_error)?;
+    Ok(ListResponse {
+        items,
+        total,
+        limit: params.limit(),
+        offset: params.offset(),
+    })
 }
 
 pub async fn list_platform_audit_logs(
@@ -80,7 +89,15 @@ pub async fn platform_health(
     _ctx: &AuthContext,
 ) -> ServiceResult<PlatformHealth> {
     let mut conn = st.db.acquire().await.map_err(map_db_error)?;
-    platform::platform_health(&mut conn).await.map_err(map_db_error)
+    let mut health = platform::platform_health(&mut conn).await.map_err(map_db_error)?;
+    health.livekit_enabled = !st.livekit_url.trim().is_empty();
+    health.redis_enabled = st
+        .redis_url
+        .as_deref()
+        .map(str::trim)
+        .is_some_and(|url| !url.is_empty());
+    health.command_bus_enabled = st.command_jetstream.is_some();
+    Ok(health)
 }
 
 pub async fn platform_quotas(
@@ -121,8 +138,10 @@ mod tests {
         let response = build_platform_quotas(PlatformUsageCounts {
             tenant_count: 3,
             device_count: 12,
+            policy_count: 7,
             command_count: 34,
             artifact_count: 5,
+            audit_log_count: 9,
         });
 
         assert_eq!(response.total, 4);

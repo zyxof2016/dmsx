@@ -1292,15 +1292,31 @@ paths:
     get:
       summary: List platform tenant summaries
       operationId: listPlatformTenants
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+      - name: search
+        in: query
+        required: false
+        schema:
+          type: string
       responses:
         '200':
           description: OK
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/PlatformTenantSummary'
+                $ref: '#/components/schemas/ListResponsePlatformTenantSummary'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -1958,6 +1974,27 @@ components:
         command_count:
           type: integer
           format: int64
+    ListResponsePlatformTenantSummary:
+      type: object
+      required:
+      - items
+      - total
+      - limit
+      - offset
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlatformTenantSummary'
+        total:
+          type: integer
+          format: int64
+        limit:
+          type: integer
+          format: int64
+        offset:
+          type: integer
+          format: int64
     PlatformQuota:
       type: object
       required:
@@ -1982,7 +2019,13 @@ components:
       - status
       - tenant_count
       - device_count
+      - policy_count
       - command_count
+      - artifact_count
+      - audit_log_count
+      - livekit_enabled
+      - redis_enabled
+      - command_bus_enabled
       properties:
         status:
           type: string
@@ -1992,9 +2035,24 @@ components:
         device_count:
           type: integer
           format: int64
+        policy_count:
+          type: integer
+          format: int64
         command_count:
           type: integer
           format: int64
+        artifact_count:
+          type: integer
+          format: int64
+        audit_log_count:
+          type: integer
+          format: int64
+        livekit_enabled:
+          type: boolean
+        redis_enabled:
+          type: boolean
+        command_bus_enabled:
+          type: boolean
     ListResponsePlatformQuota:
       type: object
       required:

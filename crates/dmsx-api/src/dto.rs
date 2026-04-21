@@ -588,6 +588,30 @@ pub struct PlatformTenantSummary {
     pub command_count: i64,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct PlatformTenantListParams {
+    pub limit: Option<i64>,
+    pub offset: Option<i64>,
+    pub search: Option<String>,
+}
+
+impl PlatformTenantListParams {
+    pub fn limit(&self) -> i64 {
+        clamp_limit(self.limit)
+    }
+
+    pub fn offset(&self) -> i64 {
+        clamp_offset(self.offset)
+    }
+
+    pub fn search_term(&self) -> Option<&str> {
+        self.search
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+    }
+}
+
 #[derive(Debug, Serialize)]
 pub struct PlatformQuota {
     pub key: String,
@@ -601,7 +625,13 @@ pub struct PlatformHealth {
     pub status: String,
     pub tenant_count: i64,
     pub device_count: i64,
+    pub policy_count: i64,
     pub command_count: i64,
+    pub artifact_count: i64,
+    pub audit_log_count: i64,
+    pub livekit_enabled: bool,
+    pub redis_enabled: bool,
+    pub command_bus_enabled: bool,
 }
 
 #[derive(Debug, Deserialize)]
