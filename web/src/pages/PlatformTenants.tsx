@@ -7,9 +7,12 @@ import { usePlatformTenantsList } from "../api/hooks";
 import type { PlatformTenantSummary, ListParams } from "../api/types";
 import { formatApiError } from "../api/errors";
 import { setStoredTenantId } from "../api/client";
+import { useResourceAccess } from "../authz";
+import { ReadonlyBanner } from "../components/ReadonlyBanner";
 
 export const PlatformTenantsPage: React.FC = () => {
   const navigate = useNavigate();
+  const { canWrite } = useResourceAccess("platformWrite");
   const [search, setSearch] = React.useState("");
   const [page, setPage] = React.useState(1);
   const [pageSize, setPageSize] = React.useState(10);
@@ -32,6 +35,7 @@ export const PlatformTenantsPage: React.FC = () => {
   return (
     <Space direction="vertical" style={{ width: "100%" }}>
       <Typography.Title level={4}>平台租户目录</Typography.Title>
+      <ReadonlyBanner visible={!canWrite} resourceLabel="平台租户目录" />
       {error && <Alert type="error" showIcon message="加载失败" description={formatApiError(error)} />}
       <Card>
         <Space style={{ marginBottom: 16 }} wrap>
@@ -106,7 +110,7 @@ export const PlatformTenantsPage: React.FC = () => {
               title: "操作",
               key: "action",
               render: (_, row) => (
-                <Button size="small" onClick={() => openTenant(row.id)}>
+                <Button size="small" type="primary" ghost={!canWrite} onClick={() => openTenant(row.id)}>
                   切换并查看设备
                 </Button>
               ),

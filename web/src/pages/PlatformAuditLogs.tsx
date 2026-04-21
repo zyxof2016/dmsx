@@ -4,8 +4,11 @@ import dayjs from "dayjs";
 import { usePlatformAuditLogs } from "../api/hooks";
 import type { AuditLogListParams, AuditLog } from "../api/types";
 import { formatApiError } from "../api/errors";
+import { useResourceAccess } from "../authz";
+import { ReadonlyBanner } from "../components/ReadonlyBanner";
 
 export const PlatformAuditLogsPage: React.FC = () => {
+  const { canWrite } = useResourceAccess("platformWrite");
   const [action, setAction] = React.useState("");
   const [resourceType, setResourceType] = React.useState("");
   const [page, setPage] = React.useState(1);
@@ -25,6 +28,7 @@ export const PlatformAuditLogsPage: React.FC = () => {
   return (
     <Space direction="vertical" style={{ width: "100%" }}>
       <Typography.Title level={4}>平台全局审计</Typography.Title>
+      <ReadonlyBanner visible={!canWrite} resourceLabel="平台全局审计" />
       {error && (
         <Alert
           type="error"

@@ -251,6 +251,12 @@ export interface SystemSettingUpsertReq {
 
 export interface RbacRole {
   name: string;
+  scope: string;
+  description: string;
+  platform_read: boolean;
+  platform_write: boolean;
+  tenant_read: boolean;
+  tenant_write: boolean;
 }
 
 export interface Tenant {

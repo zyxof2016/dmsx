@@ -40,6 +40,7 @@ import {
   type Lang,
 } from "./appProviders";
 import { AccessGate } from "./components/AccessGate";
+import { useResourceAccess } from "./authz";
 
 const AppDeferredTools = React.lazy(async () => {
   const mod = await import("./components/AppDeferredTools");
@@ -54,7 +55,7 @@ type NavItem = {
   labelKey: string;
   icon: React.ReactNode;
   mode: AppMode;
-  requiresPlatformAdmin?: boolean;
+  platformOnly?: boolean;
   requiredRoles?: string[];
 };
 
@@ -70,7 +71,7 @@ const NAV_ITEMS: NavItem[] = [
     labelKey: "mode.platform",
     icon: <SettingOutlined />,
     mode: "platform",
-    requiresPlatformAdmin: true,
+    platformOnly: true,
   },
   {
     key: "platformTenants",
@@ -78,7 +79,7 @@ const NAV_ITEMS: NavItem[] = [
     labelKey: "nav.platformTenants",
     icon: <ClusterOutlined />,
     mode: "platform",
-    requiresPlatformAdmin: true,
+    platformOnly: true,
   },
   {
     key: "platformQuotas",
@@ -86,7 +87,7 @@ const NAV_ITEMS: NavItem[] = [
     labelKey: "nav.platformQuotas",
     icon: <AppstoreOutlined />,
     mode: "platform",
-    requiresPlatformAdmin: true,
+    platformOnly: true,
   },
   {
     key: "platformAudit",
@@ -94,7 +95,7 @@ const NAV_ITEMS: NavItem[] = [
     labelKey: "nav.platformAudit",
     icon: <AuditOutlined />,
     mode: "platform",
-    requiresPlatformAdmin: true,
+    platformOnly: true,
   },
   {
     key: "platformHealth",
@@ -102,7 +103,7 @@ const NAV_ITEMS: NavItem[] = [
     labelKey: "nav.platformHealth",
     icon: <DashboardOutlined />,
     mode: "platform",
-    requiresPlatformAdmin: true,
+    platformOnly: true,
   },
   {
     key: "dashboard",
@@ -182,7 +183,7 @@ const NAV_ITEMS: NavItem[] = [
     labelKey: "nav.settings",
     icon: <SafetyOutlined />,
     mode: "platform",
-    requiresPlatformAdmin: true,
+    platformOnly: true,
   },
   {
     key: "usersRoles",
@@ -190,7 +191,7 @@ const NAV_ITEMS: NavItem[] = [
     labelKey: "nav.usersRoles",
     icon: <UserOutlined />,
     mode: "platform",
-    requiresPlatformAdmin: true,
+    platformOnly: true,
   },
 ];
 
@@ -211,7 +212,7 @@ function evaluateItemAccess(
 ): AccessResult {
   if (!item) return { allowed: true, reason: "unknown" };
   if (item.mode !== appMode) return { allowed: false, reason: "mode" };
-  if (item.requiresPlatformAdmin && !canUsePlatformMode) {
+  if (item.platformOnly && !canUsePlatformMode) {
     return { allowed: false, reason: "platform" };
   }
   if (!item.requiredRoles?.length) return { allowed: true, reason: "unknown" };
@@ -273,10 +274,12 @@ const AppShell: React.FC = () => {
     setAppMode,
     effectiveRoles,
     canUsePlatformMode,
+    platformRoles,
     subject,
     tenantOptions,
   } = useAppSession();
   const { token } = antdTheme.useToken();
+  const platformReadAccess = useResourceAccess("platformRead");
 
   const visibleNavItems = React.useMemo(
     () =>
@@ -294,13 +297,15 @@ const AppShell: React.FC = () => {
     effectiveRoles,
     canUsePlatformMode,
   );
-  const hasAccess = selectedAccess.allowed;
+  const activeRoles = appMode === "platform" ? platformRoles : effectiveRoles;
+  const hasAccess =
+    selectedAccess.allowed && (appMode !== "platform" || platformReadAccess.canRead);
 
   const accessDescription =
     selectedAccess.reason === "mode"
       ? "当前页面属于另一种工作模式。请切换模式，或返回当前模式首页。"
       : selectedAccess.reason === "platform"
-        ? "当前 JWT 不具备 PlatformAdmin，不能进入平台级页面。"
+        ? "当前 JWT 不具备平台级角色，不能进入平台模式页面。"
         : selectedAccess.reason === "role"
           ? "当前角色不足以展示该页面入口，请检查 JWT 中的 roles / tenant_roles。"
           : "当前页面不可访问。";
@@ -459,7 +464,7 @@ const AppShell: React.FC = () => {
               <AccessGate
                 title="当前页面无访问权限"
                 description={accessDescription}
-                roles={effectiveRoles}
+                roles={activeRoles}
                 modeLabel={modeLabel}
                 onGoDefault={() => navigate({ to: defaultModePath })}
                 onSwitchMode={

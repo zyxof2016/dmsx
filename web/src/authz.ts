@@ -4,7 +4,8 @@ export const WRITE_DISABLED_REASON =
   "当前有效角色仅允许查看，不能执行写操作。请检查 JWT 中的 roles / tenant_roles。";
 
 export type FrontendResourceKind =
-  | "globalConfig"
+  | "platformRead"
+  | "platformWrite"
   | "stats"
   | "devices"
   | "policies"
@@ -18,7 +19,8 @@ export type FrontendResourceKind =
 
 function siteAdminAllows(resource: FrontendResourceKind, readOnly: boolean) {
   switch (resource) {
-    case "globalConfig":
+    case "platformRead":
+    case "platformWrite":
       return false;
     case "policies":
     case "artifacts":
@@ -33,7 +35,8 @@ function siteAdminAllows(resource: FrontendResourceKind, readOnly: boolean) {
 
 function operatorAllows(resource: FrontendResourceKind, readOnly: boolean) {
   switch (resource) {
-    case "globalConfig":
+    case "platformRead":
+    case "platformWrite":
       return false;
     case "policies":
     case "artifacts":
@@ -49,19 +52,21 @@ function operatorAllows(resource: FrontendResourceKind, readOnly: boolean) {
 }
 
 function auditorAllows(resource: FrontendResourceKind, readOnly: boolean) {
-  return readOnly && !["globalConfig", "remoteDesktop", "aiAssist"].includes(resource);
+  return readOnly && !["platformRead", "platformWrite", "remoteDesktop", "aiAssist"].includes(resource);
 }
 
 function readOnlyAllows(resource: FrontendResourceKind, readOnly: boolean) {
-  return readOnly && !["globalConfig", "remoteDesktop", "aiAssist"].includes(resource);
+  return readOnly && !["platformRead", "platformWrite", "remoteDesktop", "aiAssist"].includes(resource);
 }
 
 function isRoleAllowed(role: string, resource: FrontendResourceKind, readOnly: boolean) {
   switch (role) {
     case "PlatformAdmin":
       return true;
+    case "PlatformViewer":
+      return readOnly && resource === "platformRead";
     case "TenantAdmin":
-      return resource !== "globalConfig";
+      return !["platformRead", "platformWrite"].includes(resource);
     case "SiteAdmin":
       return siteAdminAllows(resource, readOnly);
     case "Operator":

@@ -27,7 +27,7 @@
 - 平台模式已补齐 4 个独立平台子页：`/platform/tenants`、`/platform/quotas`、`/platform/audit`、`/platform/health`，分别对应平台租户目录、平台配额、全局审计和平台健康视图。
 - 平台页当前接入的真实平台接口包括：`GET /v1/config/rbac/roles`、`GET /v1/config/livekit`、`GET /v1/config/settings/{key}`、`POST /v1/tenants`、`GET /v1/config/tenants`、`GET /v1/config/audit-logs`、`GET /v1/config/platform-health`、`GET /v1/config/quotas`。
 - 平台首页的租户目录卡片已从“一键 demo 创建”升级为真实表单创建：用户可输入租户名称并直接调用 `POST /v1/tenants`，成功后在卡片内展示新租户 ID。
-- 当前前端会从 JWT **本地解析** `tenant_id`、`allowed_tenant_ids`、`roles`、`tenant_roles` 以收敛导航：若当前 JWT 不具备 `PlatformAdmin`，则平台模式入口会被禁用并自动回落到租户模式；若当前活动租户不在 JWT 许可集合内，前端会回退到 JWT 主租户。
+- 当前前端会从 JWT **本地解析** `tenant_id`、`allowed_tenant_ids`、`roles`、`tenant_roles` 以收敛导航：平台模式由令牌级 `roles` 控制（当前支持 `PlatformAdmin`、`PlatformViewer`）；租户模式继续按活动租户的 `tenant_roles` / `roles` 计算。若当前 JWT 不具备平台级角色，则平台模式入口会被禁用并自动回落到租户模式；若当前活动租户不在 JWT 许可集合内，前端会回退到 JWT 主租户。
 - 当用户直接输入 URL 访问不属于当前模式或角色不允许的页面时，前端不再静默跳页，而是展示明确的 **403 风格访问受限页**，并提供“返回当前模式首页 / 切换模式”操作。这样能区分“页面不存在”和“当前模式/权限不匹配”。
 - 系统设置页会直接展示当前 JWT 的本地解析结果，包括主租户、允许租户集合、令牌级 `roles`、按租户覆盖的 `tenant_roles` 以及当前活动租户的有效角色，方便联调 JWT/RBAC 问题。
 - 主要页面和关键设备操作面板已开始做按钮级权限收敛：当当前有效角色只允许读、不允许写时，创建/删除/下发/编辑类按钮会直接禁用，避免菜单已收敛但页面内仍保留写入口。

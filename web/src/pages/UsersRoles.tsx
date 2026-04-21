@@ -2,6 +2,8 @@ import React from "react";
 import { Alert, Button, Card, Empty, Space, Table, Typography, Spin, Tag } from "antd";
 import { useAppI18n } from "../appProviders";
 import { useRbacRoles } from "../api/hooks";
+import { useResourceAccess } from "../authz";
+import { ReadonlyBanner } from "../components/ReadonlyBanner";
 
 type UserRow = {
   id: string;
@@ -12,6 +14,7 @@ type UserRow = {
 
 export const UsersRolesPage: React.FC = () => {
   const { t } = useAppI18n();
+  const { canWrite } = useResourceAccess("platformWrite");
 
   const { data: roles, isLoading: rolesLoading, error: rolesError, refetch } = useRbacRoles();
 
@@ -27,6 +30,7 @@ export const UsersRolesPage: React.FC = () => {
   return (
     <Space direction="vertical" style={{ width: "100%" }}>
       <Typography.Title level={4}>{t("page.usersRoles")}</Typography.Title>
+      <ReadonlyBanner visible={!canWrite} resourceLabel="用户 / 角色管理" />
 
       <Alert
         type="info"
@@ -48,12 +52,37 @@ export const UsersRolesPage: React.FC = () => {
 
           <Typography.Text strong>内置 RBAC 角色</Typography.Text>
           <Spin spinning={rolesLoading}>
-            <Space wrap>
-              {(roles ?? []).map((r) => (
-                <Tag key={r.name}>{r.name}</Tag>
-              ))}
-              {!rolesLoading && (roles?.length ?? 0) === 0 && (
-                <Typography.Text type="secondary">暂无数据</Typography.Text>
+            <Space direction="vertical" style={{ width: "100%" }}>
+              <Space wrap>
+                {(roles ?? []).map((r) => (
+                  <Tag key={r.name}>{r.name}</Tag>
+                ))}
+                {!rolesLoading && (roles?.length ?? 0) === 0 && (
+                  <Typography.Text type="secondary">暂无数据</Typography.Text>
+                )}
+              </Space>
+              {(roles?.length ?? 0) > 0 && (
+                <Table
+                  size="small"
+                  pagination={false}
+                  rowKey="name"
+                  dataSource={roles}
+                  columns={[
+                    { title: "角色", dataIndex: "name", key: "name" },
+                    { title: "范围", dataIndex: "scope", key: "scope" },
+                    { title: "说明", dataIndex: "description", key: "description" },
+                    {
+                      title: "平台权限",
+                      key: "platformAccess",
+                      render: (_, row) => `${row.platform_read ? "读" : "-"}${row.platform_write ? "/写" : ""}`,
+                    },
+                    {
+                      title: "租户权限",
+                      key: "tenantAccess",
+                      render: (_, row) => `${row.tenant_read ? "读" : "-"}${row.tenant_write ? "/写" : ""}`,
+                    },
+                  ]}
+                />
               )}
             </Space>
           </Spin>
@@ -97,4 +126,3 @@ export const UsersRolesPage: React.FC = () => {
     </Space>
   );
 };
-

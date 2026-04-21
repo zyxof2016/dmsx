@@ -18,6 +18,8 @@ import { useAppI18n, useAppSession } from "../appProviders";
 import { useSystemSetting, useUpsertSystemSetting } from "../api/hooks";
 import { ApiError, DEFAULT_TENANT_ID } from "../api/client";
 import { formatApiError } from "../api/errors";
+import { useResourceAccess } from "../authz";
+import { ReadonlyBanner } from "../components/ReadonlyBanner";
 
 const METRICS_BEARER_ENABLED_KEY = "metrics.bearer.enabled";
 
@@ -28,6 +30,7 @@ function maskJwt(jwt: string): string {
 
 export const SystemSettingsPage: React.FC = () => {
   const { t } = useAppI18n();
+  const { canWrite } = useResourceAccess("platformWrite");
   const {
     tenantId,
     setTenantId,
@@ -41,6 +44,7 @@ export const SystemSettingsPage: React.FC = () => {
     globalRoles,
     tenantRoles,
     effectiveRoles,
+    platformRoles,
     hasJwt,
     jwtParseError,
   } = useAppSession();
@@ -97,6 +101,7 @@ export const SystemSettingsPage: React.FC = () => {
   return (
     <Space direction="vertical" style={{ width: "100%" }}>
       <Typography.Title level={4}>{t("page.systemSettings")}</Typography.Title>
+      <ReadonlyBanner visible={!canWrite} resourceLabel="系统设置" />
 
       <Card title="前端会话设置">
         <Space direction="vertical" style={{ width: "100%" }} size="middle">
@@ -245,6 +250,11 @@ export const SystemSettingsPage: React.FC = () => {
                     {globalRoles.length ? globalRoles.map((role) => <Tag key={role}>{role}</Tag>) : <Tag>无</Tag>}
                   </Space>
                 </Descriptions.Item>
+                <Descriptions.Item label="平台模式角色">
+                  <Space wrap>
+                    {platformRoles.length ? platformRoles.map((role) => <Tag key={role}>{role}</Tag>) : <Tag>无</Tag>}
+                  </Space>
+                </Descriptions.Item>
                 <Descriptions.Item label="允许访问租户">
                   <Space wrap>
                     {permittedTenantIds.map((id) => (
@@ -304,6 +314,7 @@ export const SystemSettingsPage: React.FC = () => {
               <Button
                 type="primary"
                 loading={upsertMut.isPending}
+                disabled={!canWrite}
                 onClick={async () => {
                   try {
                     await upsertMut.mutateAsync({

@@ -47,7 +47,7 @@ export const PlatformOverviewPage: React.FC = () => {
     tenantRoles,
     canUsePlatformMode,
   } = useAppSession();
-  const { canWrite } = useResourceAccess("globalConfig");
+  const { canWrite } = useResourceAccess("platformWrite");
   const [tenantForm] = Form.useForm<{ name: string }>();
   const { data: roles, isLoading: rolesLoading, error: rolesError } = useRbacRoles();
   const {

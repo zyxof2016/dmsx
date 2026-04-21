@@ -10,18 +10,22 @@ import {
 } from "@ant-design/icons";
 import { useLivekitConfig, usePlatformHealth } from "../api/hooks";
 import { formatApiError } from "../api/errors";
+import { useResourceAccess } from "../authz";
+import { ReadonlyBanner } from "../components/ReadonlyBanner";
 
 function statusTag(enabled: boolean, enabledLabel = "已启用", disabledLabel = "未启用") {
   return <Tag color={enabled ? "green" : "default"}>{enabled ? enabledLabel : disabledLabel}</Tag>;
 }
 
 export const PlatformHealthPage: React.FC = () => {
+  const { canWrite } = useResourceAccess("platformWrite");
   const { data: health, isLoading, error } = usePlatformHealth();
   const { data: livekit } = useLivekitConfig();
 
   return (
     <Space direction="vertical" style={{ width: "100%" }}>
       <Typography.Title level={4}>平台健康</Typography.Title>
+      <ReadonlyBanner visible={!canWrite} resourceLabel="平台健康" />
       {error && <Alert type="error" showIcon message="加载失败" description={formatApiError(error)} />}
       <Row gutter={[16, 16]}>
         <Col xs={24} sm={12} lg={6}>

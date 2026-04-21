@@ -57,6 +57,8 @@ type SessionContextValue = {
   jwtParseError: boolean;
   canUsePlatformMode: boolean;
   isPlatformAdmin: boolean;
+  platformRoles: string[];
+  canWritePlatform: boolean;
 };
 
 const LANG_KEY = "dmsx_lang";
@@ -327,11 +329,11 @@ export const AppProviders: React.FC<{ children: React.ReactNode }> = ({
   );
   const platformRoles = React.useMemo(() => {
     if (!jwtClaims) return ["PlatformAdmin"];
-    const platformTenantId = jwtClaims.primaryTenantId ?? tenantId;
-    return getEffectiveRolesForTenant(jwtClaims, platformTenantId);
-  }, [jwtClaims, tenantId]);
-  const canUsePlatformMode = platformRoles.includes("PlatformAdmin");
-  const isPlatformAdmin = canUsePlatformMode;
+    return jwtClaims.roles;
+  }, [jwtClaims]);
+  const canUsePlatformMode = platformRoles.some((role) => ["PlatformAdmin", "PlatformViewer"].includes(role));
+  const isPlatformAdmin = platformRoles.includes("PlatformAdmin");
+  const canWritePlatform = isPlatformAdmin;
 
   React.useEffect(() => {
     localStorage.setItem(LANG_KEY, lang);
@@ -411,6 +413,8 @@ export const AppProviders: React.FC<{ children: React.ReactNode }> = ({
       jwtParseError,
       canUsePlatformMode,
       isPlatformAdmin,
+      platformRoles,
+      canWritePlatform,
     }),
     [
       appMode,
@@ -424,9 +428,11 @@ export const AppProviders: React.FC<{ children: React.ReactNode }> = ({
       jwtClaims?.roles,
       jwtClaims?.tenantRoles,
       jwtParseError,
+      platformRoles,
       permittedTenantIds,
       tenantOptions,
       tenantId,
+      canWritePlatform,
     ],
   );
 
