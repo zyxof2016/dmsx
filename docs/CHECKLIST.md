@@ -326,6 +326,7 @@
 
 - [x] 态势总览（Dashboard）— KPI 卡片 + AI 洞察 + 安全态势 + recharts 图表（饼图/柱状图/折线图）
 - [x] 设备管理（Devices）— 表格 + 服务端筛选 + 搜索 + 创建/删除 + 批量操作 + CSV 导出
+- [x] 设备预注册增强：注册码、单设备 enrollment token、批量预注册与批量导出 Agent 启动命令
 - [x] 策略中心（Policies）— 列表 + 服务端搜索 + 创建/删除 + 批量操作 + CSV 导出
 - [x] 远程命令（Commands）— 列表 + 状态筛选 + 下发(含二次确认) + CSV 导出
 - [x] 应用分发（Artifacts）— 列表 + 搜索 + 上传 + SHA256 校验 + CSV 导出

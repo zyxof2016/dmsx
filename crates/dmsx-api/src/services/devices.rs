@@ -11,8 +11,9 @@ use uuid::Uuid;
 use crate::auth::AuthContext;
 use crate::db_rls;
 use crate::dto::{
-    ClaimDeviceEnrollmentReq, CreateDeviceReq, DeviceEnrollmentToken, DeviceListParams,
-    IssueDeviceEnrollmentTokenReq, ListResponse, UpdateDeviceReq,
+    BatchCreateDevicesReq, BatchCreateDevicesResponse, ClaimDeviceEnrollmentReq, CreateDeviceReq,
+    DeviceEnrollmentToken, DeviceListParams, IssueDeviceEnrollmentTokenReq, ListResponse,
+    UpdateDeviceReq,
 };
 use crate::error::map_db_error;
 use crate::repo::{audit, devices as device_repo};
@@ -124,6 +125,74 @@ pub async fn create_device(
     .ok();
     tx.commit().await.map_err(map_db_error)?;
     Ok(device)
+}
+
+pub async fn batch_create_devices(
+    st: &AppState,
+    ctx: &AuthContext,
+    tid: Uuid,
+    body: &BatchCreateDevicesReq,
+) -> ServiceResult<BatchCreateDevicesResponse> {
+    body.validate()?;
+    let secret = if body.issue_enrollment_tokens() {
+        Some(enroll_token_secret(st)?)
+    } else {
+        None
+    };
+    let expires_at = Utc::now() + Duration::seconds(body.ttl_seconds());
+
+    let mut tx = db_rls::begin_rls_tx(&st.db, Some(tid), ctx)
+        .await
+        .map_err(map_db_error)?;
+
+    let mut devices = Vec::with_capacity(body.items.len());
+    let mut enrollment_tokens = Vec::new();
+
+    for item in &body.items {
+        let device = device_repo::create_device(&mut *tx, tid, item)
+            .await
+            .map_err(map_db_error)?;
+        audit::write_audit(
+            &mut *tx,
+            tid,
+            "create",
+            "device",
+            &device.id.0.to_string(),
+            json!({
+                "platform": format!("{:?}", item.platform),
+                "hostname": &item.hostname,
+                "registration_code": &device.registration_code,
+                "batch": true,
+            }),
+        )
+        .await
+        .ok();
+
+        if let Some(secret) = secret {
+            let payload = json!({
+                "tenant_id": tid,
+                "device_id": device.id.0,
+                "registration_code": &device.registration_code,
+                "exp": expires_at.timestamp(),
+            });
+            let token = sign_device_enrollment_token(&payload, secret)?;
+            enrollment_tokens.push(DeviceEnrollmentToken {
+                token,
+                expires_at,
+                registration_code: device.registration_code.clone(),
+                device_id: device.id.0,
+            });
+        }
+
+        devices.push(device);
+    }
+
+    tx.commit().await.map_err(map_db_error)?;
+
+    Ok(BatchCreateDevicesResponse {
+        devices,
+        enrollment_tokens,
+    })
 }
 
 pub async fn get_device(

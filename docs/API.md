@@ -66,6 +66,7 @@
 |------|------|------|
 | GET | `/v1/tenants/{tid}/devices` | 列表（支持 `search`, `platform`, `enroll_status`, `online_state` 筛选 + 分页；`search` 同时匹配 `hostname` 与 `registration_code`） |
 | POST | `/v1/tenants/{tid}/devices` | 注册/预置设备（支持可选 `registration_code`；留空时后端自动生成稳定注册码） |
+| POST | `/v1/tenants/{tid}/devices:batch-create` | 批量预注册设备（1-200 台；可选同时签发 enrollment token） |
 | GET/PATCH/DELETE | `/v1/tenants/{tid}/devices/{did}` | 查询/更新标签分组/吊销 |
 | POST | `/v1/tenants/{tid}/devices/{did}/registration-code:rotate` | 重置该设备的注册码 |
 | POST | `/v1/tenants/{tid}/devices/{did}/enrollment-token` | 为该设备签发短期 enrollment token |
@@ -74,6 +75,8 @@
 补充说明：设备模型支持稳定的人可见绑定标识 `registration_code`。建议平台预注册设备时显式录入该码，后续 Agent 首次启动通过同一注册码精确复用该设备记录，而不是仅靠 `hostname` 模糊匹配。
 
 若希望进一步避免人工录错，可直接对预注册设备签发 enrollment token。该 token 会绑定 `tenant_id + device_id + registration_code + exp`，Agent 首次启动调用 `POST /v1/tenants/{tid}/devices/claim-with-enrollment-token` 后即可精确认领该设备记录。
+
+批量场景建议直接调用 `devices:batch-create`，并为返回结果导出 `registration_code`、`enrollment_token` 与 Agent 启动命令，便于工厂、门店或 IT 运维批量下发。
 
 ### 设备影子（Device Shadow）
 

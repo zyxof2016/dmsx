@@ -290,6 +290,10 @@ pub fn build_router(st: AppState) -> Router {
             get(handlers::devices_list).post(handlers::devices_create),
         )
         .route(
+            "/v1/tenants/{tenant_id}/devices:batch-create",
+            post(handlers::devices_batch_create),
+        )
+        .route(
             "/v1/tenants/{tenant_id}/devices/{device_id}",
             get(handlers::devices_get)
                 .patch(handlers::devices_patch)

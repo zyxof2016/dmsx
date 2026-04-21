@@ -121,6 +121,16 @@ pub async fn devices_create(
     Ok((StatusCode::CREATED, Json(device)).into_response())
 }
 
+pub async fn devices_batch_create(
+    State(st): State<AppState>,
+    Extension(ctx): Extension<AuthContext>,
+    Path(tid): Path<Uuid>,
+    Json(body): Json<BatchCreateDevicesReq>,
+) -> ApiResult<Response> {
+    let result = devices::batch_create_devices(&st, &ctx, tid, &body).await?;
+    Ok((StatusCode::CREATED, Json(result)).into_response())
+}
+
 pub async fn devices_get(
     State(st): State<AppState>,
     Extension(ctx): Extension<AuthContext>,

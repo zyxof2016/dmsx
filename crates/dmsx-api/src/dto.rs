@@ -98,6 +98,46 @@ pub struct CreateDeviceReq {
     pub labels: serde_json::Value,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct BatchCreateDevicesReq {
+    pub items: Vec<CreateDeviceReq>,
+    pub issue_enrollment_tokens: Option<bool>,
+    pub ttl_seconds: Option<i64>,
+}
+
+impl BatchCreateDevicesReq {
+    pub fn issue_enrollment_tokens(&self) -> bool {
+        self.issue_enrollment_tokens.unwrap_or(false)
+    }
+
+    pub fn ttl_seconds(&self) -> i64 {
+        self.ttl_seconds.unwrap_or(1800)
+    }
+
+    pub fn validate(&self) -> Result<(), DmsxError> {
+        if self.items.is_empty() || self.items.len() > 200 {
+            return Err(DmsxError::Validation(
+                "items must contain between 1 and 200 devices".into(),
+            ));
+        }
+        for item in &self.items {
+            item.validate()?;
+        }
+        if self.issue_enrollment_tokens() && !(60..=86400).contains(&self.ttl_seconds()) {
+            return Err(DmsxError::Validation(
+                "ttl_seconds must be between 60 and 86400".into(),
+            ));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct BatchCreateDevicesResponse {
+    pub devices: Vec<Device>,
+    pub enrollment_tokens: Vec<DeviceEnrollmentToken>,
+}
+
 impl CreateDeviceReq {
     pub fn validate(&self) -> Result<(), DmsxError> {
         if let Some(h) = &self.hostname {

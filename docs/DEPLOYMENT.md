@@ -298,6 +298,8 @@ spec:
 | `DMSX_TENANT_ID` | `00000000-0000-0000-0000-000000000001` | 租户 ID |
 | `DMSX_DEVICE_REGISTRATION_CODE` | （未设置） | Agent 首次绑定时使用的人可见设备注册码；设置后会优先按该码复用已预注册设备 |
 | `DMSX_DEVICE_ENROLLMENT_TOKEN` | （未设置） | Agent 首次绑定时使用的 enrollment token；设置后会优先走 token 认领流程 |
+
+批量部署建议：平台侧批量预注册并导出 CSV，每行包含 `registration_code`、`enrollment_token` 与启动命令模板；设备侧可由脚本或 MDM 直接注入 `DMSX_DEVICE_ENROLLMENT_TOKEN` 启动 Agent。
 | `DMSX_HEARTBEAT_SECS` | `30` | 心跳间隔（秒） |
 | `DMSX_POLL_SECS` | `10` | 命令轮询间隔（秒） |
 | `DMSX_RUSTDESK_RELAY` | （可选）| RustDesk 自建中继服务器地址 |
