@@ -146,7 +146,7 @@
 | GET | `/v1/config/tenants` | 平台租户目录汇总（跨租户设备数 / 策略数 / 命令数；仅 `PlatformAdmin`） |
 | GET | `/v1/config/audit-logs` | 平台全局审计日志（分页；支持 `action` / `resource_type` 筛选；仅 `PlatformAdmin`） |
 | GET | `/v1/config/platform-health` | 平台健康摘要（租户数 / 设备数 / 命令数；仅 `PlatformAdmin`） |
-| GET | `/v1/config/quotas` | 平台配额列表（当前为控制面内置静态配额；仅 `PlatformAdmin`） |
+| GET | `/v1/config/quotas` | 平台配额列表（返回真实已用量；上限可由 `DMSX_API_PLATFORM_*_LIMIT` 环境变量配置；仅 `PlatformAdmin`） |
 
 ### AI 智慧管控
 

@@ -466,9 +466,10 @@ pub async fn platform_health_get(
 }
 
 pub async fn platform_quotas_get(
-    Extension(_ctx): Extension<AuthContext>,
+    State(st): State<AppState>,
+    Extension(ctx): Extension<AuthContext>,
 ) -> ApiResult<Json<ListResponse<PlatformQuota>>> {
-    Ok(Json(platform::platform_quotas()))
+    Ok(Json(platform::platform_quotas(&st, &ctx).await?))
 }
 
 pub async fn policy_editor_create_and_publish(

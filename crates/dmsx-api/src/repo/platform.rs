@@ -1,7 +1,35 @@
 use chrono::{DateTime, Utc};
 use sqlx::{PgConnection, Row};
 
-use crate::dto::{AuditLog, AuditLogListParams, ListResponse, PlatformHealth, PlatformQuota, PlatformTenantSummary};
+use crate::dto::{AuditLog, AuditLogListParams, PlatformHealth, PlatformTenantSummary};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PlatformUsageCounts {
+    pub tenant_count: i64,
+    pub device_count: i64,
+    pub command_count: i64,
+    pub artifact_count: i64,
+}
+
+pub async fn usage_counts(conn: &mut PgConnection) -> Result<PlatformUsageCounts, sqlx::Error> {
+    let row = sqlx::query(
+        "
+        SELECT
+            (SELECT COUNT(*)::bigint FROM tenants) AS tenant_count,
+            (SELECT COUNT(*)::bigint FROM devices) AS device_count,
+            (SELECT COUNT(*)::bigint FROM commands) AS command_count,
+            (SELECT COUNT(*)::bigint FROM artifacts) AS artifact_count",
+    )
+    .fetch_one(&mut *conn)
+    .await?;
+
+    Ok(PlatformUsageCounts {
+        tenant_count: row.try_get("tenant_count")?,
+        device_count: row.try_get("device_count")?,
+        command_count: row.try_get("command_count")?,
+        artifact_count: row.try_get("artifact_count")?,
+    })
+}
 
 pub async fn list_platform_audit_logs(
     conn: &mut PgConnection,
@@ -57,21 +85,13 @@ pub async fn list_platform_audit_logs(
 }
 
 pub async fn platform_health(conn: &mut PgConnection) -> Result<PlatformHealth, sqlx::Error> {
-    let tenant_count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*)::bigint FROM tenants")
-        .fetch_one(&mut *conn)
-        .await?;
-    let device_count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*)::bigint FROM devices")
-        .fetch_one(&mut *conn)
-        .await?;
-    let command_count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*)::bigint FROM commands")
-        .fetch_one(&mut *conn)
-        .await?;
+    let counts = usage_counts(conn).await?;
 
     Ok(PlatformHealth {
         status: "ok".to_string(),
-        tenant_count,
-        device_count,
-        command_count,
+        tenant_count: counts.tenant_count,
+        device_count: counts.device_count,
+        command_count: counts.command_count,
     })
 }
 
@@ -104,32 +124,4 @@ pub async fn tenant_summaries(conn: &mut PgConnection) -> Result<Vec<PlatformTen
             })
         })
         .collect()
-}
-
-pub fn platform_quotas() -> ListResponse<PlatformQuota> {
-    ListResponse {
-        items: vec![
-            PlatformQuota {
-                key: "devices".into(),
-                limit: 10_000,
-                used: 0,
-                unit: "count".into(),
-            },
-            PlatformQuota {
-                key: "artifacts_storage".into(),
-                limit: 500,
-                used: 0,
-                unit: "gb".into(),
-            },
-            PlatformQuota {
-                key: "desktop_sessions".into(),
-                limit: 200,
-                used: 0,
-                unit: "count".into(),
-            },
-        ],
-        total: 3,
-        limit: 3,
-        offset: 0,
-    }
 }

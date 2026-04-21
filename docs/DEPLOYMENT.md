@@ -230,6 +230,10 @@ spec:
 | `DMSX_API_REQUEST_TIMEOUT_SECONDS` | `30` | 全局请求超时（秒）；用于防止下游卡死导致资源耗尽 |
 | `DMSX_API_CONCURRENCY_LIMIT_ENABLED` | `false` | 是否启用全局并发上限（建议在公网/大流量入口开启） |
 | `DMSX_API_CONCURRENCY_LIMIT` | `1024` | 全局并发上限（启用时生效；下限 1） |
+| `DMSX_API_PLATFORM_TENANT_LIMIT` | `1000` | `/v1/config/quotas` 中平台租户数配额上限 |
+| `DMSX_API_PLATFORM_DEVICE_LIMIT` | `10000` | `/v1/config/quotas` 中平台设备数配额上限 |
+| `DMSX_API_PLATFORM_COMMAND_LIMIT` | `100000` | `/v1/config/quotas` 中平台命令数配额上限 |
+| `DMSX_API_PLATFORM_ARTIFACT_LIMIT` | `10000` | `/v1/config/quotas` 中平台制品数配额上限 |
 | `DMSX_API_CORS_ALLOWED_ORIGINS` | （未设置） | 允许的 CORS 来源（逗号分隔，完整 scheme+host+port，如 `https://admin.example.com,http://localhost:3000`）。未设置且非 `dev` 环境将拒绝所有跨域请求（浏览器侧阻断）。 |
 | `DMSX_API_CORS_ALLOW_ALL` | `false` | 是否放开所有 CORS 来源（dev-like）；设置为 `1/true/yes` 时 `DMSX_API_CORS_ALLOWED_ORIGINS` 将被忽略。 |
 | `DMSX_API_UPLOAD_TOKEN_HMAC_SECRET` | （未设置） | 控制面签发 `UploadEvidence` token 的 HMAC secret；应与网关 `DMSX_GW_UPLOAD_TOKEN_HMAC_SECRET` 保持一致。若未设置，`POST /v1/tenants/{tid}/commands/{cid}/evidence-upload-token` 返回 **500** |

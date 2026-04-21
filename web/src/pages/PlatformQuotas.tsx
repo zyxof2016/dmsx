@@ -4,6 +4,17 @@ import { usePlatformQuotas } from "../api/hooks";
 import type { PlatformQuota } from "../api/types";
 import { formatApiError } from "../api/errors";
 
+const QUOTA_LABELS: Record<string, { title: string; description: string }> = {
+  tenants: { title: "租户数", description: "当前平台下已创建的租户总数。" },
+  devices: { title: "设备数", description: "全平台纳管设备总数。" },
+  commands: { title: "命令数", description: "全平台累计命令总数。" },
+  artifacts: { title: "制品数", description: "全平台已登记制品总数。" },
+};
+
+function quotaMeta(key: string) {
+  return QUOTA_LABELS[key] ?? { title: key, description: "" };
+}
+
 export const PlatformQuotasPage: React.FC = () => {
   const { data, isLoading, error } = usePlatformQuotas();
   const items = data?.items ?? [];
@@ -18,9 +29,24 @@ export const PlatformQuotasPage: React.FC = () => {
           rowKey={(row) => row.key}
           dataSource={items}
           locale={{ emptyText: <Empty description="暂无配额数据" /> }}
-          pagination={false}
-          columns={[
-            { title: "配额项", dataIndex: "key", key: "key" },
+            pagination={false}
+            columns={[
+            {
+              title: "配额项",
+              dataIndex: "key",
+              key: "key",
+              render: (value: string) => {
+                const meta = quotaMeta(value);
+                return (
+                  <Space direction="vertical" size={0}>
+                    <Typography.Text strong>{meta.title}</Typography.Text>
+                    {meta.description ? (
+                      <Typography.Text type="secondary">{meta.description}</Typography.Text>
+                    ) : null}
+                  </Space>
+                );
+              },
+            },
             { title: "已用", dataIndex: "used", key: "used" },
             { title: "总量", dataIndex: "limit", key: "limit" },
             { title: "单位", dataIndex: "unit", key: "unit" },

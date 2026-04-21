@@ -193,7 +193,7 @@
 - [x] `GET /v1/config/tenants` 平台租户目录汇总（PlatformAdmin）
 - [x] `GET /v1/config/audit-logs` 平台全局审计日志（PlatformAdmin）
 - [x] `GET /v1/config/platform-health` 平台健康摘要（PlatformAdmin）
-- [x] `GET /v1/config/quotas` 平台配额列表（PlatformAdmin；当前为静态配额）
+- [x] `GET /v1/config/quotas` 平台配额列表（PlatformAdmin；返回真实已用量，配额上限由环境变量配置）
 - [~] `POST /v1/tenants/{tid}/ai/anomalies` AI 异常检测（规则引擎 stub）
 - [~] `POST /v1/tenants/{tid}/ai/recommendations` AI 策略推荐（stub）
 - [~] `POST /v1/tenants/{tid}/ai/chat` AI 智能助手（stub，待接 LLM）
