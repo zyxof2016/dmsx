@@ -12,11 +12,11 @@ use crate::auth::AuthContext;
 use crate::db_rls;
 use crate::dto::{
     BatchCreateDevicesReq, BatchCreateDevicesResponse, ClaimDeviceEnrollmentReq, CreateDeviceReq,
-    DeviceEnrollmentToken, DeviceListParams, IssueDeviceEnrollmentTokenReq, ListResponse,
-    UpdateDeviceReq,
+    DeviceEnrollmentBatchResponse, DeviceEnrollmentToken, DeviceListParams,
+    IssueDeviceEnrollmentTokenReq, ListResponse, UpdateDeviceReq,
 };
 use crate::error::map_db_error;
-use crate::repo::{audit, devices as device_repo};
+use crate::repo::{audit, device_enrollment_batches as batch_repo, devices as device_repo};
 use crate::services::ServiceResult;
 use crate::state::AppState;
 
@@ -71,6 +71,26 @@ fn verify_device_enrollment_token(token: &str, secret: &str) -> ServiceResult<Va
         return Err(DmsxError::Unauthorized("enrollment token expired".into()));
     }
     Ok(payload)
+}
+
+fn batch_response_to_json(response: &BatchCreateDevicesResponse) -> Result<Value, DmsxError> {
+    serde_json::to_value(response)
+        .map_err(|e| DmsxError::Internal(format!("serialize batch response: {e}")))
+}
+
+fn batch_response_from_json(
+    batch_id: Uuid,
+    created_at: chrono::DateTime<Utc>,
+    value: Value,
+) -> Result<DeviceEnrollmentBatchResponse, DmsxError> {
+    let response: BatchCreateDevicesResponse = serde_json::from_value(value)
+        .map_err(|e| DmsxError::Internal(format!("deserialize batch response: {e}")))?;
+    Ok(DeviceEnrollmentBatchResponse {
+        batch_id,
+        devices: response.devices,
+        enrollment_tokens: response.enrollment_tokens,
+        created_at,
+    })
 }
 
 pub async fn list_devices(
@@ -187,12 +207,45 @@ pub async fn batch_create_devices(
         devices.push(device);
     }
 
+    let response = BatchCreateDevicesResponse {
+        batch_id: Uuid::nil(),
+        devices,
+        enrollment_tokens,
+    };
+    let response_json = batch_response_to_json(&response)?;
+    let batch = batch_repo::insert_batch(
+        &mut *tx,
+        tid,
+        Some(&ctx.subject),
+        response.devices.len() as i64,
+        &response_json,
+    )
+    .await
+    .map_err(map_db_error)?;
     tx.commit().await.map_err(map_db_error)?;
 
     Ok(BatchCreateDevicesResponse {
-        devices,
-        enrollment_tokens,
+        batch_id: batch.id,
+        devices: response.devices,
+        enrollment_tokens: response.enrollment_tokens,
     })
+}
+
+pub async fn get_device_enrollment_batch(
+    st: &AppState,
+    ctx: &AuthContext,
+    tid: Uuid,
+    batch_id: Uuid,
+) -> ServiceResult<DeviceEnrollmentBatchResponse> {
+    let mut tx = db_rls::begin_rls_tx(&st.db, Some(tid), ctx)
+        .await
+        .map_err(map_db_error)?;
+    let batch = batch_repo::get_batch(&mut *tx, tid, batch_id)
+        .await
+        .map_err(map_db_error)?
+        .ok_or_else(|| DmsxError::NotFound(format!("device enrollment batch {batch_id}")))?;
+    tx.commit().await.map_err(map_db_error)?;
+    batch_response_from_json(batch.id, batch.created_at, batch.result)
 }
 
 pub async fn get_device(

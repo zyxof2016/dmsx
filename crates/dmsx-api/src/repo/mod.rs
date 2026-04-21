@@ -2,6 +2,7 @@ pub mod audit;
 pub mod artifacts;
 pub mod commands;
 pub mod compliance;
+pub mod device_enrollment_batches;
 pub mod devices;
 pub mod groups;
 pub mod orgs;

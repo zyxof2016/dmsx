@@ -112,9 +112,14 @@ pub async fn platform_quotas(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use once_cell::sync::Lazy;
+    use std::sync::Mutex;
+
+    static ENV_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
     #[test]
     fn quota_limit_from_env_uses_default_for_invalid_values() {
+        let _guard = ENV_LOCK.lock().unwrap();
         std::env::remove_var("DMSX_API_PLATFORM_DEVICE_LIMIT");
         assert_eq!(quota_limit_from_env("DMSX_API_PLATFORM_DEVICE_LIMIT", 42), 42);
 
@@ -125,6 +130,7 @@ mod tests {
 
     #[test]
     fn quota_limit_from_env_clamps_to_positive_values() {
+        let _guard = ENV_LOCK.lock().unwrap();
         std::env::set_var("DMSX_API_PLATFORM_DEVICE_LIMIT", "0");
         assert_eq!(quota_limit_from_env("DMSX_API_PLATFORM_DEVICE_LIMIT", 42), 1);
 

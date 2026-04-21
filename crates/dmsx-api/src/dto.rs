@@ -132,10 +132,19 @@ impl BatchCreateDevicesReq {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct BatchCreateDevicesResponse {
+    pub batch_id: Uuid,
     pub devices: Vec<Device>,
     pub enrollment_tokens: Vec<DeviceEnrollmentToken>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DeviceEnrollmentBatchResponse {
+    pub batch_id: Uuid,
+    pub devices: Vec<Device>,
+    pub enrollment_tokens: Vec<DeviceEnrollmentToken>,
+    pub created_at: DateTime<Utc>,
 }
 
 impl CreateDeviceReq {
@@ -167,7 +176,7 @@ pub struct UpdateDeviceReq {
     pub labels: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct DeviceEnrollmentToken {
     pub token: String,
     pub expires_at: DateTime<Utc>,

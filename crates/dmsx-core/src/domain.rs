@@ -198,6 +198,17 @@ pub struct Device {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+pub struct DeviceEnrollmentBatch {
+    pub id: Uuid,
+    pub tenant_id: TenantId,
+    pub actor_subject: Option<String>,
+    pub item_count: i64,
+    pub result: serde_json::Value,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
 pub struct Policy {
     pub id: PolicyId,
     pub tenant_id: TenantId,

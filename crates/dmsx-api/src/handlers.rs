@@ -131,6 +131,16 @@ pub async fn devices_batch_create(
     Ok((StatusCode::CREATED, Json(result)).into_response())
 }
 
+pub async fn device_enrollment_batch_get(
+    State(st): State<AppState>,
+    Extension(ctx): Extension<AuthContext>,
+    Path((tid, batch_id)): Path<(Uuid, Uuid)>,
+) -> ApiResult<Json<DeviceEnrollmentBatchResponse>> {
+    Ok(Json(
+        devices::get_device_enrollment_batch(&st, &ctx, tid, batch_id).await?,
+    ))
+}
+
 pub async fn devices_get(
     State(st): State<AppState>,
     Extension(ctx): Extension<AuthContext>,
