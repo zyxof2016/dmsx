@@ -428,9 +428,17 @@ export function useCreateTenant() {
 }
 
 export function usePlatformTenants() {
+  return usePlatformTenantsList();
+}
+
+export function usePlatformTenantsList(params?: ListParams) {
   return useQuery({
-    queryKey: ["platformTenants"],
-    queryFn: () => api.get<PlatformTenantSummary[]>("/v1/config/tenants"),
+    queryKey: ["platformTenants", params ?? {}],
+    queryFn: () =>
+      api.get<ListResponse<PlatformTenantSummary>>(
+        `/v1/config/tenants${buildQuery(params)}`,
+      ),
+    placeholderData: keepPreviousData,
     retry: false,
   });
 }

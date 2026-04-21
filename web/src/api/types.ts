@@ -280,7 +280,13 @@ export interface PlatformHealth {
   status: string;
   tenant_count: number;
   device_count: number;
+  policy_count: number;
   command_count: number;
+  artifact_count: number;
+  audit_log_count: number;
+  livekit_enabled: boolean;
+  redis_enabled: boolean;
+  command_bus_enabled: boolean;
 }
 
 export interface PolicyRevision {

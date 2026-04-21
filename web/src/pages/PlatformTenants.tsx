@@ -1,27 +1,86 @@
 import React from "react";
-import { Alert, Card, Empty, Space, Table, Typography } from "antd";
+import { Alert, Button, Card, Empty, Input, Space, Table, Typography } from "antd";
+import { SearchOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
-import { usePlatformTenants } from "../api/hooks";
-import type { PlatformTenantSummary } from "../api/types";
+import { useNavigate } from "@tanstack/react-router";
+import { usePlatformTenantsList } from "../api/hooks";
+import type { PlatformTenantSummary, ListParams } from "../api/types";
 import { formatApiError } from "../api/errors";
+import { setStoredTenantId } from "../api/client";
 
 export const PlatformTenantsPage: React.FC = () => {
-  const { data, isLoading, error } = usePlatformTenants();
+  const navigate = useNavigate();
+  const [search, setSearch] = React.useState("");
+  const [page, setPage] = React.useState(1);
+  const [pageSize, setPageSize] = React.useState(10);
+
+  const params: ListParams = {
+    limit: pageSize,
+    offset: (page - 1) * pageSize,
+    search: search || undefined,
+  };
+
+  const { data, isLoading, error, refetch } = usePlatformTenantsList(params);
+  const items = data?.items ?? [];
+  const total = data?.total ?? 0;
+
+  const openTenant = (tenantId: string) => {
+    setStoredTenantId(tenantId);
+    navigate({ to: "/devices" });
+  };
 
   return (
     <Space direction="vertical" style={{ width: "100%" }}>
       <Typography.Title level={4}>平台租户目录</Typography.Title>
       {error && <Alert type="error" showIcon message="加载失败" description={formatApiError(error)} />}
       <Card>
+        <Space style={{ marginBottom: 16 }} wrap>
+          <Input
+            prefix={<SearchOutlined />}
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
+            placeholder="搜索租户名称或 UUID"
+            allowClear
+            style={{ width: 280 }}
+          />
+          <Button onClick={() => refetch()}>刷新</Button>
+        </Space>
         <Table<PlatformTenantSummary>
           loading={isLoading}
           rowKey={(row) => row.id}
-          dataSource={data ?? []}
+          dataSource={items}
           locale={{ emptyText: <Empty description="暂无租户数据" /> }}
-          pagination={false}
+          pagination={{
+            current: page,
+            pageSize,
+            total,
+            showSizeChanger: true,
+            showTotal: (value) => `共 ${value} 个租户`,
+            onChange: (nextPage, nextPageSize) => {
+              setPage(nextPage);
+              setPageSize(nextPageSize);
+            },
+          }}
           columns={[
-            { title: "租户名称", dataIndex: "name", key: "name" },
-            { title: "租户 ID", dataIndex: "id", key: "id" },
+            {
+              title: "租户名称",
+              dataIndex: "name",
+              key: "name",
+              render: (value: string, row) => (
+                <Button type="link" style={{ padding: 0 }} onClick={() => openTenant(row.id)}>
+                  {value}
+                </Button>
+              ),
+            },
+            {
+              title: "租户 ID",
+              dataIndex: "id",
+              key: "id",
+              render: (value: string) => <Typography.Text code>{value}</Typography.Text>,
+            },
             {
               title: "设备数",
               dataIndex: "device_count",
@@ -42,6 +101,15 @@ export const PlatformTenantsPage: React.FC = () => {
               dataIndex: "created_at",
               key: "created_at",
               render: (value: string) => dayjs(value).format("YYYY-MM-DD HH:mm:ss"),
+            },
+            {
+              title: "操作",
+              key: "action",
+              render: (_, row) => (
+                <Button size="small" onClick={() => openTenant(row.id)}>
+                  切换并查看设备
+                </Button>
+              ),
             },
           ]}
         />
