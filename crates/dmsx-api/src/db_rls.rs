@@ -29,6 +29,6 @@ pub async fn begin_rls_tx<'a>(
     ctx: &AuthContext,
 ) -> Result<Transaction<'a, Postgres>, sqlx::Error> {
     let mut tx = pool.begin().await?;
-    apply_session_vars(&mut tx, tenant_id, ctx.is_platform_admin()).await?;
+    apply_session_vars(&mut tx, tenant_id, ctx.has_platform_scope()).await?;
     Ok(tx)
 }

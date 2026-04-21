@@ -788,7 +788,6 @@ mod tests {
     async fn tenant_admin_cannot_access_platform_management_routes_on_real_router() {
         let secret = "test-secret-please-change-me";
         let tenant_id = Uuid::new_v4();
-        let router = build_router(test_state(AuthMode::Jwt));
 
         for uri in [
             "/v1/config/tenants",
@@ -796,6 +795,7 @@ mod tests {
             "/v1/config/platform-health",
             "/v1/config/quotas",
         ] {
+            let router = build_router(test_state(AuthMode::Jwt));
             let request = Request::builder()
                 .uri(uri)
                 .header(
@@ -819,7 +819,6 @@ mod tests {
     async fn platform_admin_can_reach_platform_management_routes_on_real_router() {
         let secret = "test-secret-please-change-me";
         let tenant_id = Uuid::new_v4();
-        let router = build_router(test_state(AuthMode::Jwt));
 
         for uri in [
             "/v1/config/tenants?limit=10&offset=0",
@@ -827,6 +826,7 @@ mod tests {
             "/v1/config/platform-health",
             "/v1/config/quotas",
         ] {
+            let router = build_router(test_state(AuthMode::Jwt));
             let request = Request::builder()
                 .uri(uri)
                 .header(
@@ -842,6 +842,37 @@ mod tests {
             let response = router.clone().oneshot(request).await.expect("response");
             assert_ne!(response.status(), StatusCode::FORBIDDEN, "uri={uri}");
             assert_ne!(response.status(), StatusCode::UNAUTHORIZED, "uri={uri}");
+        }
+    }
+
+    #[tokio::test]
+    async fn platform_viewer_can_read_platform_management_routes_on_real_router() {
+        let secret = "test-secret-please-change-me";
+        let tenant_id = Uuid::new_v4();
+
+        for uri in [
+            "/v1/config/livekit",
+            "/v1/config/rbac/roles",
+            "/v1/config/tenants?limit=10&offset=0",
+            "/v1/config/audit-logs?limit=10&offset=0",
+            "/v1/config/platform-health",
+            "/v1/config/quotas",
+        ] {
+            let router = build_router(test_state(AuthMode::Jwt));
+            let request = Request::builder()
+                .uri(uri)
+                .header(
+                    AUTHORIZATION,
+                    format!(
+                        "Bearer {}",
+                        issue_token(secret, tenant_id, vec!["PlatformViewer".to_string()])
+                    ),
+                )
+                .body(Body::empty())
+                .expect("request");
+
+            let response = router.oneshot(request).await.expect("response");
+            assert_eq!(response.status(), StatusCode::OK, "uri={uri}");
         }
     }
 

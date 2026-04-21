@@ -205,7 +205,7 @@
 - [x] 监听地址可配置（`DMSX_API_BIND` 环境变量）
 - [x] `TraceLayer` 日志追踪
 - [~] JWT / OIDC 认证实现（JWT `issuer` / `audience` 校验已支持；可选 **`allowed_tenant_ids`** 与 **`tenant_id`** 并集作为路径租户白名单；可选 **`tenant_roles`** 按活动租户覆盖 RBAC（无键回退 **`roles`**）；OIDC discovery -> `jwks_uri` 加载、JWKS 校验、后台 TTL 刷新、未知 `kid` 强制刷新、刷新失败 stale fallback、最大陈旧窗口、启动首刷失败可配置策略已接入；`/ready` 已暴露认证/JWKS 就绪状态；外部 IdP 实机联调与告警/指标后端集成待补）
-- [x] RBAC 权限校验（已细化到资源级：全局配置 / devices / policies / commands / shadow / artifacts / compliance / desktop / AI；`TenantAdmin` 与 `PlatformAdmin` 非租户路由权限已区分）
+- [x] RBAC 权限校验（已细化到资源级：全局配置 / devices / policies / commands / shadow / artifacts / compliance / desktop / AI；平台路由支持 `PlatformAdmin` / `PlatformViewer` 读写分层，租户路由继续按 `tenant_roles` 覆盖）
 - [x] 路径 `{tenant_id}` 与 JWT 许可集合及 RBAC（`tenant_id` ∪ `allowed_tenant_ids`；`tenant_roles` 按活动租户覆盖 `roles`；见 [`API.md`](API.md)）
 - [x] 速率限制（per-tenant：可通过 `DMSX_API_RATE_LIMIT_ENABLED` / `DMSX_API_RATE_LIMIT_PER_SECOND` / `DMSX_API_RATE_LIMIT_BURST` 配置，超限返回 429 ProblemDetails）
 - [x] 请求体大小限制（`DMSX_API_REQUEST_BODY_LIMIT_BYTES`，超限返回 413 ProblemDetails）

@@ -99,7 +99,7 @@ paths:
       summary: Create tenant (platform)
       operationId: createTenant
       description: |
-        创建新租户（服务端生成 `id`）。`jwt` 模式下与 `GET /v1/config/livekit` 相同，仅 **PlatformAdmin** 可写；`disabled` 模式下不校验。
+        创建新租户（服务端生成 `id`）。`jwt` 模式下仅 **PlatformAdmin** 可写；平台只读接口可由 **PlatformAdmin** 或 **PlatformViewer** 访问；`disabled` 模式下不校验。
       requestBody:
         required: true
         content:
@@ -1461,7 +1461,7 @@ components:
 
         **按租户角色**：可选对象 **`tenant_roles`**（JSON 中键为租户 UUID 字符串，值为角色名字符串数组）。对每次请求取**活动租户**（有路径租户时为路径 `{tenant_id}`，否则为 JWT 的 `tenant_id`）：若 `tenant_roles` 含该租户键则仅用该数组做 RBAC（空数组表示该租户无角色）；若无键则回退到令牌级 **`roles`**。
 
-        `GET /v1/config/livekit`、`GET /v1/config/rbac/roles`、`GET /v1/config/settings/{key}`、`PUT /v1/config/settings/{key}`、`GET /v1/config/tenants`、`GET /v1/config/audit-logs`、`GET /v1/config/platform-health`、`GET /v1/config/quotas` 需 **PlatformAdmin** 角色（与 `dmsx-api` RBAC 一致）。
+        平台只读接口 `GET /v1/config/livekit`、`GET /v1/config/rbac/roles`、`GET /v1/config/settings/{key}`、`GET /v1/config/tenants`、`GET /v1/config/audit-logs`、`GET /v1/config/platform-health`、`GET /v1/config/quotas` 可由 **PlatformAdmin** 或 **PlatformViewer** 访问；平台写接口如 `PUT /v1/config/settings/{key}`、`POST /v1/tenants` 仅 **PlatformAdmin** 可写。
 
         本地开发可将 `DMSX_API_AUTH_MODE` 设为 `disabled` 跳过校验。
   responses:
@@ -1944,9 +1944,27 @@ components:
       type: object
       required:
       - name
+      - scope
+      - description
+      - platform_read
+      - platform_write
+      - tenant_read
+      - tenant_write
       properties:
         name:
           type: string
+        scope:
+          type: string
+        description:
+          type: string
+        platform_read:
+          type: boolean
+        platform_write:
+          type: boolean
+        tenant_read:
+          type: boolean
+        tenant_write:
+          type: boolean
     PlatformTenantSummary:
       type: object
       required:

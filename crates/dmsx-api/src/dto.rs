@@ -576,6 +576,12 @@ pub struct SystemSetting {
 #[derive(Debug, Serialize)]
 pub struct RbacRole {
     pub name: String,
+    pub scope: String,
+    pub description: String,
+    pub platform_read: bool,
+    pub platform_write: bool,
+    pub tenant_read: bool,
+    pub tenant_write: bool,
 }
 
 #[derive(Debug, Serialize)]

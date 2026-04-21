@@ -314,6 +314,12 @@ impl AuthContext {
         self.roles.iter().any(|r| r == "PlatformAdmin")
     }
 
+    pub fn has_platform_scope(&self) -> bool {
+        self.roles
+            .iter()
+            .any(|r| matches!(r.as_str(), "PlatformAdmin" | "PlatformViewer"))
+    }
+
     /// NATS JetStream 命令回执入库：固定 subject，租户来自消息体；用于 RLS 会话变量与审计 actor。
     pub fn nats_jetstream_command_result(tenant_id: Uuid) -> Self {
         Self {
@@ -338,6 +344,13 @@ fn effective_roles_for_tenant(claims: &JwtClaims, active_tenant: Uuid) -> Vec<St
         return roles.clone();
     }
     claims.roles.clone()
+}
+
+fn effective_roles_for_request(claims: &JwtClaims, path_tenant_id: Option<Uuid>) -> Vec<String> {
+    match path_tenant_id {
+        Some(active_tenant) => effective_roles_for_tenant(claims, active_tenant),
+        None => claims.roles.clone(),
+    }
 }
 
 fn disabled_auth_context(path: &str) -> AuthContext {
@@ -396,7 +409,7 @@ pub async fn auth_middleware(
         None => claims.tenant_id,
     };
 
-    let effective_roles = effective_roles_for_tenant(&claims, active_tenant_id);
+    let effective_roles = effective_roles_for_request(&claims, path_tenant_id);
     if let Err(err) =
         authorize_request(request.method(), request.uri().path(), &effective_roles)
     {
@@ -493,6 +506,7 @@ fn classify_resource(path: &str) -> ResourceKind {
 fn is_role_allowed(role: &str, resource: ResourceKind, read_only: bool) -> bool {
     match role {
         "PlatformAdmin" => true,
+        "PlatformViewer" => read_only && matches!(resource, ResourceKind::GlobalConfig),
         "TenantAdmin" => !matches!(resource, ResourceKind::GlobalConfig),
         "SiteAdmin" => site_admin_allows(resource, read_only),
         "Operator" => operator_allows(resource, read_only),
@@ -1279,6 +1293,32 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn tenant_roles_do_not_override_platform_routes() {
+        let secret = "test-secret-please-change-me";
+        let primary = Uuid::new_v4();
+        let other = Uuid::new_v4();
+        let mut tenant_roles = HashMap::new();
+        tenant_roles.insert(other, vec!["ReadOnly".to_string()]);
+        let token = issue_token_with_allowed_and_tenant_roles(
+            secret,
+            primary,
+            vec![other],
+            vec!["PlatformAdmin".to_string()],
+            tenant_roles,
+        );
+        let router = test_router(test_state(AuthMode::Jwt));
+
+        let request = Request::builder()
+            .uri("/v1/config/livekit")
+            .header(AUTHORIZATION, format!("Bearer {token}"))
+            .body(Body::empty())
+            .expect("request");
+
+        let response = router.oneshot(request).await.expect("response");
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
     async fn jwt_mode_accepts_valid_token_and_injects_context() {
         let secret = "test-secret-please-change-me";
         let tenant_id = Uuid::new_v4();
@@ -1430,6 +1470,44 @@ mod tests {
         let response = router.oneshot(request).await.expect("response");
 
         assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn platform_viewer_can_read_but_not_write_global_config_route() {
+        let secret = "test-secret-please-change-me";
+        let tenant_id = Uuid::new_v4();
+        let router = test_router(test_state(AuthMode::Jwt));
+
+        let request = Request::builder()
+            .uri("/v1/config/livekit")
+            .header(
+                AUTHORIZATION,
+                format!(
+                    "Bearer {}",
+                    issue_token(secret, tenant_id, vec!["PlatformViewer".to_string()])
+                ),
+            )
+            .body(Body::empty())
+            .expect("request");
+        let response = router.clone().oneshot(request).await.expect("response");
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let request = Request::builder()
+            .method(Method::PUT)
+            .uri("/v1/config/settings/test")
+            .header(
+                AUTHORIZATION,
+                format!(
+                    "Bearer {}",
+                    issue_token(secret, tenant_id, vec!["PlatformViewer".to_string()])
+                ),
+            )
+            .header("content-type", "application/json")
+            .body(Body::from(r#"{"value":{"enabled":true}}"#))
+            .expect("request");
+        let response = router.oneshot(request).await.expect("response");
+        let body = response_body(response).await;
+        assert_eq!(body["title"], "Forbidden");
     }
 
     #[tokio::test]

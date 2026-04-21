@@ -6,7 +6,7 @@
 
 **远程桌面**：音视频与键鼠控制走 **LiveKit WebRTC**（浏览器 `livekit-client` 订阅、Agent SDK 发布）；`dmsx-api` 负责会话创建、LiveKit JWT 签发，并通过命令队列触发 Agent `start_desktop` / `stop_desktop`。**不再提供**经 `dmsx-api` 的桌面 JPEG WebSocket 中继端点。
 
-**认证**：除 `/health`、`/ready` 外，管理接口需 `Authorization: Bearer <JWT>`（路径 `{tenant_id}` 须被该 JWT 允许；`GET /v1/config/livekit`、`GET/PUT /v1/config/settings/{key}`、`GET /v1/config/rbac/roles`、`GET /v1/config/tenants`、`GET /v1/config/audit-logs`、`GET /v1/config/platform-health`、`GET /v1/config/quotas` 需 **PlatformAdmin**）。OpenAPI 根级 **`security: [bearerAuth]`**，并在各操作中声明 **`401` / `403`**；资源类接口另声明 **`404`**；各操作另声明 **`500`**（内部错误）。上述错误均复用 `components.responses` 与 **`ProblemDetails`**（见 `openapi/dmsx-control-plane.yaml`）。
+**认证**：除 `/health`、`/ready` 外，管理接口需 `Authorization: Bearer <JWT>`（路径 `{tenant_id}` 须被该 JWT 允许；平台只读接口 `GET /v1/config/livekit`、`GET /v1/config/rbac/roles`、`GET /v1/config/settings/{key}`、`GET /v1/config/tenants`、`GET /v1/config/audit-logs`、`GET /v1/config/platform-health`、`GET /v1/config/quotas` 需 **PlatformAdmin** 或 **PlatformViewer**；平台写接口如 `PUT /v1/config/settings/{key}`、`POST /v1/tenants` 仅 **PlatformAdmin** 可写）。OpenAPI 根级 **`security: [bearerAuth]`**，并在各操作中声明 **`401` / `403`**；资源类接口另声明 **`404`**；各操作另声明 **`500`**（内部错误）。上述错误均复用 `components.responses` 与 **`ProblemDetails`**（见 `openapi/dmsx-control-plane.yaml`）。
 
 **请求关联**：服务端会为每个请求生成或透传 `X-Request-Id`，并在响应中返回同名 header，便于排障时将客户端错误与服务端日志关联。
 
@@ -22,7 +22,7 @@
 
 **多租户 JWT（单用户多租户）**：JWT 声明中含 **`tenant_id`**（UUID，默认/主租户，无 `allowed_tenant_ids` 时即唯一允许租户）与可选数组 **`allowed_tenant_ids`**（UUID）。有效租户集合为 **`tenant_id` ∪ `allowed_tenant_ids`**。对 `/v1/tenants/{tenant_id}/...` 的请求，路径中的 `{tenant_id}` 必须属于该集合，否则 **403**。`AuthContext` 中的活动租户与路径一致，便于前端**切换租户**：更换 URL 中的 `{tenant_id}` 即可；签发方应在成员关系变化时更新 **`allowed_tenant_ids`**。
 
-**按租户 RBAC（`tenant_roles`）**：可选对象 **`tenant_roles`**，键为租户 UUID 字符串、值为该租户下角色字符串数组（与令牌级 **`roles`** 同一套角色名，如 `TenantAdmin`、`ReadOnly`）。对某次请求，**活动租户**为路径中的 `{tenant_id}`（无路径租户时，如 `GET /v1/config/livekit`，则为 JWT 的 **`tenant_id`**）。若 **`tenant_roles` 中存在该活动租户的键**（含空数组 `[]`），则本请求 **仅使用该键对应数组** 做 RBAC；若 **无该键**，则回退使用令牌级 **`roles`**。空数组表示该租户下显式无角色，受保护路由将 **403**（与「未声明 `roles`」行为一致）。
+**按租户 RBAC（`tenant_roles`）**：可选对象 **`tenant_roles`**，键为租户 UUID 字符串、值为该租户下角色字符串数组（如 `TenantAdmin`、`ReadOnly`）。对某次**租户路径请求**，活动租户为路径中的 `{tenant_id}`：若 **`tenant_roles` 中存在该活动租户的键**（含空数组 `[]`），则本请求 **仅使用该键对应数组** 做 RBAC；若 **无该键**，则回退使用令牌级 **`roles`**。对**非租户路径请求**（如 `/v1/config/...`），仅使用令牌级 **`roles`**，不会套用 `tenant_roles`。空数组表示该租户下显式无角色，受保护租户路由将 **403**。
 
 示例（节选 payload）：
 
@@ -50,7 +50,7 @@
 
 ### 租户与组织结构
 
-> **实现状态**：下列 **POST** 已在 `dmsx-api` 注册并与 **OpenAPI** 对齐。`POST /v1/tenants`、`GET /v1/config/livekit`、`GET/PUT /v1/config/settings/{key}`、`GET /v1/config/rbac/roles`、`GET /v1/config/tenants`、`GET /v1/config/audit-logs`、`GET /v1/config/platform-health`、`GET /v1/config/quotas` 同级 RBAC：**仅 `PlatformAdmin`**（`jwt` 模式；`disabled` 不校验）。其余创建路径在 **`jwt` 模式**下需 **`TenantAdmin`**（或更高）且路径 `{tid}` 属于 JWT 许可租户集合；请求体字段 **`name`** 长度 1–200。站点创建要求 **`org_id`** 属于该租户；设备组创建要求 **`site_id`** 属于该租户（否则 **400**）。名称在同一父级下违反唯一约束时 **409**。
+> **实现状态**：平台只读接口（`GET /v1/config/livekit`、`GET /v1/config/rbac/roles`、`GET /v1/config/settings/{key}`、`GET /v1/config/tenants`、`GET /v1/config/audit-logs`、`GET /v1/config/platform-health`、`GET /v1/config/quotas`）支持 **`PlatformAdmin`** 或 **`PlatformViewer`**；平台写接口（`POST /v1/tenants`、`PUT /v1/config/settings/{key}`）仅 **`PlatformAdmin`** 可写（`jwt` 模式；`disabled` 不校验）。其余租户创建路径在 **`jwt` 模式**下需 **`TenantAdmin`**（或更高）且路径 `{tid}` 属于 JWT 许可租户集合；请求体字段 **`name`** 长度 1–200。站点创建要求 **`org_id`** 属于该租户；设备组创建要求 **`site_id`** 属于该租户（否则 **400**）。名称在同一父级下违反唯一约束时 **409**。
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
@@ -137,7 +137,7 @@
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/v1/config/rbac/roles` | 返回后端内置 RBAC 角色定义（仅 `PlatformAdmin`） |
+| GET | `/v1/config/rbac/roles` | 返回后端内置 RBAC 角色定义（`PlatformAdmin` / `PlatformViewer` 可读） |
 
 ### 平台管理接口
 

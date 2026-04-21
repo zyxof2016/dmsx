@@ -22,7 +22,7 @@ pub async fn create_tenant(
     let tenant = tenants::insert_tenant(&mut *tx, &body.name)
         .await
         .map_err(map_db_error)?;
-    db_rls::apply_session_vars(&mut tx, Some(tenant.id.0), ctx.is_platform_admin())
+    db_rls::apply_session_vars(&mut tx, Some(tenant.id.0), ctx.has_platform_scope())
         .await
         .map_err(map_db_error)?;
     audit::write_audit(
