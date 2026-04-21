@@ -298,6 +298,10 @@ pub fn build_router(st: AppState) -> Router {
             get(handlers::device_enrollment_batch_get),
         )
         .route(
+            "/v1/tenants/{tenant_id}/device-enrollment-batches",
+            get(handlers::device_enrollment_batches_list),
+        )
+        .route(
             "/v1/tenants/{tenant_id}/devices/{device_id}",
             get(handlers::devices_get)
                 .patch(handlers::devices_patch)

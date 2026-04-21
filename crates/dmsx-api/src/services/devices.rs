@@ -12,8 +12,8 @@ use crate::auth::AuthContext;
 use crate::db_rls;
 use crate::dto::{
     BatchCreateDevicesReq, BatchCreateDevicesResponse, ClaimDeviceEnrollmentReq, CreateDeviceReq,
-    DeviceEnrollmentBatchResponse, DeviceEnrollmentToken, DeviceListParams,
-    IssueDeviceEnrollmentTokenReq, ListResponse, UpdateDeviceReq,
+    DeviceEnrollmentBatchListParams, DeviceEnrollmentBatchResponse, DeviceEnrollmentToken,
+    DeviceListParams, IssueDeviceEnrollmentTokenReq, ListResponse, UpdateDeviceReq,
 };
 use crate::error::map_db_error;
 use crate::repo::{audit, device_enrollment_batches as batch_repo, devices as device_repo};
@@ -246,6 +246,33 @@ pub async fn get_device_enrollment_batch(
         .ok_or_else(|| DmsxError::NotFound(format!("device enrollment batch {batch_id}")))?;
     tx.commit().await.map_err(map_db_error)?;
     batch_response_from_json(batch.id, batch.created_at, batch.result)
+}
+
+pub async fn list_device_enrollment_batches(
+    st: &AppState,
+    ctx: &AuthContext,
+    tid: Uuid,
+    params: &DeviceEnrollmentBatchListParams,
+) -> ServiceResult<ListResponse<DeviceEnrollmentBatchResponse>> {
+    let mut tx = db_rls::begin_rls_tx(&st.db, Some(tid), ctx)
+        .await
+        .map_err(map_db_error)?;
+    let rows = batch_repo::list_batches(&mut *tx, tid, params.limit(), params.offset())
+        .await
+        .map_err(map_db_error)?;
+    tx.commit().await.map_err(map_db_error)?;
+
+    let items = rows
+        .into_iter()
+        .map(|row| batch_response_from_json(row.id, row.created_at, row.result))
+        .collect::<Result<Vec<_>, _>>()?;
+    let total = items.len() as i64;
+    Ok(ListResponse {
+        items,
+        total,
+        limit: params.limit(),
+        offset: params.offset(),
+    })
 }
 
 pub async fn get_device(

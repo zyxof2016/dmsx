@@ -147,6 +147,22 @@ pub struct DeviceEnrollmentBatchResponse {
     pub created_at: DateTime<Utc>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct DeviceEnrollmentBatchListParams {
+    pub limit: Option<i64>,
+    pub offset: Option<i64>,
+}
+
+impl DeviceEnrollmentBatchListParams {
+    pub fn limit(&self) -> i64 {
+        clamp_limit(self.limit)
+    }
+
+    pub fn offset(&self) -> i64 {
+        clamp_offset(self.offset)
+    }
+}
+
 impl CreateDeviceReq {
     pub fn validate(&self) -> Result<(), DmsxError> {
         if let Some(h) = &self.hostname {

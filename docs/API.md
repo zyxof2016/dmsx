@@ -67,6 +67,8 @@
 | GET | `/v1/tenants/{tid}/devices` | 列表（支持 `search`, `platform`, `enroll_status`, `online_state` 筛选 + 分页；`search` 同时匹配 `hostname` 与 `registration_code`） |
 | POST | `/v1/tenants/{tid}/devices` | 注册/预置设备（支持可选 `registration_code`；留空时后端自动生成稳定注册码） |
 | POST | `/v1/tenants/{tid}/devices:batch-create` | 批量预注册设备（1-200 台；可选同时签发 enrollment token） |
+| GET | `/v1/tenants/{tid}/device-enrollment-batches` | 查询设备 enrollment 批次历史 |
+| GET | `/v1/tenants/{tid}/device-enrollment-batches/{batch_id}` | 查询指定设备 enrollment 批次结果 |
 | GET/PATCH/DELETE | `/v1/tenants/{tid}/devices/{did}` | 查询/更新标签分组/吊销 |
 | POST | `/v1/tenants/{tid}/devices/{did}/registration-code:rotate` | 重置该设备的注册码 |
 | POST | `/v1/tenants/{tid}/devices/{did}/enrollment-token` | 为该设备签发短期 enrollment token |

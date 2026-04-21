@@ -34,3 +34,19 @@ pub async fn get_batch(
     .fetch_optional(&mut *conn)
     .await
 }
+
+pub async fn list_batches(
+    conn: &mut PgConnection,
+    tenant_id: Uuid,
+    limit: i64,
+    offset: i64,
+) -> Result<Vec<DeviceEnrollmentBatch>, sqlx::Error> {
+    sqlx::query_as(
+        "SELECT * FROM device_enrollment_batches WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3",
+    )
+    .bind(tenant_id)
+    .bind(limit)
+    .bind(offset)
+    .fetch_all(&mut *conn)
+    .await
+}
