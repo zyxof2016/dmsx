@@ -13,6 +13,7 @@ import {
   Typography,
 } from "antd";
 import { BellOutlined, RobotOutlined, UserOutlined } from "@ant-design/icons";
+import { useLogout } from "../api/hooks";
 import type { TenantOption } from "../appProviders";
 
 type Props = {
@@ -26,6 +27,7 @@ type Props = {
   setTenantId: (tenantId: string) => void;
   setJwt: (jwt: string) => void;
   clearJwt: () => void;
+  onLoggedOut: () => void;
   showTenantShortcut: boolean;
   onOpenAi: () => void;
 };
@@ -41,10 +43,12 @@ export const AppDeferredTools: React.FC<Props> = ({
   setTenantId,
   setJwt,
   clearJwt,
+  onLoggedOut,
   showTenantShortcut,
   onOpenAi,
 }) => {
   const { message } = App.useApp();
+  const logoutMut = useLogout();
   const [jwtModalOpen, setJwtModalOpen] = React.useState(false);
   const [tenantModalOpen, setTenantModalOpen] = React.useState(false);
   const [jwtDraft, setJwtDraft] = React.useState("");
@@ -72,6 +76,15 @@ export const AppDeferredTools: React.FC<Props> = ({
       } else if (key === "clear_jwt") {
         clearJwt();
         message.success("已清除 JWT");
+      } else if (key === "logout") {
+        void logoutMut
+          .mutateAsync({ tenant_id: tenantId })
+          .catch(() => undefined)
+          .finally(() => {
+            clearJwt();
+            onLoggedOut();
+            message.success("已退出登录");
+          });
       }
     },
   };

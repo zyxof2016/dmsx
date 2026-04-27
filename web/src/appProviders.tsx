@@ -1,12 +1,16 @@
 import React from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   clearStoredJwt,
+  api,
+  getLastStoredTenantId,
   getStoredJwt,
   getStoredTenantId,
   setStoredJwt,
   setStoredTenantId,
+  tenantPathFor,
 } from "./api/client";
-import { useTenantRbacMe } from "./api/hooks";
+import type { TenantRbacMeResponse } from "./api/types";
 
 export type ThemeMode = "light" | "dark";
 export type Lang = "zh" | "en";
@@ -65,6 +69,10 @@ type SessionContextValue = {
   authMode: AuthMode;
   setAuthMode: (mode: AuthMode) => void;
   isAuthenticated: boolean;
+  displayName: string | null;
+  setDisplayName: (displayName: string | null) => void;
+  availableScopes: AppMode[];
+  setAvailableScopes: (scopes: AppMode[]) => void;
 };
 
 const LANG_KEY = "dmsx_lang";
@@ -72,6 +80,8 @@ const THEME_KEY = "dmsx_theme";
 const MODE_KEY = "dmsx.mode";
 const AUTH_MODE_KEY = "dmsx.auth_mode";
 const RECENT_TENANTS_KEY = "dmsx.platform.recent_tenants";
+const DISPLAY_NAME_KEY = "dmsx.display_name";
+const AVAILABLE_SCOPES_KEY = "dmsx.available_scopes";
 
 const I18nContext = React.createContext<I18nContextValue | null>(null);
 const ThemeContext = React.createContext<ThemeContextValue | null>(null);
@@ -187,6 +197,24 @@ function getInitialMode(): AppMode {
 
 function getInitialAuthMode(): AuthMode {
   return localStorage.getItem(AUTH_MODE_KEY) === "disabled" ? "disabled" : "jwt";
+}
+
+function getInitialDisplayName(): string | null {
+  const raw = localStorage.getItem(DISPLAY_NAME_KEY)?.trim();
+  return raw || null;
+}
+
+function getInitialAvailableScopes(): AppMode[] {
+  try {
+    const raw = localStorage.getItem(AVAILABLE_SCOPES_KEY);
+    if (!raw) return ["tenant", "platform"];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return ["tenant", "platform"];
+    const scopes = parsed.filter((value): value is AppMode => value === "tenant" || value === "platform");
+    return scopes.length ? Array.from(new Set(scopes)) : ["tenant", "platform"];
+  } catch {
+    return ["tenant", "platform"];
+  }
 }
 
 function isValidUuid(value: string): boolean {
@@ -305,14 +333,21 @@ export const AppProviders: React.FC<{ children: React.ReactNode }> = ({
   const [appMode, setAppModeState] = React.useState<AppMode>(() => getInitialMode());
   const [authMode, setAuthModeState] = React.useState<AuthMode>(() => getInitialAuthMode());
   const [tenantId, setTenantIdState] = React.useState<string>(() =>
-    getStoredTenantId(),
+    getLastStoredTenantId() ?? getStoredTenantId(),
   );
   const [jwt, setJwtState] = React.useState<string>(() => getStoredJwt() ?? "");
+  const [displayName, setDisplayNameState] = React.useState<string | null>(() => getInitialDisplayName());
+  const [availableScopes, setAvailableScopesState] = React.useState<AppMode[]>(() => getInitialAvailableScopes());
   const jwtClaims = React.useMemo(() => parseJwtClaims(jwt), [jwt]);
   const hasJwt = jwt.trim().length > 0;
   const jwtParseError = hasJwt && !jwtClaims;
   const isAuthenticated = authMode === "disabled" || hasJwt;
-  const tenantRbacMeQuery = useTenantRbacMe({ enabled: authMode === "jwt" && hasJwt && !jwtParseError });
+  const tenantRbacMeQuery = useQuery({
+    queryKey: ["tenantRbacMe", tenantId],
+    queryFn: () => api.get<TenantRbacMeResponse>(tenantPathFor(tenantId, "/rbac/me")),
+    retry: false,
+    enabled: authMode === "jwt" && hasJwt && !jwtParseError,
+  });
 
   const permittedTenantIds = React.useMemo(
     () =>
@@ -348,9 +383,10 @@ export const AppProviders: React.FC<{ children: React.ReactNode }> = ({
     if (!jwtClaims) return ["PlatformAdmin"];
     return jwtClaims.roles;
   }, [jwtClaims]);
-  const canUsePlatformMode = platformRoles.some((role) => ["PlatformAdmin", "PlatformViewer"].includes(role));
+  const canUsePlatformMode = availableScopes.includes("platform") && platformRoles.some((role) => ["PlatformAdmin", "PlatformViewer"].includes(role));
   const isPlatformAdmin = platformRoles.includes("PlatformAdmin");
   const canWritePlatform = isPlatformAdmin;
+  const canUseTenantMode = availableScopes.includes("tenant") && permittedTenantIds.length > 0;
 
   React.useEffect(() => {
     localStorage.setItem(LANG_KEY, lang);
@@ -372,11 +408,27 @@ export const AppProviders: React.FC<{ children: React.ReactNode }> = ({
       localStorage.setItem(MODE_KEY, "tenant");
       setAppModeState("tenant");
     }
-  }, [appMode, canUsePlatformMode]);
+    if (!canUseTenantMode && appMode === "tenant") {
+      localStorage.setItem(MODE_KEY, "platform");
+      setAppModeState("platform");
+    }
+  }, [appMode, canUsePlatformMode, canUseTenantMode]);
 
   React.useEffect(() => {
     localStorage.setItem(AUTH_MODE_KEY, authMode);
   }, [authMode]);
+
+  React.useEffect(() => {
+    if (displayName) {
+      localStorage.setItem(DISPLAY_NAME_KEY, displayName);
+    } else {
+      localStorage.removeItem(DISPLAY_NAME_KEY);
+    }
+  }, [displayName]);
+
+  React.useEffect(() => {
+    localStorage.setItem(AVAILABLE_SCOPES_KEY, JSON.stringify(availableScopes));
+  }, [availableScopes]);
 
   const t = React.useCallback(
     (key: string) => {
@@ -417,6 +469,8 @@ export const AppProviders: React.FC<{ children: React.ReactNode }> = ({
       clearJwt: () => {
         clearStoredJwt();
         setJwtState("");
+        setDisplayNameState(null);
+        setAvailableScopesState(["tenant", "platform"]);
       },
       appMode,
       setAppMode: (mode: AppMode) => {
@@ -442,6 +496,16 @@ export const AppProviders: React.FC<{ children: React.ReactNode }> = ({
         setAuthModeState(mode);
       },
       isAuthenticated,
+      displayName,
+      setDisplayName: (nextDisplayName: string | null) => {
+        const value = nextDisplayName?.trim() ?? "";
+        setDisplayNameState(value || null);
+      },
+      availableScopes,
+      setAvailableScopes: (scopes: AppMode[]) => {
+        const next = Array.from(new Set(scopes.filter((scope): scope is AppMode => scope === "tenant" || scope === "platform")));
+        setAvailableScopesState(next.length ? next : ["tenant"]);
+      },
     }),
     [
       appMode,
@@ -462,6 +526,8 @@ export const AppProviders: React.FC<{ children: React.ReactNode }> = ({
       tenantOptions,
       tenantId,
       canWritePlatform,
+      displayName,
+      availableScopes,
     ],
   );
 

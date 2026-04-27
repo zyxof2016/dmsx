@@ -1,4 +1,5 @@
 pub mod auth;
+mod auth_tokens;
 
 mod command_jetstream;
 mod result_jetstream_ingest;

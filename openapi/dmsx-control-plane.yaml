@@ -94,6 +94,75 @@ paths:
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalServerError'
+  /v1/auth/login:
+    post:
+      security: []
+      summary: Login with username and password
+      operationId: authLogin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginReq'
+      responses:
+        '200':
+          description: Login decision
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResp'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /v1/auth/login/select:
+    post:
+      security: []
+      summary: Finalize login scope and issue JWT
+      operationId: authLoginSelect
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SelectLoginTenantReq'
+      responses:
+        '200':
+          description: Issued login token and active scope
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResp'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /v1/auth/logout:
+    post:
+      summary: Persist last tenant on logout
+      operationId: authLogout
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LogoutReq'
+      responses:
+        '204':
+          description: Logged out
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
   /v1/tenants:
     post:
       summary: Create tenant (platform)
@@ -1672,6 +1741,116 @@ components:
           type: string
           minLength: 1
           maxLength: 200
+    LoginReq:
+      type: object
+      required:
+      - username
+      - password
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+    SelectLoginTenantReq:
+      type: object
+      required:
+      - username
+      - scope
+      properties:
+        username:
+          type: string
+        scope:
+          type: string
+          enum:
+          - platform
+          - tenant
+        tenant_id:
+          type: string
+          format: uuid
+          nullable: true
+    LogoutReq:
+      type: object
+      properties:
+        tenant_id:
+          type: string
+          format: uuid
+          nullable: true
+    LoginTenantOption:
+      type: object
+      required:
+      - tenant_id
+      - roles
+      properties:
+        tenant_id:
+          type: string
+          format: uuid
+        roles:
+          type: array
+          items:
+            type: string
+    LoginDecision:
+      type: object
+      required:
+      - kind
+      - tenant_options
+      properties:
+        kind:
+          type: string
+          enum:
+          - choose_scope
+          - platform_only
+          - choose_tenant
+          - tenant_only
+        preferred_tenant_id:
+          type: string
+          format: uuid
+          nullable: true
+        tenant_options:
+          type: array
+          items:
+            $ref: '#/components/schemas/LoginTenantOption'
+    LoginResp:
+      type: object
+      required:
+      - account_id
+      - username
+      - display_name
+      - platform_roles
+      - decision
+      properties:
+        account_id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        display_name:
+          type: string
+        platform_roles:
+          type: array
+          items:
+            type: string
+        available_scopes:
+          type: array
+          items:
+            type: string
+            enum:
+            - platform
+            - tenant
+        decision:
+          $ref: '#/components/schemas/LoginDecision'
+        token:
+          type: string
+          nullable: true
+        active_scope:
+          type: string
+          enum:
+          - platform
+          - tenant
+          nullable: true
+        active_tenant_id:
+          type: string
+          format: uuid
+          nullable: true
     CreateHierarchyNamedReq:
       type: object
       required:

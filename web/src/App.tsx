@@ -291,6 +291,8 @@ const AppShell: React.FC = () => {
     tenantOptions,
     authMode,
     isAuthenticated,
+    displayName,
+    availableScopes,
   } = useAppSession();
   const { token } = antdTheme.useToken();
   const platformReadAccess = useResourceAccess("platformRead");
@@ -314,6 +316,7 @@ const AppShell: React.FC = () => {
   const activeRoles = appMode === "platform" ? platformRoles : effectiveRoles;
   const hasAccess =
     selectedAccess.allowed && (appMode !== "platform" || platformReadAccess.canRead);
+  const showModeSwitcher = availableScopes.includes("platform") && availableScopes.includes("tenant");
 
   const accessDescription =
     selectedAccess.reason === "mode"
@@ -420,28 +423,30 @@ const AppShell: React.FC = () => {
                 { title: breadcrumbLabel },
               ]}
             />
-            <Segmented
-              size="small"
-              value={appMode}
-              options={[
-                { value: "tenant", label: t("mode.tenantShort") },
-                {
-                  value: "platform",
-                  label: t("mode.platformShort"),
-                  disabled: !canUsePlatformMode,
-                },
-              ]}
-              onChange={(value) => {
-                const nextMode = value as AppMode;
-                setAppMode(nextMode);
-                const nextPath = NAV_ITEMS.find((item) =>
-                  itemIsVisible(item, nextMode, effectiveRoles, canUsePlatformMode),
-                )?.path;
-                if (nextPath && !NAV_ITEMS.some((item) => item.key === selectedKey && item.path === nextPath)) {
-                  navigate({ to: nextPath });
-                }
-              }}
-            />
+            {showModeSwitcher && (
+              <Segmented
+                size="small"
+                value={appMode}
+                options={[
+                  { value: "tenant", label: t("mode.tenantShort") },
+                  {
+                    value: "platform",
+                    label: t("mode.platformShort"),
+                    disabled: !canUsePlatformMode,
+                  },
+                ]}
+                onChange={(value) => {
+                  const nextMode = value as AppMode;
+                  setAppMode(nextMode);
+                  const nextPath = NAV_ITEMS.find((item) =>
+                    itemIsVisible(item, nextMode, effectiveRoles, canUsePlatformMode),
+                  )?.path;
+                  if (nextPath && !NAV_ITEMS.some((item) => item.key === selectedKey && item.path === nextPath)) {
+                    navigate({ to: nextPath });
+                  }
+                }}
+              />
+            )}
           </Space>
           <Space size="large">
             <Select
@@ -466,13 +471,14 @@ const AppShell: React.FC = () => {
                 tenantId={tenantId}
                 tenantOptions={tenantOptions}
                 jwt={jwt}
-                userLabel={subject ?? t("user.admin")}
+                userLabel={displayName ?? subject ?? t("user.admin")}
                 profileLabel={t("user.profile")}
                 logoutLabel={t("user.logout")}
                 aiTooltip={t("ai.assistant")}
                 setTenantId={setTenantId}
                 setJwt={setJwt}
                 clearJwt={clearJwt}
+                onLoggedOut={() => navigate({ to: "/login", replace: true })}
                 showTenantShortcut={appMode === "tenant"}
                 onOpenAi={() => navigate({ to: "/ai" })}
               />
@@ -497,7 +503,7 @@ const AppShell: React.FC = () => {
                 modeLabel={modeLabel}
                 onGoDefault={() => navigate({ to: defaultModePath })}
                 onSwitchMode={
-                  canUsePlatformMode || appMode === "platform"
+                  showModeSwitcher
                     ? () => {
                         const nextMode: AppMode = appMode === "tenant" ? "platform" : "tenant";
                         setAppMode(nextMode);
@@ -508,7 +514,7 @@ const AppShell: React.FC = () => {
                       }
                     : undefined
                 }
-                switchModeLabel={appMode === "tenant" ? "切换到平台模式" : "切换到租户模式"}
+                switchModeLabel={showModeSwitcher ? (appMode === "tenant" ? "切换到平台模式" : "切换到租户模式") : undefined}
               />
             ) : (
               <Outlet />

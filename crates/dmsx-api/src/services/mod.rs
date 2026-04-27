@@ -1,4 +1,5 @@
 pub mod artifacts;
+pub mod authn;
 pub mod bootstrap;
 pub mod commands;
 pub mod compliance;

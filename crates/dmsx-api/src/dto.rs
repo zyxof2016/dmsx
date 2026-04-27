@@ -26,6 +26,96 @@ fn check_len(field: &str, val: &str, min: usize, max: usize) -> Result<(), DmsxE
 }
 
 // ---------------------------------------------------------------------------
+// Auth / Login
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+pub struct LoginReq {
+    pub username: String,
+    pub password: String,
+}
+
+impl LoginReq {
+    pub fn username(&self) -> &str {
+        self.username.trim()
+    }
+
+    pub fn password(&self) -> &str {
+        self.password.trim()
+    }
+
+    pub fn validate(&self) -> Result<(), DmsxError> {
+        check_len("username", self.username(), 1, 100)?;
+        check_len("password", self.password(), 1, 200)?;
+        Ok(())
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SelectLoginTenantReq {
+    pub username: String,
+    pub scope: String,
+    pub tenant_id: Option<Uuid>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct LogoutReq {
+    pub tenant_id: Option<Uuid>,
+}
+
+impl SelectLoginTenantReq {
+    pub fn username(&self) -> &str {
+        self.username.trim()
+    }
+
+    pub fn validate(&self) -> Result<(), DmsxError> {
+        check_len("username", self.username(), 1, 100)?;
+        if !matches!(self.scope.trim(), "platform" | "tenant") {
+            return Err(DmsxError::Validation("scope must be platform or tenant".into()));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "snake_case")]
+pub enum LoginDecisionKind {
+    ChooseScope,
+    PlatformOnly,
+    ChooseTenant,
+    TenantOnly,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct LoginTenantOption {
+    pub tenant_id: Uuid,
+    pub roles: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct LoginDecision {
+    pub kind: LoginDecisionKind,
+    pub preferred_tenant_id: Option<Uuid>,
+    pub tenant_options: Vec<LoginTenantOption>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct LoginResp {
+    pub account_id: Uuid,
+    pub username: String,
+    pub display_name: String,
+    pub platform_roles: Vec<String>,
+    pub available_scopes: Vec<String>,
+    pub decision: LoginDecision,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub token: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_scope: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_tenant_id: Option<Uuid>,
+}
+
+// ---------------------------------------------------------------------------
 // List response envelope (with pagination metadata)
 // ---------------------------------------------------------------------------
 

@@ -26,6 +26,35 @@ export interface Device {
   updated_at: string;
 }
 
+export type LoginDecisionKind =
+  | "choose_scope"
+  | "platform_only"
+  | "choose_tenant"
+  | "tenant_only";
+
+export interface LoginTenantOption {
+  tenant_id: string;
+  roles: string[];
+}
+
+export interface LoginDecision {
+  kind: LoginDecisionKind;
+  preferred_tenant_id?: string | null;
+  tenant_options: LoginTenantOption[];
+}
+
+export interface LoginResponse {
+  account_id: string;
+  username: string;
+  display_name: string;
+  platform_roles: string[];
+  available_scopes: Array<"platform" | "tenant">;
+  decision: LoginDecision;
+  token?: string;
+  active_scope?: "platform" | "tenant";
+  active_tenant_id?: string;
+}
+
 export interface DeviceEnrollmentToken {
   token: string;
   expires_at: string;

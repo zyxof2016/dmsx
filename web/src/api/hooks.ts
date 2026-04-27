@@ -7,6 +7,7 @@ import {
 import { useAppSession } from "../appProviders";
 import { api, tenantPathFor, buildQuery } from "./client";
 import type {
+  LoginResponse,
   Device,
   Policy,
   Command,
@@ -565,6 +566,29 @@ export function useTenantRbacMe(options?: { enabled?: boolean }) {
 export function useCreateTenant() {
   return useMutation({
     mutationFn: (body: { name: string }) => api.post<Tenant>("/v1/tenants", body),
+  });
+}
+
+export function useLogin() {
+  return useMutation({
+    mutationFn: (body: { username: string; password: string }) =>
+      api.post<LoginResponse>("/v1/auth/login", body),
+  });
+}
+
+export function useSelectLoginScope() {
+  return useMutation({
+    mutationFn: (body: {
+      username: string;
+      scope: "platform" | "tenant";
+      tenant_id?: string;
+    }) => api.post<LoginResponse>("/v1/auth/login/select", body),
+  });
+}
+
+export function useLogout() {
+  return useMutation({
+    mutationFn: (body: { tenant_id?: string }) => api.post<void>("/v1/auth/logout", body),
   });
 }
 

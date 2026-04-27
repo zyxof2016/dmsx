@@ -532,6 +532,9 @@ fn authorize_request(
 }
 
 fn requires_rbac(path: &str) -> bool {
+    if path == "/v1/auth/logout" {
+        return false;
+    }
     path.starts_with("/v1/")
 }
 

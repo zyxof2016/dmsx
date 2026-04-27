@@ -2,6 +2,7 @@ const BASE = "";
 
 export const JWT_STORAGE_KEY = "dmsx.jwt";
 export const TENANT_ID_STORAGE_KEY = "dmsx.tenant_id";
+export const LAST_TENANT_ID_STORAGE_KEY = "dmsx.last_tenant_id";
 export const DEFAULT_TENANT_ID = "00000000-0000-0000-0000-000000000001";
 
 export class ApiError extends Error {
@@ -71,6 +72,12 @@ export function getStoredTenantId(): string {
 
 export function setStoredTenantId(tenantId: string) {
   localStorage.setItem(TENANT_ID_STORAGE_KEY, tenantId.trim());
+  localStorage.setItem(LAST_TENANT_ID_STORAGE_KEY, tenantId.trim());
+}
+
+export function getLastStoredTenantId(): string | null {
+  const raw = localStorage.getItem(LAST_TENANT_ID_STORAGE_KEY)?.trim();
+  return raw || null;
 }
 
 export const tenantPathFor = (tenantId: string, p: string) =>

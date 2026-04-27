@@ -15,6 +15,7 @@ use tower_http::{
     request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
     trace::{DefaultOnResponse, TraceLayer},
 };
+use uuid::Uuid;
 
 use crate::{
     auth::{load_auth_config_from_env, spawn_jwks_refresh_task},
@@ -229,6 +230,8 @@ pub async fn build_state_from_env() -> AppState {
 
     spawn_jwks_refresh_task(state.auth.clone());
     bootstrap::ensure_default_tenant(&state, dev_tenant, "默认租户").await;
+    bootstrap::ensure_default_tenant(&state, Uuid::from_u128(0x22222222222222222222222222222222), "公测租户 B").await;
+    crate::services::authn::ensure_dev_accounts(&state).await;
 
     if let Ok(custom_roles) = tenant_rbac::load_custom_roles_from_db(&state.db, dev_tenant).await {
         state
@@ -285,6 +288,8 @@ pub fn build_router(st: AppState) -> Router {
         .route("/health", get(handlers::health))
         .route("/ready", get(handlers::ready))
         .route("/metrics", get(metrics::metrics_handler))
+        .route("/v1/auth/login", post(handlers::auth_login))
+        .route("/v1/auth/login/select", post(handlers::auth_login_select))
         .route(
             "/v1/tenants/{tenant_id}/devices/claim-with-enrollment-token",
             post(handlers::device_claim_with_enrollment_token),
@@ -292,6 +297,7 @@ pub fn build_router(st: AppState) -> Router {
         .with_state(st.clone());
 
     let mut api = Router::new()
+        .route("/v1/auth/logout", post(handlers::auth_logout))
         .route("/v1/tenants", post(handlers::tenants_create))
         .route(
             "/v1/tenants/{tenant_id}/orgs/{org_id}/sites",

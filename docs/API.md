@@ -24,6 +24,12 @@
 
 **按租户 RBAC（`tenant_roles`）**：可选对象 **`tenant_roles`**，键为租户 UUID 字符串、值为该租户下角色字符串数组（如 `TenantAdmin`、`ReadOnly`）。对某次**租户路径请求**，活动租户为路径中的 `{tenant_id}`：若 **`tenant_roles` 中存在该活动租户的键**（含空数组 `[]`），则本请求 **仅使用该键对应数组** 做 RBAC；若 **无该键**，则回退使用令牌级 **`roles`**。对**非租户路径请求**（如 `/v1/config/...`），仅使用令牌级 **`roles`**，不会套用 `tenant_roles`。空数组表示该租户下显式无角色，受保护租户路由将 **403**。
 
+**账号密码登录（开发内置 BFF）**：`jwt` 模式下新增公开接口 `POST /v1/auth/login` 与 `POST /v1/auth/login/select`。第一步使用账号密码认证并返回“进入平台 / 进入租户 / 选择平台或租户 / 选择租户”的决策信息；第二步提交最终进入范围后，由控制面签发 Bearer JWT，并把活动租户写回该账号的 `last_tenant_id`，用于下次登录默认选中上次退出时的租户。
+
+退出登录时，前端会调用受保护接口 `POST /v1/auth/logout` 并携带当前活动租户；后端会将该租户记为账号最新 `last_tenant_id`，供下次登录默认回显。
+
+开发环境（`DMSX_API_ENV=dev`，默认未设置也视为 `dev`）会自动补 4 个演示账号：`platform/platform123`、`tenant/tenant123`、`hybrid/hybrid123`、`multitenant/multitenant123`。
+
 示例（节选 payload）：
 
 ```json

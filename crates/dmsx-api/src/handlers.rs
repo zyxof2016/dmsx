@@ -43,6 +43,29 @@ pub async fn ready(State(st): State<AppState>) -> impl IntoResponse {
     )
 }
 
+pub async fn auth_login(
+    State(st): State<AppState>,
+    Json(body): Json<LoginReq>,
+) -> ApiResult<Json<LoginResp>> {
+    Ok(Json(crate::services::authn::login(&st, &body).await?))
+}
+
+pub async fn auth_login_select(
+    State(st): State<AppState>,
+    Json(body): Json<SelectLoginTenantReq>,
+) -> ApiResult<Json<LoginResp>> {
+    Ok(Json(crate::services::authn::select_login_scope(&st, &body).await?))
+}
+
+pub async fn auth_logout(
+    State(st): State<AppState>,
+    Extension(ctx): Extension<AuthContext>,
+    Json(body): Json<LogoutReq>,
+) -> ApiResult<StatusCode> {
+    crate::services::authn::logout(&st, &ctx, &body).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 // ---------------------------------------------------------------------------
 // Dashboard Stats
 // ---------------------------------------------------------------------------
