@@ -50,12 +50,16 @@ export const LoginPage: React.FC = () => {
       display_name: string;
       available_scopes?: Array<"platform" | "tenant">;
     }) => {
+      const fallbackPath = resp.active_scope === "platform" ? "/platform" : "/";
+      const target = !redirect || redirect === "/" || redirect === "/login"
+        ? fallbackPath
+        : redirect;
       if (resp.token) setJwt(resp.token);
       if (resp.active_tenant_id) setTenantId(resp.active_tenant_id);
       if (resp.active_scope) setAppMode(resp.active_scope);
       setDisplayName(resp.display_name);
       setAvailableScopes(resp.available_scopes ?? ["tenant"]);
-      navigate({ to: redirect as never, replace: true });
+      navigate({ to: target as never, replace: true });
     },
     [navigate, redirect, setAppMode, setAvailableScopes, setDisplayName, setJwt, setTenantId],
   );
@@ -205,8 +209,6 @@ export const LoginPage: React.FC = () => {
 
                 try {
                   const resp = await loginMut.mutateAsync(values);
-                  setDisplayName(resp.display_name);
-                  setAvailableScopes(resp.available_scopes);
 
                   if (resp.decision.kind === "platform_only") {
                     await selectScopeAndEnter(
