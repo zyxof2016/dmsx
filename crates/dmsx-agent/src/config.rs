@@ -50,4 +50,11 @@ impl AgentConfig {
     pub fn tenant_url(&self, path: &str) -> String {
         format!("{}/v1/tenants/{}{}", self.api_base, self.tenant_id, path)
     }
+
+    pub fn apply_device_auth(&self, request: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+        match &self.enrollment_token {
+            Some(token) => request.header("x-dmsx-device-token", token),
+            None => request,
+        }
+    }
 }

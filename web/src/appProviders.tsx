@@ -2,6 +2,7 @@ import React from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   clearStoredJwt,
+  AUTH_EXPIRED_EVENT,
   api,
   getLastStoredTenantId,
   getStoredJwt,
@@ -343,7 +344,7 @@ export const AppProviders: React.FC<{ children: React.ReactNode }> = ({
   const jwtParseError = hasJwt && !jwtClaims;
   const isAuthenticated = authMode === "disabled" || hasJwt;
   const tenantRbacMeQuery = useQuery({
-    queryKey: ["tenantRbacMe", tenantId],
+    queryKey: ["tenantRbacMe", tenantId, jwtClaims?.subject ?? "anonymous", jwt],
     queryFn: () => api.get<TenantRbacMeResponse>(tenantPathFor(tenantId, "/rbac/me")),
     retry: false,
     enabled: authMode === "jwt" && hasJwt && !jwtParseError,
@@ -429,6 +430,17 @@ export const AppProviders: React.FC<{ children: React.ReactNode }> = ({
   React.useEffect(() => {
     localStorage.setItem(AVAILABLE_SCOPES_KEY, JSON.stringify(availableScopes));
   }, [availableScopes]);
+
+  React.useEffect(() => {
+    const onAuthExpired = () => {
+      clearStoredJwt();
+      setJwtState("");
+      setDisplayNameState(null);
+      setAvailableScopesState(["tenant", "platform"]);
+    };
+    window.addEventListener(AUTH_EXPIRED_EVENT, onAuthExpired);
+    return () => window.removeEventListener(AUTH_EXPIRED_EVENT, onAuthExpired);
+  }, []);
 
   const t = React.useCallback(
     (key: string) => {

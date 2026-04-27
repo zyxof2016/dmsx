@@ -137,7 +137,7 @@ export const AppDeferredTools: React.FC<Props> = ({
         }}
         okText="保存"
         cancelText="取消"
-        destroyOnClose
+        destroyOnHidden
       >
         <Input.TextArea
           value={jwtDraft}
@@ -164,7 +164,7 @@ export const AppDeferredTools: React.FC<Props> = ({
           }}
           okText="保存"
           cancelText="取消"
-          destroyOnClose
+          destroyOnHidden
         >
           <Select
             value={tenantDraft}

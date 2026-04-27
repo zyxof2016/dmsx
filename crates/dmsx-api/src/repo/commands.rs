@@ -60,7 +60,9 @@ pub async fn create_command(
 ) -> Result<Command, sqlx::Error> {
     sqlx::query_as(
         "INSERT INTO commands (tenant_id, target_device_id, payload, priority, ttl_seconds, idempotency_key) \
-         VALUES ($1, $2, $3, $4, $5, $6) RETURNING *",
+         SELECT $1, d.id, $3, $4, $5, $6 FROM devices d \
+         WHERE d.tenant_id = $1 AND d.id = $2 \
+         RETURNING *",
     )
     .bind(tid)
     .bind(r.target_device_id)

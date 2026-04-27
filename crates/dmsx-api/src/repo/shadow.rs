@@ -8,7 +8,9 @@ pub async fn get_or_create_shadow(
     did: Uuid,
 ) -> Result<DeviceShadow, sqlx::Error> {
     sqlx::query(
-        "INSERT INTO device_shadows (device_id, tenant_id) VALUES ($1, $2) \
+        "INSERT INTO device_shadows (device_id, tenant_id) \
+         SELECT d.id, d.tenant_id FROM devices d \
+         WHERE d.id = $1 AND d.tenant_id = $2 \
          ON CONFLICT (device_id) DO NOTHING",
     )
     .bind(did)
@@ -31,9 +33,10 @@ pub async fn update_shadow_desired(
 ) -> Result<DeviceShadow, sqlx::Error> {
     sqlx::query_as(
         "INSERT INTO device_shadows (device_id, tenant_id, desired, desired_at, version) \
-         VALUES ($1, $2, $3, now(), 1) \
+         SELECT d.id, d.tenant_id, $3, now(), 1 FROM devices d \
+         WHERE d.id = $1 AND d.tenant_id = $2 \
          ON CONFLICT (device_id) DO UPDATE SET \
-           desired = $3, desired_at = now(), version = device_shadows.version + 1 \
+            desired = $3, desired_at = now(), version = device_shadows.version + 1 \
          RETURNING *",
     )
     .bind(did)
@@ -51,9 +54,10 @@ pub async fn update_shadow_reported(
 ) -> Result<DeviceShadow, sqlx::Error> {
     sqlx::query_as(
         "INSERT INTO device_shadows (device_id, tenant_id, reported, reported_at, version) \
-         VALUES ($1, $2, $3, now(), 1) \
+         SELECT d.id, d.tenant_id, $3, now(), 1 FROM devices d \
+         WHERE d.id = $1 AND d.tenant_id = $2 \
          ON CONFLICT (device_id) DO UPDATE SET \
-           reported = $3, reported_at = now(), version = device_shadows.version + 1 \
+            reported = $3, reported_at = now(), version = device_shadows.version + 1 \
          RETURNING *",
     )
     .bind(did)

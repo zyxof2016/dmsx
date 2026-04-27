@@ -344,7 +344,7 @@ const AppShell: React.FC = () => {
     }
   }, [authMode, isAuthenticated, navigate, pathname]);
 
-  if (pathname === "/login") {
+  if (pathname === "/login" || pathname === "/zero-touch-enroll") {
     return <Outlet />;
   }
 

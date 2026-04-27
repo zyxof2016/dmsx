@@ -28,11 +28,13 @@
 - 租户下拉项现在会尽量展示“租户名称 + UUID + 来源 + 切过去后的有效角色”。当某个租户来自本浏览器最近创建记录时，会显示其创建时的名称；否则回退为 UUID 缩写。角色标签基于当前 JWT 的 `tenant_roles` / `roles` 计算，便于用户在切换前理解权限变化。
 - 生产语义不变：签发方在 JWT 中写入路径租户许可（**`tenant_id` ∪ `allowed_tenant_ids`**）及可选 **`tenant_roles`**（按活动租户覆盖角色）；前端切换租户本质上仍是切换请求路径中的 `{tenant_id}`。
 - 前端显式区分 **平台管理模式** 与 **租户管理模式**：平台模式仅展示全局配置类入口（如系统设置、RBAC 角色），租户模式展示 `/v1/tenants/{tenant_id}/...` 资源页。模式切换仅影响导航和默认落点，后端 JWT/RBAC 仍是唯一权限裁决者。
+- JWT 模式下，非登录接口返回 401 时，前端会触发全局认证过期事件并清理本地 JWT / 显示名 / 可见 scope，随后回到未登录态，避免继续使用过期会话。
 - 平台模式现在有独立首页 `/platform`，用于承载平台级摘要和后续扩展入口，不再默认直接落到“系统设置”。
 - 平台模式已补齐 4 个独立平台子页：`/platform/tenants`、`/platform/quotas`、`/platform/audit`、`/platform/health`，分别对应平台租户目录、平台配额、全局审计和平台健康视图。
 - 平台页当前接入的真实平台接口包括：`GET /v1/config/rbac/roles`、`GET /v1/config/livekit`、`GET /v1/config/settings/{key}`、`POST /v1/tenants`、`GET /v1/config/tenants`、`GET /v1/config/audit-logs`、`GET /v1/config/platform-health`、`GET /v1/config/quotas`。
 - 平台首页的租户目录卡片已从“一键 demo 创建”升级为真实表单创建：用户可输入租户名称并直接调用 `POST /v1/tenants`，成功后在卡片内展示新租户 ID。
 - 当前前端会从 JWT **本地解析** `tenant_id`、`allowed_tenant_ids`、`roles`、`tenant_roles` 以收敛导航：平台模式由令牌级 `roles` 控制（当前支持 `PlatformAdmin`、`PlatformViewer`）；租户模式继续按活动租户的 `tenant_roles` / `roles` 计算。若当前 JWT 不具备平台级角色，则平台模式入口会被禁用并自动回落到租户模式；若当前活动租户不在 JWT 许可集合内，前端会回退到 JWT 主租户。
+- 平台级按钮态和导航判断只使用令牌级 `roles`（`PlatformAdmin` / `PlatformViewer`），不会把当前租户的 `tenant_roles`、租户绑定角色或租户自定义角色当作平台权限。
 - 租户模式下的“用户 / 角色管理”页已接入当前租户自定义角色管理：前端会读取 `GET /v1/tenants/{tid}/rbac/roles`，支持编辑角色名、说明和权限集合，并通过 `PUT /v1/tenants/{tid}/rbac/roles` 保存。保存后这些角色不仅影响前端按钮态，也会进入后端真实 RBAC 判定。
 - 同一页面还接入了租户内“用户(subject) -> 角色”绑定管理：前端会读写 `GET/PUT /v1/tenants/{tid}/rbac/bindings`，并通过 `GET /v1/tenants/{tid}/rbac/me` 获取当前 JWT `sub` 在该租户的最终生效角色，使页面按钮态尽量以后端真实授权结果为准，而不是只依赖本地解析 JWT。
 - 当用户直接输入 URL 访问不属于当前模式或角色不允许的页面时，前端不再静默跳页，而是展示明确的 **403 风格访问受限页**，并提供“返回当前模式首页 / 切换模式”操作。这样能区分“页面不存在”和“当前模式/权限不匹配”。
@@ -50,8 +52,10 @@
 - 命令详情页现在会对 `install_update` 额外展示“期望版本”和“设备当前 Agent 版本”的确认状态：命令执行成功后若设备下一次心跳把 `agent_version` 更新到 `expected_version`，前端会显示“设备已确认新版本”；否则会继续提示等待心跳或显示版本不一致。
 - 前端新增 `TerminalBlock` 通用组件，统一承载零接触命令、Enrollment URI、命令 payload、stdout/stderr 等长文本展示。该组件默认提供复制按钮、自动换行、水平滚动和与 Ant Design 主题联动的背景/边框色，避免 `<pre>`、`<Text code>` 在不同页面里重复堆样式。
 - `App.tsx` 的全局主题 token 也同步微调：卡片与弹窗圆角统一抬高到 `borderRadiusLG: 8`，并针对暗色模式单独设置 `colorBgContainer` 与 `colorBgElevated`，保证零接触命令块、远控结果和详情抽屉在亮暗主题下都有一致层次感。
-- 平台首页会在本地 `localStorage` 中记录最近创建成功的租户（仅浏览器侧会话辅助，不代表后端存在租户列表接口），用于弥补当前控制面还缺少 `GET /v1/tenants` 的可见性空白。
+- 平台首页会在本地 `localStorage` 中记录最近创建成功的租户，作为浏览器侧会话辅助；平台租户目录页使用后端 `GET /v1/config/tenants` 获取真实跨租户汇总。
 - 平台租户目录页展示跨租户汇总视图：支持按租户名称或 UUID 搜索、分页浏览，并可一键切换当前活动租户后跳转到设备页继续排查。
+- `/zero-touch-enroll` 与 `/login` 一样使用独立页面布局，不渲染控制台侧栏、顶栏或受保护导航，适合从 enrollment URI 直接打开。
+- React 19 + Ant Design 5 的兼容层由 `src/antdReact19Compat.ts` 本地设置 `unstableSetRender`；不要改回官方 patch 包，当前官方 patch 在本项目生产 preview 中曾触发主题 token 运行时错误。
 - 平台配额页当前提供统一配额表和使用率条形进度：已用量来自后端真实计数（租户 / 设备 / 命令 / 制品），上限由控制面环境变量配置。
 - 平台全局审计页支持按 `action`、`resource_type` 过滤 `GET /v1/config/audit-logs`，作为租户级审计页之外的跨租户排障入口。
 - 平台健康页聚合 `GET /v1/config/platform-health` 与 `GET /v1/config/livekit`，展示租户 / 设备 / 策略 / 命令 / 制品 / 审计总量，以及 LiveKit / Redis / Command Bus 的平台级运行摘要。

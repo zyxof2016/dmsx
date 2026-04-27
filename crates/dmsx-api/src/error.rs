@@ -14,6 +14,9 @@ pub fn map_db_error(e: sqlx::Error) -> DmsxError {
                 }
             }
         }
+        sqlx::Error::RowNotFound => {
+            DmsxError::NotFound("referenced resource does not exist".into())
+        }
         _ => {
             tracing::error!("database error: {e}");
             DmsxError::Internal("database error".into())

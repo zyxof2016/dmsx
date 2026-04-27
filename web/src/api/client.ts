@@ -4,6 +4,7 @@ export const JWT_STORAGE_KEY = "dmsx.jwt";
 export const TENANT_ID_STORAGE_KEY = "dmsx.tenant_id";
 export const LAST_TENANT_ID_STORAGE_KEY = "dmsx.last_tenant_id";
 export const DEFAULT_TENANT_ID = "00000000-0000-0000-0000-000000000001";
+export const AUTH_EXPIRED_EVENT = "dmsx:auth-expired";
 
 export class ApiError extends Error {
   status: number;
@@ -37,6 +38,9 @@ async function request<T>(
     const err = await res.json().catch(() => ({} as any));
     const detail = err?.detail ?? err?.error ?? res.statusText;
     const title = err?.title;
+    if (res.status === 401 && typeof window !== "undefined" && !path.startsWith("/v1/auth/")) {
+      window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT, { detail: { path } }));
+    }
     throw new ApiError(String(detail), res.status, title ? String(title) : undefined);
   }
   if (res.status === 204) return undefined as T;

@@ -14,6 +14,7 @@ type LoginFormValues = {
 
 type PendingLogin = {
   username: string;
+  loginTransactionToken: string;
   displayName: string;
   kind: Extract<LoginDecisionKind, "choose_scope" | "choose_tenant">;
   tenantOptions: LoginTenantOption[];
@@ -65,9 +66,10 @@ export const LoginPage: React.FC = () => {
   );
 
   const selectScopeAndEnter = React.useCallback(
-    async (username: string, nextScope: "platform" | "tenant", tenantId?: string) => {
+    async (username: string, loginTransactionToken: string, nextScope: "platform" | "tenant", tenantId?: string) => {
       const resp = await selectMut.mutateAsync({
         username,
+        login_transaction_token: loginTransactionToken,
         scope: nextScope,
         tenant_id: tenantId,
       });
@@ -175,6 +177,7 @@ export const LoginPage: React.FC = () => {
                     try {
                       await selectScopeAndEnter(
                         pendingLogin.username,
+                        pendingLogin.loginTransactionToken,
                         scope,
                         scope === "tenant" ? selectedTenantId : selectedTenantId,
                       );
@@ -211,8 +214,10 @@ export const LoginPage: React.FC = () => {
                   const resp = await loginMut.mutateAsync(values);
 
                   if (resp.decision.kind === "platform_only") {
+                    if (!resp.login_transaction_token) throw new Error("登录选择凭证缺失，请重新登录");
                     await selectScopeAndEnter(
                       resp.username,
+                      resp.login_transaction_token,
                       "platform",
                       chooseInitialTenant(resp.decision.tenant_options, resp.decision.preferred_tenant_id),
                     );
@@ -220,16 +225,20 @@ export const LoginPage: React.FC = () => {
                   }
 
                   if (resp.decision.kind === "tenant_only") {
+                    if (!resp.login_transaction_token) throw new Error("登录选择凭证缺失，请重新登录");
                     await selectScopeAndEnter(
                       resp.username,
+                      resp.login_transaction_token,
                       "tenant",
                       chooseInitialTenant(resp.decision.tenant_options, resp.decision.preferred_tenant_id),
                     );
                     return;
                   }
 
+                  if (!resp.login_transaction_token) throw new Error("登录选择凭证缺失，请重新登录");
                   setPendingLogin({
                     username: resp.username,
+                    loginTransactionToken: resp.login_transaction_token,
                     displayName: resp.display_name,
                     kind: resp.decision.kind,
                     tenantOptions: resp.decision.tenant_options,

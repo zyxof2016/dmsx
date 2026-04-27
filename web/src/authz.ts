@@ -148,11 +148,14 @@ function canAccessResource(
 }
 
 export function useResourceAccess(resource: FrontendResourceKind) {
-  const { effectiveRoles } = useAppSession();
+  const { effectiveRoles, platformRoles } = useAppSession();
+  const roles = resource === "platformRead" || resource === "platformWrite"
+    ? platformRoles
+    : effectiveRoles;
 
   return {
-    canRead: canAccessResource(effectiveRoles, resource, true),
-    canWrite: canAccessResource(effectiveRoles, resource, false),
+    canRead: canAccessResource(roles, resource, true),
+    canWrite: canAccessResource(roles, resource, false),
   };
 }
 

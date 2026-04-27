@@ -4,13 +4,15 @@ use serde_json::json;
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
+use crate::auth::AuthContext;
 use crate::auth::{AuthConfig, AuthMode};
-use crate::auth_tokens::issue_login_token;
+use crate::auth_tokens::{
+    issue_login_token, issue_login_transaction_token, verify_login_transaction_token,
+};
 use crate::dto::{
     LoginDecision, LoginDecisionKind, LoginReq, LoginResp, LoginTenantOption, LogoutReq,
     SelectLoginTenantReq,
 };
-use crate::auth::AuthContext;
 use crate::error::map_db_error;
 use crate::repo::control_accounts;
 use crate::services::ServiceResult;
@@ -33,7 +35,9 @@ pub async fn login(st: &AppState, req: &LoginReq) -> ServiceResult<LoginResp> {
         return Err(dmsx_core::DmsxError::Forbidden("账号已停用".into()));
     }
     if hash_password(req.password()) != account.password_hash {
-        return Err(dmsx_core::DmsxError::Unauthorized("用户名或密码错误".into()));
+        return Err(dmsx_core::DmsxError::Unauthorized(
+            "用户名或密码错误".into(),
+        ));
     }
 
     let platform_roles = parse_roles(&account.platform_roles)?;
@@ -82,16 +86,22 @@ pub async fn login(st: &AppState, req: &LoginReq) -> ServiceResult<LoginResp> {
             tenant_options,
         }
     } else {
-        return Err(dmsx_core::DmsxError::Forbidden("账号未配置任何平台或租户权限".into()));
+        return Err(dmsx_core::DmsxError::Forbidden(
+            "账号未配置任何平台或租户权限".into(),
+        ));
     };
 
     let mut available_scopes = Vec::new();
     if has_platform {
         available_scopes.push("platform".to_string());
     }
-    if !decision.tenant_options.is_empty() || matches!(decision.kind, LoginDecisionKind::TenantOnly) {
+    if !decision.tenant_options.is_empty() || matches!(decision.kind, LoginDecisionKind::TenantOnly)
+    {
         available_scopes.push("tenant".to_string());
     }
+
+    let login_transaction_token =
+        issue_login_transaction_token(&st.auth, account.id, &account.username)?;
 
     Ok(LoginResp {
         account_id: account.id,
@@ -100,6 +110,7 @@ pub async fn login(st: &AppState, req: &LoginReq) -> ServiceResult<LoginResp> {
         platform_roles,
         available_scopes,
         decision,
+        login_transaction_token: Some(login_transaction_token),
         token: None,
         active_scope: None,
         active_tenant_id: None,
@@ -118,6 +129,19 @@ pub async fn select_login_scope(
         .await
         .map_err(map_db_error)?
         .ok_or_else(|| dmsx_core::DmsxError::Unauthorized("账号不存在".into()))?;
+    if !account.is_active {
+        return Err(dmsx_core::DmsxError::Forbidden("账号已停用".into()));
+    }
+    let token_account_id = verify_login_transaction_token(
+        &st.auth,
+        req.login_transaction_token.trim(),
+        req.username(),
+    )?;
+    if token_account_id != account.id {
+        return Err(dmsx_core::DmsxError::Unauthorized(
+            "登录选择凭证与账号不匹配".into(),
+        ));
+    }
 
     let platform_roles = parse_roles(&account.platform_roles)?;
     let tenant_rows = control_accounts::list_tenants_for_account(&mut conn, account.id)
@@ -207,6 +231,7 @@ pub async fn select_login_scope(
             preferred_tenant_id: Some(active_tenant_id),
             tenant_options: Vec::new(),
         },
+        login_transaction_token: None,
         token: Some(token),
         active_scope: Some(req.scope.clone()),
         active_tenant_id: Some(active_tenant_id),
@@ -225,7 +250,10 @@ pub async fn logout(st: &AppState, ctx: &AuthContext, req: &LogoutReq) -> Servic
         .map_err(map_db_error)?;
     let target_tenant_id = req.tenant_id.unwrap_or(ctx.tenant_id);
 
-    if tenant_rows.iter().any(|row| row.tenant_id == target_tenant_id) {
+    if tenant_rows
+        .iter()
+        .any(|row| row.tenant_id == target_tenant_id)
+    {
         control_accounts::touch_last_tenant(&mut conn, account.id, target_tenant_id)
             .await
             .map_err(map_db_error)?;
@@ -295,8 +323,15 @@ pub async fn ensure_dev_accounts(st: &AppState) {
         ),
     ];
 
-    for (username, password, display_name, platform_roles, default_tenant_id, last_tenant_id, tenant_entries) in
-        accounts
+    for (
+        username,
+        password,
+        display_name,
+        platform_roles,
+        default_tenant_id,
+        last_tenant_id,
+        tenant_entries,
+    ) in accounts
     {
         match control_accounts::upsert_account(
             &mut conn,
@@ -310,7 +345,13 @@ pub async fn ensure_dev_accounts(st: &AppState) {
         .await
         {
             Ok(account_id) => {
-                if let Err(err) = control_accounts::replace_account_tenants(&mut conn, account_id, &tenant_entries).await {
+                if let Err(err) = control_accounts::replace_account_tenants(
+                    &mut conn,
+                    account_id,
+                    &tenant_entries,
+                )
+                .await
+                {
                     tracing::warn!(username, "failed to seed dev account tenants: {err}");
                 }
             }

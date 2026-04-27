@@ -190,10 +190,10 @@
 - [x] `POST /v1/tenants/{tid}/devices/{did}/desktop/session` 创建远程桌面会话（LiveKit Token + Agent `start_desktop`；**2026-04-20** 已在本机对 `dmsx-api` + LiveKit + Redis + 真实 `dmsx-agent` 做最小闭环验证；Agent 现仅在 **屏幕轨发布成功且输入注入器初始化成功** 后才回报 ready，避免“能看屏但无法输入”仍被判成功）
 - [x] `DELETE /v1/tenants/{tid}/devices/{did}/desktop/session?session_id=` 终止指定远程桌面会话（`stop_desktop`）
 - [x] `GET /v1/config/livekit` LiveKit 配置查询
-- [x] `GET /v1/config/tenants` 平台租户目录汇总（PlatformAdmin；支持分页与搜索）
-- [x] `GET /v1/config/audit-logs` 平台全局审计日志（PlatformAdmin）
-- [x] `GET /v1/config/platform-health` 平台健康摘要（PlatformAdmin；含资源总量与关键后端组件启用状态）
-- [x] `GET /v1/config/quotas` 平台配额列表（PlatformAdmin；返回真实已用量，配额上限由环境变量配置）
+- [x] `GET /v1/config/tenants` 平台租户目录汇总（PlatformAdmin / PlatformViewer 可读；支持分页与搜索）
+- [x] `GET /v1/config/audit-logs` 平台全局审计日志（PlatformAdmin / PlatformViewer 可读）
+- [x] `GET /v1/config/platform-health` 平台健康摘要（PlatformAdmin / PlatformViewer 可读；含资源总量与关键后端组件启用状态）
+- [x] `GET /v1/config/quotas` 平台配额列表（PlatformAdmin / PlatformViewer 可读；返回真实已用量，配额上限由环境变量配置）
 - [~] `POST /v1/tenants/{tid}/ai/anomalies` AI 异常检测（规则引擎 stub）
 - [~] `POST /v1/tenants/{tid}/ai/recommendations` AI 策略推荐（stub）
 - [~] `POST /v1/tenants/{tid}/ai/chat` AI 智能助手（stub，待接 LLM）
@@ -373,7 +373,9 @@
 - [x] 审计不可篡改设计（PG + CH + 对象存储）
 - [x] 制品签名设计（cosign / sigstore）
 - [~] 认证实现（JWT `issuer` / `audience` 校验已支持；OIDC discovery -> `jwks_uri` 加载、JWKS 校验、后台 TTL 刷新与未知 `kid` 强制刷新已接入；外部 IdP 实机联调与更完整轮转/失效策略待补）
-- [x] RBAC 中间件实现（按活动租户解析 **`roles`**：`tenant_roles` 有键则用该数组，否则用令牌级 `roles`；资源级路由权限；缺失角色、越权写策略、越权访问全局配置均返回 `403`）
+- [x] RBAC 中间件实现（租户路径按活动租户解析 **`roles`**：`tenant_roles` 有键则用该数组，否则用令牌级 `roles`；平台路径仅用令牌级 `roles`，不套用租户绑定/自定义角色；资源级路由权限；缺失角色、越权写策略、越权访问全局配置均返回 `403`）
+- [x] RLS 强化（租户域表 `FORCE ROW LEVEL SECURITY`；关键父子关系补 `(tenant_id, id)` 复合外键）
+- [~] HTTP Agent 设备写回认证（`X-DMSX-Device-Token` 校验 enrollment token 绑定的租户/设备/注册码；长期仍待设备会话 token 或 mTLS/gRPC 数据面）
 - [ ] 设备证书签发（CA 集成）
 - [ ] 证书轮换 / 吊销实现
 - [x] 审计日志自动写入（所有 create/update/delete/publish 操作写入 audit_logs）

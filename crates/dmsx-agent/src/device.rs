@@ -50,16 +50,12 @@ pub async fn find_or_register_device(
     ));
     let resp: ListResponse<Device> = client.get(&url).send().await?.json().await?;
 
-    if let Some(existing) = resp
-        .items
-        .into_iter()
-        .find(|device| {
-            cfg.registration_code
-                .as_deref()
-                .map(|code| device.registration_code == code)
-                .unwrap_or_else(|| device.hostname.as_deref() == Some(hostname.as_str()))
-        })
-    {
+    if let Some(existing) = resp.items.into_iter().find(|device| {
+        cfg.registration_code
+            .as_deref()
+            .map(|code| device.registration_code == code)
+            .unwrap_or_else(|| device.hostname.as_deref() == Some(hostname.as_str()))
+    }) {
         info!(device_id = %existing.id, "found existing device registration");
         return Ok(existing.id);
     }
@@ -103,8 +99,8 @@ pub async fn heartbeat(
     let telemetry = collect_telemetry();
 
     let device_url = cfg.tenant_url(&format!("/devices/{device_id}"));
-    let _ = client
-        .patch(&device_url)
+    let _ = cfg
+        .apply_device_auth(client.patch(&device_url))
         .json(&serde_json::json!({
             "online_state": "online",
             "agent_version": env!("CARGO_PKG_VERSION"),
@@ -114,8 +110,8 @@ pub async fn heartbeat(
         .await;
 
     let shadow_reported_url = cfg.tenant_url(&format!("/devices/{device_id}/shadow/reported"));
-    let resp = client
-        .patch(&shadow_reported_url)
+    let resp = cfg
+        .apply_device_auth(client.patch(&shadow_reported_url))
         .json(&serde_json::json!({ "reported": telemetry }))
         .send()
         .await;
@@ -135,8 +131,8 @@ pub async fn heartbeat(
 
 pub async fn mark_offline(client: &Client, cfg: &AgentConfig, device_id: &str) {
     let url = cfg.tenant_url(&format!("/devices/{device_id}"));
-    let _ = client
-        .patch(&url)
+    let _ = cfg
+        .apply_device_auth(client.patch(&url))
         .json(&serde_json::json!({"online_state": "offline"}))
         .send()
         .await;
@@ -259,7 +255,9 @@ mod tests {
         let client = test_client();
 
         Mock::given(method("POST"))
-            .and(path("/v1/tenants/test-tenant/devices/claim-with-enrollment-token"))
+            .and(path(
+                "/v1/tenants/test-tenant/devices/claim-with-enrollment-token",
+            ))
             .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({
                 "id": "dev-claimed",
                 "registration_code": "DEV-CLAIM-0001",

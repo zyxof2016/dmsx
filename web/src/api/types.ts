@@ -50,6 +50,7 @@ export interface LoginResponse {
   platform_roles: string[];
   available_scopes: Array<"platform" | "tenant">;
   decision: LoginDecision;
+  login_transaction_token?: string;
   token?: string;
   active_scope?: "platform" | "tenant";
   active_tenant_id?: string;

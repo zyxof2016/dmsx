@@ -54,6 +54,7 @@ impl LoginReq {
 #[derive(Debug, Deserialize)]
 pub struct SelectLoginTenantReq {
     pub username: String,
+    pub login_transaction_token: String,
     pub scope: String,
     pub tenant_id: Option<Uuid>,
 }
@@ -70,8 +71,16 @@ impl SelectLoginTenantReq {
 
     pub fn validate(&self) -> Result<(), DmsxError> {
         check_len("username", self.username(), 1, 100)?;
+        check_len(
+            "login_transaction_token",
+            self.login_transaction_token.trim(),
+            20,
+            4096,
+        )?;
         if !matches!(self.scope.trim(), "platform" | "tenant") {
-            return Err(DmsxError::Validation("scope must be platform or tenant".into()));
+            return Err(DmsxError::Validation(
+                "scope must be platform or tenant".into(),
+            ));
         }
         Ok(())
     }
@@ -107,6 +116,8 @@ pub struct LoginResp {
     pub platform_roles: Vec<String>,
     pub available_scopes: Vec<String>,
     pub decision: LoginDecision,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub login_transaction_token: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub token: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

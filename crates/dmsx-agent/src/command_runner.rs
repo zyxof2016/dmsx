@@ -1,17 +1,20 @@
 use std::process::Stdio;
 
-use reqwest::Client;
-use tokio::process::Command as TokioCommand;
-use tracing::{error, info, warn};
 use dmsx_agent::api::{CommandItem, ListResponse, SubmitResultReq, UpdateStatusReq};
 use dmsx_agent::config::AgentConfig;
 use dmsx_agent::install_update::run_install_update;
 use dmsx_agent::script::run_script;
+use reqwest::Client;
+use tokio::process::Command as TokioCommand;
+use tracing::{error, info, warn};
 
 use crate::desktop::{start_desktop_session, DesktopSession};
 
 fn should_apply_runner_timeout(action: &str) -> bool {
-    !matches!(action, "start_desktop" | "stop_desktop" | "reboot" | "shutdown" | "install_update")
+    !matches!(
+        action,
+        "start_desktop" | "stop_desktop" | "reboot" | "shutdown" | "install_update"
+    )
 }
 
 pub(crate) async fn poll_and_execute(
@@ -21,9 +24,15 @@ pub(crate) async fn poll_and_execute(
     desktop_session: &mut Option<DesktopSession>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let url = cfg.tenant_url(&format!("/devices/{device_id}/commands?limit=10"));
-    let resp: ListResponse<CommandItem> = client.get(&url).send().await?.json().await?;
+    let resp: ListResponse<CommandItem> = cfg
+        .apply_device_auth(client.get(&url))
+        .send()
+        .await?
+        .json()
+        .await?;
 
-    let mut queued: Vec<&CommandItem> = resp.items.iter().filter(|c| c.status == "queued").collect();
+    let mut queued: Vec<&CommandItem> =
+        resp.items.iter().filter(|c| c.status == "queued").collect();
 
     if queued.is_empty() {
         return Ok(());
@@ -63,8 +72,8 @@ async fn execute_command(
     info!(command_id = %cmd_id, action = %action, "executing command");
 
     let status_url = cfg.tenant_url(&format!("/commands/{cmd_id}/status"));
-    let _ = client
-        .patch(&status_url)
+    let _ = cfg
+        .apply_device_auth(client.patch(&status_url))
         .json(&UpdateStatusReq {
             status: "running".into(),
         })
@@ -73,86 +82,90 @@ async fn execute_command(
 
     let execution = async {
         match action {
-        "start_desktop" => {
-            if desktop_session.is_some() {
-                info!("stopping existing desktop session before starting new one");
-                if let Some(session) = desktop_session.take() {
-                    session.stop().await;
+            "start_desktop" => {
+                if desktop_session.is_some() {
+                    info!("stopping existing desktop session before starting new one");
+                    if let Some(session) = desktop_session.take() {
+                        session.stop().await;
+                    }
+                }
+                match start_desktop_session(&params).await {
+                    Ok(session) => {
+                        *desktop_session = Some(session);
+                        (0, "desktop session started".into(), String::new())
+                    }
+                    Err(e) => {
+                        error!("failed to start desktop session: {e}");
+                        (1, String::new(), format!("start_desktop failed: {e}"))
+                    }
                 }
             }
-            match start_desktop_session(&params).await {
-                Ok(session) => {
-                    *desktop_session = Some(session);
-                    (0, "desktop session started".into(), String::new())
-                }
-                Err(e) => {
-                    error!("failed to start desktop session: {e}");
-                    (1, String::new(), format!("start_desktop failed: {e}"))
-                }
-            }
-        }
-        "stop_desktop" => {
-            let target_session_id = params
-                .get("session_id")
-                .and_then(|v: &serde_json::Value| v.as_str())
-                .unwrap_or_default();
-            if desktop_session
-                .as_ref()
-                .map(|session| session.session_id == target_session_id)
-                .unwrap_or(false)
-            {
-                if let Some(session) = desktop_session.take() {
-                    session.stop().await;
-                    (0, "desktop session stopped".into(), String::new())
+            "stop_desktop" => {
+                let target_session_id = params
+                    .get("session_id")
+                    .and_then(|v: &serde_json::Value| v.as_str())
+                    .unwrap_or_default();
+                if desktop_session
+                    .as_ref()
+                    .map(|session| session.session_id == target_session_id)
+                    .unwrap_or(false)
+                {
+                    if let Some(session) = desktop_session.take() {
+                        session.stop().await;
+                        (0, "desktop session stopped".into(), String::new())
+                    } else {
+                        (0, "no active desktop session".into(), String::new())
+                    }
                 } else {
-                    (0, "no active desktop session".into(), String::new())
+                    (
+                        0,
+                        format!("desktop session {target_session_id} already inactive"),
+                        String::new(),
+                    )
                 }
-            } else {
+            }
+            "run_script" => run_script(&params).await,
+            "reboot" => {
+                info!("reboot requested — scheduling system reboot");
+                schedule_reboot().await
+            }
+            "shutdown" => {
+                let delay = params
+                    .get("delay_seconds")
+                    .and_then(|v: &serde_json::Value| v.as_u64())
+                    .unwrap_or(30);
+                info!(delay_seconds = delay, "shutdown requested");
+                schedule_shutdown(delay).await
+            }
+            "lock_screen" => {
+                info!("lock_screen requested");
+                lock_screen().await
+            }
+            "collect_logs" => {
+                info!("collecting system logs");
+                collect_logs(&params).await
+            }
+            "wipe" => {
+                warn!("WIPE command received — refusing in agent (safety)");
                 (
-                    0,
-                    format!("desktop session {target_session_id} already inactive"),
+                    1,
                     String::new(),
+                    "wipe refused by agent safety policy".into(),
                 )
             }
+            "install_update" => {
+                info!("install_update requested");
+                run_install_update(client, &params).await
+            }
+            "smoke_noop" => {
+                info!("smoke_noop — no side effects");
+                (0, "smoke_noop ok".into(), String::new())
+            }
+            _ => {
+                warn!(action = %action, "unknown action");
+                (1, String::new(), format!("unknown action: {action}"))
+            }
         }
-        "run_script" => run_script(&params).await,
-        "reboot" => {
-            info!("reboot requested — scheduling system reboot");
-            schedule_reboot().await
-        }
-        "shutdown" => {
-            let delay = params
-                .get("delay_seconds")
-                .and_then(|v: &serde_json::Value| v.as_u64())
-                .unwrap_or(30);
-            info!(delay_seconds = delay, "shutdown requested");
-            schedule_shutdown(delay).await
-        }
-        "lock_screen" => {
-            info!("lock_screen requested");
-            lock_screen().await
-        }
-        "collect_logs" => {
-            info!("collecting system logs");
-            collect_logs(&params).await
-        }
-        "wipe" => {
-            warn!("WIPE command received — refusing in agent (safety)");
-            (1, String::new(), "wipe refused by agent safety policy".into())
-        }
-        "install_update" => {
-            info!("install_update requested");
-            run_install_update(client, &params).await
-        }
-        "smoke_noop" => {
-            info!("smoke_noop — no side effects");
-            (0, "smoke_noop ok".into(), String::new())
-        }
-        _ => {
-            warn!(action = %action, "unknown action");
-            (1, String::new(), format!("unknown action: {action}"))
-        }
-    }
     };
 
     let (exit_code, stdout, stderr) = if should_apply_runner_timeout(action) {
@@ -187,7 +200,12 @@ async fn execute_command(
         stderr,
     };
 
-    match client.post(&result_url).json(&result_body).send().await {
+    match cfg
+        .apply_device_auth(client.post(&result_url))
+        .json(&result_body)
+        .send()
+        .await
+    {
         Ok(r) if r.status().is_success() => {
             info!(command_id = %cmd_id, exit_code, "command result submitted");
         }
@@ -202,7 +220,10 @@ async fn execute_command(
 
 async fn schedule_reboot() -> (i32, String, String) {
     let (prog, args): (&str, &[&str]) = if cfg!(target_os = "windows") {
-        ("shutdown.exe", &["/r", "/t", "5", "/c", "DMSX remote reboot"])
+        (
+            "shutdown.exe",
+            &["/r", "/t", "5", "/c", "DMSX remote reboot"],
+        )
     } else {
         ("sudo", &["shutdown", "-r", "+1", "DMSX remote reboot"])
     };
@@ -218,7 +239,10 @@ async fn schedule_shutdown(delay: u64) -> (i32, String, String) {
             vec!["/s", "/t", &delay_str, "/c", "DMSX remote shutdown"],
         )
     } else {
-        ("sudo", vec!["shutdown", "-h", &mins, "DMSX remote shutdown"])
+        (
+            "sudo",
+            vec!["shutdown", "-h", &mins, "DMSX remote shutdown"],
+        )
     };
     run_system_command(prog, &args).await
 }

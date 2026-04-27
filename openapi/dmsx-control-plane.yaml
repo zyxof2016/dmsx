@@ -21,11 +21,11 @@ info:
     - 回执入库：网关将命令执行结果发布到 `dmsx.command.result.{tenant_id}.{device_id}`；控制面以 durable pull consumer 消费（默认 `DMSX_NATS_RESULT_CONSUMER=dmsx-api-result-ingest`）并与 `POST /v1/tenants/{tid}/commands/{cid}/result` 语义对齐写库。
     - 证据上传：`UploadEvidence` 当前写入 S3 / MinIO 兼容对象存储；对象 key 由网关生成并通过 `ReportResult.evidence_object_key` 回传控制面。
 
-    **认证**：根级 `security: [bearerAuth]`；`/health` 与 `/ready` 使用 `security: []`。JWT 可选 **`allowed_tenant_ids`**（路径租户白名单）与可选 **`tenant_roles`**（按租户覆盖 RBAC，见 `components.securitySchemes.bearerAuth`）。开发环境可将 `DMSX_API_AUTH_MODE=disabled` 关闭校验。
+    **认证**：根级 `security: [bearerAuth]`；`/health` 与 `/ready` 使用 `security: []`。`/v1/auth/login` 与 `/v1/auth/login/select` 是账号密码登录的公开 BFF 接口，其中 select 步骤必须携带第一步返回的短期 `login_transaction_token`。HTTP Agent 写回路径可使用 `X-DMSX-Device-Token` 携带 enrollment token，控制面会校验其绑定的 `tenant_id + device_id + registration_code`。JWT 可选 **`allowed_tenant_ids`**（路径租户白名单）与可选 **`tenant_roles`**（按租户覆盖 RBAC，见 `components.securitySchemes.bearerAuth`）。开发环境可将 `DMSX_API_AUTH_MODE=disabled` 关闭校验。
 
     **错误**：多数操作声明 `401` / `403`；资源不存在声明 `404`。带请求体的写操作声明 **`400`**（`DmsxError::Validation` → HTTP 400，Problem Details 的 title 为 **Bad Request**；**当前实现不使用 422**）。部分创建类 POST 另声明 **`409`**（`DmsxError::Conflict`）。**`500`**（`DmsxError::Internal` 等未预期故障）在各操作声明。上述响应均复用 `ProblemDetails` schema。
 
-    **`POST /v1/tenants`** 与 **`GET /v1/config/livekit`** 同级 RBAC：需 **PlatformAdmin**（`jwt` 模式）。其余层级创建路径需 **TenantAdmin**（或更高）且路径 `{tenant_id}` 在 JWT 许可集合内。
+    平台只读接口（`GET /v1/config/...`）可由 **PlatformAdmin** 或 **PlatformViewer** 访问；平台写接口（如 `POST /v1/tenants`、`PUT /v1/config/settings/{key}`）仅 **PlatformAdmin** 可写。其余层级创建路径需 **TenantAdmin**（或更高）且路径 `{tenant_id}` 在 JWT 许可集合内。
 servers:
 - url: https://api.example.com
 security:
@@ -125,6 +125,7 @@ paths:
       security: []
       summary: Finalize login scope and issue JWT
       operationId: authLoginSelect
+      description: Requires the `login_transaction_token` returned by `/v1/auth/login`; the token is bound to the authenticated account and expires shortly.
       requestBody:
         required: true
         content:
@@ -1755,10 +1756,16 @@ components:
       type: object
       required:
       - username
+      - login_transaction_token
       - scope
       properties:
         username:
           type: string
+        login_transaction_token:
+          type: string
+          minLength: 20
+          maxLength: 4096
+          description: Short-lived transaction token returned by `/v1/auth/login` and required to finalize scope selection.
         scope:
           type: string
           enum:
@@ -1838,6 +1845,10 @@ components:
             - tenant
         decision:
           $ref: '#/components/schemas/LoginDecision'
+        login_transaction_token:
+          type: string
+          nullable: true
+          description: Present on the first login response and omitted/null after `/v1/auth/login/select` issues the final JWT.
         token:
           type: string
           nullable: true

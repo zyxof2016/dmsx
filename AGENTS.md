@@ -7,6 +7,7 @@
 
 ## Source Of Truth
 
+- Reply to the user in Simplified Chinese.
 - Prefer code/config/scripts over prose when they disagree. Example: `web/src/api/client.ts` is the current frontend auth/tenant behavior.
 - Do not edit or trust `web/src/**/*.js`. `.gitignore` excludes them, and they are transpiled leftovers that can be stale relative to `.ts`/`.tsx`.
 
@@ -19,6 +20,7 @@
 - For JWT + multi-tenant changes, run `./scripts/public-beta-multi-tenant-smoke.sh` against a running `dmsx-api` with `DMSX_API_AUTH_MODE=jwt` and a matching `DMSX_API_JWT_SECRET`.
 - For real Agent behavior changes, run `DMSX_E2E_API="http://127.0.0.1:8080" ./scripts/agent-dev-e2e.sh`.
 - Focused RLS check: `DMSX_TEST_DATABASE_URL="postgres://dmsx:dmsx@127.0.0.1:5432/dmsx" cargo test -p dmsx-api --test rls_tenant_session`.
+- RLS/integrity migrations now include `FORCE ROW LEVEL SECURITY` and `(tenant_id, id)` composite foreign keys; after changing migrations, rebuild/restart `dmsx-api` so embedded migrations apply.
 
 ## Env And Migrations
 

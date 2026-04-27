@@ -6,13 +6,14 @@ import { useNavigate } from "@tanstack/react-router";
 import { usePlatformTenantsList } from "../api/hooks";
 import type { PlatformTenantSummary, ListParams } from "../api/types";
 import { formatApiError } from "../api/errors";
-import { setStoredTenantId } from "../api/client";
 import { useResourceAccess } from "../authz";
 import { ReadonlyBanner } from "../components/ReadonlyBanner";
+import { useAppSession } from "../appProviders";
 
 export const PlatformTenantsPage: React.FC = () => {
   const navigate = useNavigate();
   const { canWrite } = useResourceAccess("platformWrite");
+  const { setTenantId, setAppMode } = useAppSession();
   const [search, setSearch] = React.useState("");
   const [page, setPage] = React.useState(1);
   const [pageSize, setPageSize] = React.useState(10);
@@ -28,7 +29,8 @@ export const PlatformTenantsPage: React.FC = () => {
   const total = data?.total ?? 0;
 
   const openTenant = (tenantId: string) => {
-    setStoredTenantId(tenantId);
+    setTenantId(tenantId);
+    setAppMode("tenant");
     navigate({ to: "/devices" });
   };
 

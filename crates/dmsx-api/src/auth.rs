@@ -5,11 +5,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use dmsx_core::DmsxError;
-use jsonwebtoken::{
-    decode, decode_header,
-    jwk::JwkSet,
-    Algorithm, DecodingKey, Validation,
-};
+use jsonwebtoken::{decode, decode_header, jwk::JwkSet, Algorithm, DecodingKey, Validation};
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -138,14 +134,10 @@ impl AuthConfig {
 
         let jwt_secret = match mode {
             AuthMode::Disabled => None,
-            AuthMode::Jwt => Some(
-                std::env::var("DMSX_API_JWT_SECRET").unwrap_or_else(|_| {
-                    tracing::warn!(
-                        "DMSX_API_JWT_SECRET missing, using development fallback secret"
-                    );
-                    DEFAULT_DEV_JWT_SECRET.to_string()
-                }),
-            ),
+            AuthMode::Jwt => Some(std::env::var("DMSX_API_JWT_SECRET").unwrap_or_else(|_| {
+                tracing::warn!("DMSX_API_JWT_SECRET missing, using development fallback secret");
+                DEFAULT_DEV_JWT_SECRET.to_string()
+            })),
         };
         let jwt_issuer = optional_env("DMSX_API_JWT_ISSUER");
         let jwt_audience = optional_env("DMSX_API_JWT_AUDIENCE");
@@ -163,10 +155,16 @@ impl AuthConfig {
                 .and_then(|value| value.parse::<u64>().ok())
                 .unwrap_or(3600),
         );
-        let jwks_allow_startup_without_keys = std::env::var("DMSX_API_JWKS_ALLOW_STARTUP_WITHOUT_KEYS")
-            .ok()
-            .map(|value| matches!(value.to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
-            .unwrap_or(false);
+        let jwks_allow_startup_without_keys =
+            std::env::var("DMSX_API_JWKS_ALLOW_STARTUP_WITHOUT_KEYS")
+                .ok()
+                .map(|value| {
+                    matches!(
+                        value.to_ascii_lowercase().as_str(),
+                        "1" | "true" | "yes" | "on"
+                    )
+                })
+                .unwrap_or(false);
 
         Self {
             mode,
@@ -303,7 +301,11 @@ pub async fn auth_readiness(config: &AuthConfig) -> AuthReadiness {
 }
 
 impl AuthContext {
-    fn from_claims(claims: JwtClaims, active_tenant_id: Uuid, effective_roles: Vec<String>) -> Self {
+    fn from_claims(
+        claims: JwtClaims,
+        active_tenant_id: Uuid,
+        effective_roles: Vec<String>,
+    ) -> Self {
         Self {
             subject: claims.sub,
             tenant_id: active_tenant_id,
@@ -385,6 +387,23 @@ pub async fn auth_middleware(
         return next.run(request).await;
     }
 
+    if let Some(device_ctx) = try_device_writeback_auth(
+        &st,
+        request.method(),
+        request.uri().path(),
+        request.headers(),
+    )
+    .await
+    {
+        match device_ctx {
+            Ok(ctx) => {
+                request.extensions_mut().insert(ctx);
+                return next.run(request).await;
+            }
+            Err(err) => return err.into_response(),
+        }
+    }
+
     let token = match bearer_token(request.headers()) {
         Ok(token) => token,
         Err(err) => return err.into_response(),
@@ -410,21 +429,26 @@ pub async fn auth_middleware(
         None => claims.tenant_id,
     };
 
+    let is_platform_request = path_tenant_id.is_none() && is_platform_path(request.uri().path());
     let jwt_roles = effective_roles_for_request(&claims, path_tenant_id);
-    let binding_roles = load_effective_binding_roles(&st, active_tenant_id, &claims.sub).await;
-    let effective_roles = if binding_roles.is_empty() {
-        jwt_roles
+    let (effective_roles, custom_roles) = if is_platform_request {
+        (claims.roles.clone(), Vec::new())
     } else {
-        binding_roles
+        let binding_roles = load_effective_binding_roles(&st, active_tenant_id, &claims.sub).await;
+        let effective_roles = if binding_roles.is_empty() {
+            jwt_roles
+        } else {
+            binding_roles
+        };
+        let custom_roles = load_effective_custom_roles(&st, active_tenant_id).await;
+        (effective_roles, custom_roles)
     };
-    let custom_roles = load_effective_custom_roles(&st, active_tenant_id).await;
     if let Err(err) = authorize_request(
         request.method(),
         request.uri().path(),
         &effective_roles,
         &custom_roles,
-    )
-    {
+    ) {
         return err.into_response();
     }
 
@@ -440,8 +464,76 @@ fn is_public_path(path: &str) -> bool {
     matches!(path, "/health" | "/ready")
 }
 
+fn is_platform_path(path: &str) -> bool {
+    path == "/v1/tenants" || path.starts_with("/v1/config/")
+}
+
+async fn try_device_writeback_auth(
+    st: &AppState,
+    method: &Method,
+    path: &str,
+    headers: &HeaderMap,
+) -> Option<Result<AuthContext, DmsxError>> {
+    let token = headers
+        .get("x-dmsx-device-token")
+        .and_then(|value| value.to_str().ok())?
+        .trim();
+    if token.is_empty() {
+        return Some(Err(DmsxError::Unauthorized("empty device token".into())));
+    }
+
+    let segments = path.trim_start_matches('/').split('/').collect::<Vec<_>>();
+    if segments.len() < 4 || segments[0] != "v1" || segments[1] != "tenants" {
+        return None;
+    }
+    let tid = match Uuid::parse_str(segments[2]) {
+        Ok(tid) => tid,
+        Err(_) => {
+            return Some(Err(DmsxError::Validation(
+                "invalid tenant_id in path".into(),
+            )))
+        }
+    };
+
+    match (method, segments.as_slice()) {
+        (&Method::PATCH, ["v1", "tenants", _, "devices", did])
+        | (&Method::PATCH, ["v1", "tenants", _, "devices", did, "shadow", "reported"])
+        | (&Method::GET, ["v1", "tenants", _, "devices", did, "commands"]) => {
+            let did = match Uuid::parse_str(did) {
+                Ok(did) => did,
+                Err(_) => {
+                    return Some(Err(DmsxError::Validation(
+                        "invalid device_id in path".into(),
+                    )))
+                }
+            };
+            Some(crate::services::devices::verify_device_writeback_token(st, tid, did, token).await)
+        }
+        (&Method::PATCH, ["v1", "tenants", _, "commands", cid, "status"])
+        | (&Method::POST, ["v1", "tenants", _, "commands", cid, "result"]) => {
+            let cid = match Uuid::parse_str(cid) {
+                Ok(cid) => cid,
+                Err(_) => {
+                    return Some(Err(DmsxError::Validation(
+                        "invalid command_id in path".into(),
+                    )))
+                }
+            };
+            Some(
+                crate::services::devices::verify_device_command_writeback_token(
+                    st, tid, cid, token,
+                )
+                .await,
+            )
+        }
+        _ => None,
+    }
+}
+
 fn optional_env(name: &str) -> Option<String> {
-    std::env::var(name).ok().filter(|value| !value.trim().is_empty())
+    std::env::var(name)
+        .ok()
+        .filter(|value| !value.trim().is_empty())
 }
 
 async fn load_effective_custom_roles(
@@ -452,7 +544,13 @@ async fn load_effective_custom_roles(
         return Vec::new();
     }
 
-    if let Some(cached) = st.tenant_custom_roles.read().await.get(&active_tenant_id).cloned() {
+    if let Some(cached) = st
+        .tenant_custom_roles
+        .read()
+        .await
+        .get(&active_tenant_id)
+        .cloned()
+    {
         return cached;
     }
 
@@ -475,7 +573,13 @@ async fn load_effective_binding_roles(
         return Vec::new();
     }
 
-    if let Some(cached) = st.tenant_role_bindings.read().await.get(&active_tenant_id).cloned() {
+    if let Some(cached) = st
+        .tenant_role_bindings
+        .read()
+        .await
+        .get(&active_tenant_id)
+        .cloned()
+    {
         return cached
             .into_iter()
             .find(|binding| binding.subject == subject)
@@ -543,7 +647,7 @@ fn is_read_request(method: &Method) -> bool {
 }
 
 fn classify_resource(path: &str) -> ResourceKind {
-    if path == "/v1/tenants" || path.starts_with("/v1/config/") {
+    if is_platform_path(path) {
         return ResourceKind::GlobalConfig;
     }
     if path.ends_with("/stats") {
@@ -579,34 +683,74 @@ fn classify_resource(path: &str) -> ResourceKind {
 fn permission_for_resource(resource: ResourceKind, read_only: bool) -> &'static str {
     match resource {
         ResourceKind::GlobalConfig => {
-            if read_only { "platform.read" } else { "platform.write" }
+            if read_only {
+                "platform.read"
+            } else {
+                "platform.write"
+            }
         }
         ResourceKind::Stats => {
-            if read_only { "stats.read" } else { "stats.write" }
+            if read_only {
+                "stats.read"
+            } else {
+                "stats.write"
+            }
         }
         ResourceKind::Devices => {
-            if read_only { "devices.read" } else { "devices.write" }
+            if read_only {
+                "devices.read"
+            } else {
+                "devices.write"
+            }
         }
         ResourceKind::Policies => {
-            if read_only { "policies.read" } else { "policies.write" }
+            if read_only {
+                "policies.read"
+            } else {
+                "policies.write"
+            }
         }
         ResourceKind::Commands => {
-            if read_only { "commands.read" } else { "commands.write" }
+            if read_only {
+                "commands.read"
+            } else {
+                "commands.write"
+            }
         }
         ResourceKind::DeviceShadow => {
-            if read_only { "device_shadow.read" } else { "device_shadow.write" }
+            if read_only {
+                "device_shadow.read"
+            } else {
+                "device_shadow.write"
+            }
         }
         ResourceKind::Artifacts => {
-            if read_only { "artifacts.read" } else { "artifacts.write" }
+            if read_only {
+                "artifacts.read"
+            } else {
+                "artifacts.write"
+            }
         }
         ResourceKind::Compliance => {
-            if read_only { "compliance.read" } else { "compliance.write" }
+            if read_only {
+                "compliance.read"
+            } else {
+                "compliance.write"
+            }
         }
         ResourceKind::RemoteDesktop => {
-            if read_only { "remote_desktop.read" } else { "remote_desktop.write" }
+            if read_only {
+                "remote_desktop.read"
+            } else {
+                "remote_desktop.write"
+            }
         }
         ResourceKind::AiAssist => {
-            if read_only { "ai_assist.read" } else { "ai_assist.write" }
+            if read_only {
+                "ai_assist.read"
+            } else {
+                "ai_assist.write"
+            }
         }
         ResourceKind::GenericTenantResource => {
             if read_only {
@@ -628,7 +772,10 @@ fn custom_role_allows(
         return false;
     };
     let permission = permission_for_resource(resource, read_only);
-    custom_role.permissions.iter().any(|item| item == permission)
+    custom_role
+        .permissions
+        .iter()
+        .any(|item| item == permission)
 }
 
 fn is_role_allowed(
@@ -770,7 +917,10 @@ async fn decode_token_with_jwks(config: &AuthConfig, token: &str) -> Result<JwtC
     };
 
     let algorithm = header.alg;
-    if matches!(algorithm, Algorithm::HS256 | Algorithm::HS384 | Algorithm::HS512) {
+    if matches!(
+        algorithm,
+        Algorithm::HS256 | Algorithm::HS384 | Algorithm::HS512
+    ) {
         tracing::warn!("using symmetric algorithm {:?} via JWKS", algorithm);
     }
 
@@ -974,7 +1124,9 @@ fn tenant_id_from_path(path: &str) -> Option<Uuid> {
     let mut segments = path.trim_start_matches('/').split('/');
     while let Some(segment) = segments.next() {
         if segment == "tenants" {
-            return segments.next().and_then(|value| Uuid::parse_str(value).ok());
+            return segments
+                .next()
+                .and_then(|value| Uuid::parse_str(value).ok());
         }
     }
     None
@@ -983,7 +1135,6 @@ fn tenant_id_from_path(path: &str) -> Option<Uuid> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
     use axum::{
         body::{to_bytes, Body},
         extract::Extension,
@@ -997,8 +1148,9 @@ mod tests {
     use jsonwebtoken::{encode, EncodingKey, Header};
     use serde_json::json;
     use sqlx::postgres::PgPoolOptions;
-    use tower::ServiceExt;
+    use std::collections::HashMap;
     use tokio::net::TcpListener;
+    use tower::ServiceExt;
 
     async fn protected(Extension(ctx): Extension<AuthContext>) -> impl IntoResponse {
         Json(json!({
@@ -1221,7 +1373,9 @@ mod tests {
         initial_body: serde_json::Value,
     ) -> (String, Arc<tokio::sync::RwLock<serde_json::Value>>) {
         let body = Arc::new(tokio::sync::RwLock::new(initial_body));
-        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind listener");
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
         let addr = listener.local_addr().expect("listener addr");
 
         let app = Router::new().route(
@@ -1732,7 +1886,9 @@ mod tests {
             jwt_secret: None,
             jwt_issuer: None,
             jwt_audience: None,
-            oidc_discovery_url: Some("https://issuer.example/.well-known/openid-configuration".to_string()),
+            oidc_discovery_url: Some(
+                "https://issuer.example/.well-known/openid-configuration".to_string(),
+            ),
             jwks_url: None,
             jwks_refresh_interval: std::time::Duration::from_secs(300),
             jwks_max_stale_age: std::time::Duration::from_secs(3600),
@@ -1749,7 +1905,10 @@ mod tests {
         );
 
         assert_eq!(config.jwt_issuer.as_deref(), Some("https://issuer.example"));
-        assert_eq!(config.jwks_url.as_deref(), Some("https://issuer.example/keys"));
+        assert_eq!(
+            config.jwks_url.as_deref(),
+            Some("https://issuer.example/keys")
+        );
     }
 
     #[tokio::test]
@@ -1923,14 +2082,11 @@ mod tests {
             }))),
         };
 
-        refresh_jwks_cache(&config).await.expect("stale jwks should be used");
+        refresh_jwks_cache(&config)
+            .await
+            .expect("stale jwks should be used");
 
-        let guard = config
-            .jwks_cache
-            .as_ref()
-            .expect("cache")
-            .read()
-            .await;
+        let guard = config.jwks_cache.as_ref().expect("cache").read().await;
         assert!(guard.jwks.as_ref().expect("jwks").find("key-1").is_some());
         assert!(guard.last_refresh_error.is_some());
     }
@@ -1961,12 +2117,7 @@ mod tests {
             .expect_err("expired stale jwks should fail");
         assert!(err.to_string().contains("failed to fetch JWKS"));
 
-        let guard = config
-            .jwks_cache
-            .as_ref()
-            .expect("cache")
-            .read()
-            .await;
+        let guard = config.jwks_cache.as_ref().expect("cache").read().await;
         assert!(guard.last_refresh_error.is_some());
     }
 
@@ -1989,12 +2140,7 @@ mod tests {
             .await
             .expect("startup should allow empty jwks cache");
 
-        let guard = config
-            .jwks_cache
-            .as_ref()
-            .expect("cache")
-            .read()
-            .await;
+        let guard = config.jwks_cache.as_ref().expect("cache").read().await;
         assert!(guard.jwks.is_none());
         assert!(guard.fetched_at.is_none());
         assert!(guard.last_refresh_error.is_some());
@@ -2047,6 +2193,9 @@ mod tests {
         let body = response_body(response).await;
 
         assert_eq!(body["title"], "Forbidden");
-        assert_eq!(body["detail"], "JWT roles are required for RBAC-protected routes");
+        assert_eq!(
+            body["detail"],
+            "JWT roles are required for RBAC-protected routes"
+        );
     }
 }

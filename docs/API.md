@@ -22,9 +22,11 @@
 
 **多租户 JWT（单用户多租户）**：JWT 声明中含 **`tenant_id`**（UUID，默认/主租户，无 `allowed_tenant_ids` 时即唯一允许租户）与可选数组 **`allowed_tenant_ids`**（UUID）。有效租户集合为 **`tenant_id` ∪ `allowed_tenant_ids`**。对 `/v1/tenants/{tenant_id}/...` 的请求，路径中的 `{tenant_id}` 必须属于该集合，否则 **403**。`AuthContext` 中的活动租户与路径一致，便于前端**切换租户**：更换 URL 中的 `{tenant_id}` 即可；签发方应在成员关系变化时更新 **`allowed_tenant_ids`**。
 
-**按租户 RBAC（`tenant_roles`）**：可选对象 **`tenant_roles`**，键为租户 UUID 字符串、值为该租户下角色字符串数组（如 `TenantAdmin`、`ReadOnly`）。对某次**租户路径请求**，活动租户为路径中的 `{tenant_id}`：若 **`tenant_roles` 中存在该活动租户的键**（含空数组 `[]`），则本请求 **仅使用该键对应数组** 做 RBAC；若 **无该键**，则回退使用令牌级 **`roles`**。对**非租户路径请求**（如 `/v1/config/...`），仅使用令牌级 **`roles`**，不会套用 `tenant_roles`。空数组表示该租户下显式无角色，受保护租户路由将 **403**。
+**按租户 RBAC（`tenant_roles`）**：可选对象 **`tenant_roles`**，键为租户 UUID 字符串、值为该租户下角色字符串数组（如 `TenantAdmin`、`ReadOnly`）。对某次**租户路径请求**，活动租户为路径中的 `{tenant_id}`：若 **`tenant_roles` 中存在该活动租户的键**（含空数组 `[]`），则本请求 **仅使用该键对应数组** 做 RBAC；若 **无该键**，则回退使用令牌级 **`roles`**。对**平台路径请求**（`/v1/config/...`、`/v1/tenants`），仅使用令牌级 **`roles`**，不会套用 `tenant_roles`、租户绑定或租户自定义角色。空数组表示该租户下显式无角色，受保护租户路由将 **403**。
 
-**账号密码登录（开发内置 BFF）**：`jwt` 模式下新增公开接口 `POST /v1/auth/login` 与 `POST /v1/auth/login/select`。第一步使用账号密码认证并返回“进入平台 / 进入租户 / 选择平台或租户 / 选择租户”的决策信息；第二步提交最终进入范围后，由控制面签发 Bearer JWT，并把活动租户写回该账号的 `last_tenant_id`，用于下次登录默认选中上次退出时的租户。
+**账号密码登录（开发内置 BFF）**：`jwt` 模式下新增公开接口 `POST /v1/auth/login` 与 `POST /v1/auth/login/select`。第一步使用账号密码认证并返回“进入平台 / 进入租户 / 选择平台或租户 / 选择租户”的决策信息，以及短期 `login_transaction_token`。第二步必须携带该选择凭证提交最终进入范围；控制面验证凭证与账号匹配后签发 Bearer JWT，并把活动租户写回该账号的 `last_tenant_id`，用于下次登录默认选中上次退出时的租户。
+
+**设备写回认证（HTTP Agent 过渡方案）**：Agent 首次安装仍使用 `POST /v1/tenants/{tid}/devices/claim-with-enrollment-token` 携带 enrollment token 完成认领。认领后的 HTTP Agent 写回路径（设备 PATCH、reported shadow、设备命令拉取、命令状态/结果写回）可携带 `X-DMSX-Device-Token: <enrollment_token>`；控制面会校验该 token 绑定的 `tenant_id + device_id + registration_code`，并仅允许写回对应设备/命令。该机制是当前 HTTP Agent 主链路的收口，后续仍应升级为独立设备会话 token 或 mTLS/gRPC 数据面。
 
 退出登录时，前端会调用受保护接口 `POST /v1/auth/logout` 并携带当前活动租户；后端会将该租户记为账号最新 `last_tenant_id`，供下次登录默认回显。
 
@@ -157,7 +159,7 @@
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/v1/config/rbac/roles` | 返回后端内置 RBAC 角色定义，并在租户上下文中附带当前租户自定义角色（`PlatformAdmin` / `PlatformViewer` 或租户读角色可读） |
+| GET | `/v1/config/rbac/roles` | 返回后端内置 RBAC 角色定义；平台路径只按令牌级 `PlatformAdmin` / `PlatformViewer` 判定 |
 | GET | `/v1/tenants/{tid}/rbac/roles` | 返回当前租户自定义角色定义（`custom_roles`） |
 | PUT | `/v1/tenants/{tid}/rbac/roles` | 更新当前租户自定义角色定义；角色名不可与内置角色冲突，权限名需来自后端允许列表 |
 | GET | `/v1/tenants/{tid}/rbac/bindings` | 返回当前租户的“用户(subject) -> 角色名数组”绑定配置 |
@@ -172,10 +174,10 @@
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/v1/config/tenants` | 平台租户目录汇总（分页；支持 `search` 搜索租户名称或 UUID，并返回跨租户设备数 / 策略数 / 命令数；仅 `PlatformAdmin`） |
-| GET | `/v1/config/audit-logs` | 平台全局审计日志（分页；支持 `action` / `resource_type` 筛选；仅 `PlatformAdmin`） |
-| GET | `/v1/config/platform-health` | 平台健康摘要（租户 / 设备 / 策略 / 命令 / 制品 / 审计数量，以及 LiveKit / Redis / Command Bus 开关状态；仅 `PlatformAdmin`） |
-| GET | `/v1/config/quotas` | 平台配额列表（返回真实已用量；上限可由 `DMSX_API_PLATFORM_*_LIMIT` 环境变量配置；仅 `PlatformAdmin`） |
+| GET | `/v1/config/tenants` | 平台租户目录汇总（分页；支持 `search` 搜索租户名称或 UUID，并返回跨租户设备数 / 策略数 / 命令数；`PlatformAdmin` / `PlatformViewer` 可读） |
+| GET | `/v1/config/audit-logs` | 平台全局审计日志（分页；支持 `action` / `resource_type` 筛选；`PlatformAdmin` / `PlatformViewer` 可读） |
+| GET | `/v1/config/platform-health` | 平台健康摘要（租户 / 设备 / 策略 / 命令 / 制品 / 审计数量，以及 LiveKit / Redis / Command Bus 开关状态；`PlatformAdmin` / `PlatformViewer` 可读） |
+| GET | `/v1/config/quotas` | 平台配额列表（返回真实已用量；上限可由 `DMSX_API_PLATFORM_*_LIMIT` 环境变量配置；`PlatformAdmin` / `PlatformViewer` 可读） |
 
 ### AI 智慧管控
 

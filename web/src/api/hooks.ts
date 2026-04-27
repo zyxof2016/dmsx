@@ -580,6 +580,7 @@ export function useSelectLoginScope() {
   return useMutation({
     mutationFn: (body: {
       username: string;
+      login_transaction_token: string;
       scope: "platform" | "tenant";
       tenant_id?: string;
     }) => api.post<LoginResponse>("/v1/auth/login/select", body),

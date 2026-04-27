@@ -12,6 +12,31 @@ pub const TENANT_RBAC_ROLES_KEY: &str = "tenant_rbac_roles_v1";
 pub const TENANT_ROLE_BINDINGS_KEY: &str = "tenant_role_bindings_v1";
 
 pub const KNOWN_PERMISSION_NAMES: &[&str] = &[
+    "stats.read",
+    "stats.write",
+    "devices.read",
+    "devices.write",
+    "policies.read",
+    "policies.write",
+    "commands.read",
+    "commands.write",
+    "device_shadow.read",
+    "device_shadow.write",
+    "artifacts.read",
+    "artifacts.write",
+    "compliance.read",
+    "compliance.write",
+    "remote_desktop.read",
+    "remote_desktop.write",
+    "ai_assist.read",
+    "ai_assist.write",
+    "generic_tenant_resource.read",
+    "generic_tenant_resource.write",
+    "tenant_rbac.read",
+    "tenant_rbac.write",
+];
+
+const PLATFORM_ADMIN_PERMISSIONS: &[&str] = &[
     "platform.read",
     "platform.write",
     "stats.read",
@@ -37,11 +62,7 @@ pub const KNOWN_PERMISSION_NAMES: &[&str] = &[
     "tenant_rbac.read",
     "tenant_rbac.write",
 ];
-
-const PLATFORM_ADMIN_PERMISSIONS: &[&str] = KNOWN_PERMISSION_NAMES;
-const PLATFORM_VIEWER_PERMISSIONS: &[&str] = &[
-    "platform.read",
-];
+const PLATFORM_VIEWER_PERMISSIONS: &[&str] = &["platform.read"];
 const TENANT_ADMIN_PERMISSIONS: &[&str] = &[
     "stats.read",
     "stats.write",
@@ -140,8 +161,14 @@ pub fn custom_role_to_rbac_role(role: TenantCustomRole) -> RbacRole {
         description: role.description,
         platform_read: false,
         platform_write: false,
-        tenant_read: role.permissions.iter().any(|permission| permission.ends_with(".read")),
-        tenant_write: role.permissions.iter().any(|permission| permission.ends_with(".write")),
+        tenant_read: role
+            .permissions
+            .iter()
+            .any(|permission| permission.ends_with(".read")),
+        tenant_write: role
+            .permissions
+            .iter()
+            .any(|permission| permission.ends_with(".write")),
         permissions: role.permissions,
         builtin: false,
     }
@@ -157,18 +184,25 @@ pub fn builtin_rbac_roles() -> Vec<RbacRole> {
             platform_write: true,
             tenant_read: true,
             tenant_write: true,
-            permissions: builtin_role_permissions("PlatformAdmin").iter().map(|item| (*item).to_string()).collect(),
+            permissions: builtin_role_permissions("PlatformAdmin")
+                .iter()
+                .map(|item| (*item).to_string())
+                .collect(),
             builtin: true,
         },
         RbacRole {
             name: "PlatformViewer".to_string(),
             scope: "platform".to_string(),
-            description: "平台级只读权限，可查看平台配置、租户目录、全局审计与平台健康。".to_string(),
+            description: "平台级只读权限，可查看平台配置、租户目录、全局审计与平台健康。"
+                .to_string(),
             platform_read: true,
             platform_write: false,
             tenant_read: false,
             tenant_write: false,
-            permissions: builtin_role_permissions("PlatformViewer").iter().map(|item| (*item).to_string()).collect(),
+            permissions: builtin_role_permissions("PlatformViewer")
+                .iter()
+                .map(|item| (*item).to_string())
+                .collect(),
             builtin: true,
         },
         RbacRole {
@@ -179,29 +213,42 @@ pub fn builtin_rbac_roles() -> Vec<RbacRole> {
             platform_write: false,
             tenant_read: true,
             tenant_write: true,
-            permissions: builtin_role_permissions("TenantAdmin").iter().map(|item| (*item).to_string()).collect(),
+            permissions: builtin_role_permissions("TenantAdmin")
+                .iter()
+                .map(|item| (*item).to_string())
+                .collect(),
             builtin: true,
         },
         RbacRole {
             name: "SiteAdmin".to_string(),
             scope: "tenant".to_string(),
-            description: "租户级运维管理角色，可管理设备、命令、影子与远程桌面；策略、制品、AI 仅只读。".to_string(),
+            description:
+                "租户级运维管理角色，可管理设备、命令、影子与远程桌面；策略、制品、AI 仅只读。"
+                    .to_string(),
             platform_read: false,
             platform_write: false,
             tenant_read: true,
             tenant_write: true,
-            permissions: builtin_role_permissions("SiteAdmin").iter().map(|item| (*item).to_string()).collect(),
+            permissions: builtin_role_permissions("SiteAdmin")
+                .iter()
+                .map(|item| (*item).to_string())
+                .collect(),
             builtin: true,
         },
         RbacRole {
             name: "Operator".to_string(),
             scope: "tenant".to_string(),
-            description: "租户级操作员角色，可执行设备与命令相关操作；策略、制品、AI、合规、统计仅只读。".to_string(),
+            description:
+                "租户级操作员角色，可执行设备与命令相关操作；策略、制品、AI、合规、统计仅只读。"
+                    .to_string(),
             platform_read: false,
             platform_write: false,
             tenant_read: true,
             tenant_write: true,
-            permissions: builtin_role_permissions("Operator").iter().map(|item| (*item).to_string()).collect(),
+            permissions: builtin_role_permissions("Operator")
+                .iter()
+                .map(|item| (*item).to_string())
+                .collect(),
             builtin: true,
         },
         RbacRole {
@@ -212,18 +259,25 @@ pub fn builtin_rbac_roles() -> Vec<RbacRole> {
             platform_write: false,
             tenant_read: true,
             tenant_write: false,
-            permissions: builtin_role_permissions("Auditor").iter().map(|item| (*item).to_string()).collect(),
+            permissions: builtin_role_permissions("Auditor")
+                .iter()
+                .map(|item| (*item).to_string())
+                .collect(),
             builtin: true,
         },
         RbacRole {
             name: "ReadOnly".to_string(),
             scope: "tenant".to_string(),
-            description: "租户级只读角色，可查看常规租户资源，不允许写操作、远程桌面与 AI。".to_string(),
+            description: "租户级只读角色，可查看常规租户资源，不允许写操作、远程桌面与 AI。"
+                .to_string(),
             platform_read: false,
             platform_write: false,
             tenant_read: true,
             tenant_write: false,
-            permissions: builtin_role_permissions("ReadOnly").iter().map(|item| (*item).to_string()).collect(),
+            permissions: builtin_role_permissions("ReadOnly")
+                .iter()
+                .map(|item| (*item).to_string())
+                .collect(),
             builtin: true,
         },
     ]
@@ -233,7 +287,9 @@ pub fn is_builtin_role_name(name: &str) -> bool {
     builtin_rbac_roles().iter().any(|role| role.name == name)
 }
 
-pub fn normalize_custom_roles(req: TenantRbacRolesUpsertReq) -> Result<Vec<TenantCustomRole>, String> {
+pub fn normalize_custom_roles(
+    req: TenantRbacRolesUpsertReq,
+) -> Result<Vec<TenantCustomRole>, String> {
     let mut seen = std::collections::HashSet::new();
     let mut roles = Vec::with_capacity(req.custom_roles.len());
 
@@ -246,7 +302,9 @@ pub fn normalize_custom_roles(req: TenantRbacRolesUpsertReq) -> Result<Vec<Tenan
             .chars()
             .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
         {
-            return Err(format!("角色名 '{name}' 只能包含字母、数字、下划线或连字符"));
+            return Err(format!(
+                "角色名 '{name}' 只能包含字母、数字、下划线或连字符"
+            ));
         }
         if is_builtin_role_name(name) {
             return Err(format!("角色名 '{name}' 与内置角色冲突"));
@@ -265,7 +323,10 @@ pub fn normalize_custom_roles(req: TenantRbacRolesUpsertReq) -> Result<Vec<Tenan
         permissions.dedup();
 
         for permission in &permissions {
-            if !KNOWN_PERMISSION_NAMES.iter().any(|known| known == permission) {
+            if !KNOWN_PERMISSION_NAMES
+                .iter()
+                .any(|known| known == permission)
+            {
                 return Err(format!("未知权限 '{permission}'"));
             }
         }
@@ -287,7 +348,9 @@ pub fn parse_custom_roles_value(value: &Value) -> Result<Vec<TenantCustomRole>, 
     normalize_custom_roles(parsed)
 }
 
-pub fn normalize_role_bindings(req: TenantRoleBindingsUpsertReq) -> Result<Vec<TenantRoleBinding>, String> {
+pub fn normalize_role_bindings(
+    req: TenantRoleBindingsUpsertReq,
+) -> Result<Vec<TenantRoleBinding>, String> {
     let mut seen = std::collections::HashSet::new();
     let mut bindings = Vec::with_capacity(req.bindings.len());
 
@@ -311,7 +374,10 @@ pub fn normalize_role_bindings(req: TenantRoleBindingsUpsertReq) -> Result<Vec<T
 
         bindings.push(TenantRoleBinding {
             subject: subject.to_string(),
-            display_name: binding.display_name.map(|value| value.trim().to_string()).filter(|value| !value.is_empty()),
+            display_name: binding
+                .display_name
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty()),
             roles,
         });
     }
@@ -338,13 +404,11 @@ pub async fn load_custom_roles_from_db(
     pool: &PgPool,
     tenant_id: Uuid,
 ) -> Result<Vec<TenantCustomRole>, sqlx::Error> {
-    let row = sqlx::query(
-        "SELECT value FROM system_settings WHERE tenant_id = $1 AND key = $2",
-    )
-    .bind(tenant_id)
-    .bind(TENANT_RBAC_ROLES_KEY)
-    .fetch_optional(pool)
-    .await?;
+    let row = sqlx::query("SELECT value FROM system_settings WHERE tenant_id = $1 AND key = $2")
+        .bind(tenant_id)
+        .bind(TENANT_RBAC_ROLES_KEY)
+        .fetch_optional(pool)
+        .await?;
 
     let Some(row) = row else {
         return Ok(Vec::new());
@@ -358,13 +422,11 @@ pub async fn load_role_bindings_from_db(
     pool: &PgPool,
     tenant_id: Uuid,
 ) -> Result<Vec<TenantRoleBinding>, sqlx::Error> {
-    let row = sqlx::query(
-        "SELECT value FROM system_settings WHERE tenant_id = $1 AND key = $2",
-    )
-    .bind(tenant_id)
-    .bind(TENANT_ROLE_BINDINGS_KEY)
-    .fetch_optional(pool)
-    .await?;
+    let row = sqlx::query("SELECT value FROM system_settings WHERE tenant_id = $1 AND key = $2")
+        .bind(tenant_id)
+        .bind(TENANT_ROLE_BINDINGS_KEY)
+        .fetch_optional(pool)
+        .await?;
 
     let Some(row) = row else {
         return Ok(Vec::new());

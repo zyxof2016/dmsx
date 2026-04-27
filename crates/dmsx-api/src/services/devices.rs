@@ -16,7 +16,10 @@ use crate::dto::{
     DeviceListParams, IssueDeviceEnrollmentTokenReq, ListResponse, UpdateDeviceReq,
 };
 use crate::error::map_db_error;
-use crate::repo::{audit, device_enrollment_batches as batch_repo, devices as device_repo};
+use crate::repo::{
+    audit, commands as command_repo, device_enrollment_batches as batch_repo,
+    devices as device_repo,
+};
 use crate::services::ServiceResult;
 use crate::state::AppState;
 
@@ -45,7 +48,9 @@ fn sign_device_enrollment_token(payload: &Value, secret: &str) -> ServiceResult<
 fn verify_device_enrollment_token(token: &str, secret: &str) -> ServiceResult<Value> {
     let parts: Vec<&str> = token.split('.').collect();
     if parts.len() != 3 || parts[0] != "v1" {
-        return Err(DmsxError::Validation("invalid enrollment_token format".into()));
+        return Err(DmsxError::Validation(
+            "invalid enrollment_token format".into(),
+        ));
     }
 
     let payload_b64 = parts[1];
@@ -55,7 +60,9 @@ fn verify_device_enrollment_token(token: &str, secret: &str) -> ServiceResult<Va
     mac.update(payload_b64.as_bytes());
     let expected_sig_b64 = URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes());
     if expected_sig_b64 != sig_b64 {
-        return Err(DmsxError::Unauthorized("invalid enrollment token signature".into()));
+        return Err(DmsxError::Unauthorized(
+            "invalid enrollment token signature".into(),
+        ));
     }
 
     let payload_raw = URL_SAFE_NO_PAD
@@ -71,6 +78,116 @@ fn verify_device_enrollment_token(token: &str, secret: &str) -> ServiceResult<Va
         return Err(DmsxError::Unauthorized("enrollment token expired".into()));
     }
     Ok(payload)
+}
+
+fn parse_device_enrollment_claims(
+    token: &str,
+    secret: &str,
+) -> ServiceResult<(Uuid, Uuid, String)> {
+    let payload = verify_device_enrollment_token(token, secret)?;
+    let tenant_id = payload
+        .get("tenant_id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| DmsxError::Validation("enrollment token missing tenant_id".into()))?
+        .parse::<Uuid>()
+        .map_err(|_| DmsxError::Validation("invalid enrollment token tenant_id".into()))?;
+    let device_id = payload
+        .get("device_id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| DmsxError::Validation("enrollment token missing device_id".into()))?
+        .parse::<Uuid>()
+        .map_err(|_| DmsxError::Validation("invalid enrollment token device_id".into()))?;
+    let registration_code = payload
+        .get("registration_code")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| DmsxError::Validation("enrollment token missing registration_code".into()))?
+        .to_string();
+    Ok((tenant_id, device_id, registration_code))
+}
+
+fn device_auth_context(tid: Uuid, did: Uuid) -> AuthContext {
+    AuthContext {
+        subject: format!("device:{did}"),
+        tenant_id: tid,
+        roles: vec!["Operator".into()],
+    }
+}
+
+pub async fn verify_device_writeback_token(
+    st: &AppState,
+    tid: Uuid,
+    did: Uuid,
+    token: &str,
+) -> ServiceResult<AuthContext> {
+    let secret = enroll_token_secret(st)?;
+    let (token_tenant_id, token_device_id, token_registration_code) =
+        parse_device_enrollment_claims(token, secret)?;
+    if token_tenant_id != tid || token_device_id != did {
+        return Err(DmsxError::Forbidden("device token target mismatch".into()));
+    }
+
+    let ctx = AuthContext {
+        subject: "device-token-verifier".into(),
+        tenant_id: tid,
+        roles: vec!["PlatformAdmin".into()],
+    };
+    let mut tx = db_rls::begin_rls_tx(&st.db, Some(tid), &ctx)
+        .await
+        .map_err(map_db_error)?;
+    let device = device_repo::get_device(&mut *tx, tid, did)
+        .await
+        .map_err(map_db_error)?
+        .ok_or_else(|| DmsxError::NotFound(format!("device {did}")))?;
+    tx.commit().await.map_err(map_db_error)?;
+
+    if device.registration_code != token_registration_code {
+        return Err(DmsxError::Forbidden(
+            "device token registration code mismatch".into(),
+        ));
+    }
+
+    Ok(device_auth_context(tid, did))
+}
+
+pub async fn verify_device_tenant_writeback_token(
+    st: &AppState,
+    tid: Uuid,
+    token: &str,
+) -> ServiceResult<AuthContext> {
+    let secret = enroll_token_secret(st)?;
+    let (token_tenant_id, token_device_id, _) = parse_device_enrollment_claims(token, secret)?;
+    if token_tenant_id != tid {
+        return Err(DmsxError::Forbidden("device token tenant mismatch".into()));
+    }
+    verify_device_writeback_token(st, tid, token_device_id, token).await
+}
+
+pub async fn verify_device_command_writeback_token(
+    st: &AppState,
+    tid: Uuid,
+    cid: Uuid,
+    token: &str,
+) -> ServiceResult<AuthContext> {
+    let ctx = verify_device_tenant_writeback_token(st, tid, token).await?;
+    let did = ctx
+        .subject
+        .strip_prefix("device:")
+        .and_then(|value| Uuid::parse_str(value).ok())
+        .ok_or_else(|| DmsxError::Unauthorized("invalid device token subject".into()))?;
+
+    let mut tx = db_rls::begin_rls_tx(&st.db, Some(tid), &ctx)
+        .await
+        .map_err(map_db_error)?;
+    let command = command_repo::get_command(&mut *tx, tid, cid)
+        .await
+        .map_err(map_db_error)?
+        .ok_or_else(|| DmsxError::NotFound(format!("command {cid}")))?;
+    tx.commit().await.map_err(map_db_error)?;
+
+    if command.target_device_id.0 != did {
+        return Err(DmsxError::Forbidden("device token command mismatch".into()));
+    }
+    Ok(ctx)
 }
 
 fn batch_response_to_json(response: &BatchCreateDevicesResponse) -> Result<Value, DmsxError> {
@@ -318,8 +435,8 @@ pub async fn update_device(
             "hostname": &device.hostname,
         }),
     )
-        .await
-        .ok();
+    .await
+    .ok();
     tx.commit().await.map_err(map_db_error)?;
     Ok(device)
 }
@@ -337,9 +454,16 @@ pub async fn delete_device(
         .await
         .map_err(map_db_error)?
     {
-        audit::write_audit(&mut *tx, tid, "delete", "device", &did.to_string(), json!({}))
-            .await
-            .ok();
+        audit::write_audit(
+            &mut *tx,
+            tid,
+            "delete",
+            "device",
+            &did.to_string(),
+            json!({}),
+        )
+        .await
+        .ok();
         tx.commit().await.map_err(map_db_error)?;
         Ok(())
     } else {
@@ -358,9 +482,9 @@ pub async fn rotate_registration_code(
         .await
         .map_err(map_db_error)?;
     let device = device_repo::rotate_registration_code(&mut *tx, tid, did)
-    .await
-    .map_err(map_db_error)?
-    .ok_or_else(|| DmsxError::NotFound(format!("device {did}")))?;
+        .await
+        .map_err(map_db_error)?
+        .ok_or_else(|| DmsxError::NotFound(format!("device {did}")))?;
     audit::write_audit(
         &mut *tx,
         tid,
@@ -441,10 +565,14 @@ pub async fn claim_device_with_enrollment_token(
     let token_registration_code = payload
         .get("registration_code")
         .and_then(|v| v.as_str())
-        .ok_or_else(|| DmsxError::Validation("enrollment token missing registration_code".into()))?;
+        .ok_or_else(|| {
+            DmsxError::Validation("enrollment token missing registration_code".into())
+        })?;
 
     if token_tenant_id != tid {
-        return Err(DmsxError::Forbidden("enrollment token tenant mismatch".into()));
+        return Err(DmsxError::Forbidden(
+            "enrollment token tenant mismatch".into(),
+        ));
     }
 
     let synthetic_ctx = AuthContext {
@@ -460,7 +588,9 @@ pub async fn claim_device_with_enrollment_token(
         .map_err(map_db_error)?
         .ok_or_else(|| DmsxError::NotFound(format!("device {token_device_id}")))?;
     if existing.registration_code != token_registration_code {
-        return Err(DmsxError::Forbidden("enrollment token registration code mismatch".into()));
+        return Err(DmsxError::Forbidden(
+            "enrollment token registration code mismatch".into(),
+        ));
     }
 
     let device = device_repo::update_device(
