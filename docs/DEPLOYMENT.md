@@ -379,6 +379,8 @@ sudo apt install -y libxcb1-dev libxcb-shm0-dev libxcb-randr0-dev libxdo-dev
 
 Windows / macOS 下无需额外系统库（scrap 使用 DXGI / CGDisplay）。
 
+Windows Service 安装与配置见 [docs/WINDOWS_AGENT.md](WINDOWS_AGENT.md)。
+
 ### Agent 交叉编译（Android）
 
 参考 [docs/ANDROID_DEPLOY.md](ANDROID_DEPLOY.md) 了解 Termux、NDK 交叉编译和原生 App 三种接入方案。

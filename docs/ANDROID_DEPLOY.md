@@ -95,7 +95,67 @@ adb shell "DMSX_API_URL=http://<PC_IP>:8080 DMSX_DEVICE_ENROLLMENT_TOKEN=<token>
 
 ---
 
-## 方案 C：原生 Android App（生产级 MDM）
+## 方案 C：原生 Android APK Agent（可安装 App）
+
+仓库现在包含一个最小原生 Android Agent 工程：`android-agent/`。它是可安装 APK，不依赖 Termux，适合手机侧长期运行的基础接入验证。
+
+### 已实现能力
+
+- 配置页：输入 `API URL`、`Tenant ID`、`Enrollment Token`，可启动/停止 Agent。
+- 前台服务：常驻通知 + wake lock，降低后台被杀概率。
+- 开机自启：可在配置页启用，收到 `BOOT_COMPLETED` 后自动启动。
+- Enrollment claim：调用 `POST /v1/tenants/{tid}/devices/claim-with-enrollment-token` 认领预注册设备。
+- 心跳写回：携带 `X-DMSX-Device-Token` 更新设备 `online_state`、`agent_version`、`os_version`。
+- Shadow reported：上报 Android 版本、型号、厂商、电池、网络、uptime 等遥测。
+- 命令轮询：支持 `smoke_noop` 与 `collect_logs` 两个安全命令，并写回状态/结果。
+
+### 构建 APK
+
+前提：安装 Android Studio 或命令行 Android SDK，确保有 JDK 17 与 Android Gradle Plugin 可用。
+
+```bash
+cd android-agent
+gradle assembleDebug
+```
+
+如果本机没有全局 `gradle`，可在 Android Studio 中打开 `android-agent/`，等待 Gradle 同步后执行 `assembleDebug`。生成物通常位于：
+
+```bash
+android-agent/app/build/outputs/apk/debug/app-debug.apk
+```
+
+当前仓库没有提交 Gradle Wrapper；如果希望 CI 或无全局 Gradle 的机器直接构建，可在已安装 Gradle 的环境中执行：
+
+```bash
+cd android-agent
+gradle wrapper --gradle-version 8.10.2
+```
+
+安装到手机：
+
+```bash
+adb install -r android-agent/app/build/outputs/apk/debug/app-debug.apk
+```
+
+### 使用步骤
+
+1. 在控制台预注册一台 `platform=android` 的设备并签发 enrollment token。
+2. 打开手机上的 **DMSX Agent**。
+3. 填入 `API URL`，例如 `http://192.168.1.10:8080`。
+4. 填入 `Tenant ID` 和 `Enrollment Token`。
+5. 点击“保存配置”，再点击“启动 Agent”。
+6. 控制台应看到设备被认领、在线状态更新、reported shadow 有 Android 遥测。
+
+### 限制
+
+- 当前 APK Agent 不执行任意脚本，不做静默安装、不锁屏、不擦除设备；这些能力需要 Device Owner / Android Enterprise 管理模式。
+- 当前命令集只包含 `smoke_noop` 与 `collect_logs`，用于安全验证链路。
+- 当前使用 HTTP polling；生产数据面后续仍建议走 mTLS/gRPC 或 FCM 唤醒。
+- 为方便本地联调，Manifest 允许 cleartext HTTP；生产应改用 HTTPS 并限制网络安全配置。
+
+---
+
+## 方案 D：原生 Android App（生产级 MDM）
 
 如需完整的企业移动设备管理（EMM），需要原生 Android 应用：
 

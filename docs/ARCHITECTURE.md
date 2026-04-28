@@ -16,7 +16,7 @@
 
 1. **api-gateway**（`dmsx-api`）：REST、限流、**JWT 租户许可**（`tenant_id` ∪ `allowed_tenant_ids`）、**按租户 RBAC**（`tenant_roles` / `roles`）、`AuthContext` 注入、审计注入、桌面会话管理、LiveKit token 签发（管理面 JWT 语义见 [`API.md`](API.md)）。
 2. **device-gateway**（`dmsx-device-gw`）：mTLS 终端、gRPC streaming、背压；当前仍是未来数据面主链路的骨架。
-3. **device-agent**（`dmsx-agent`）：跨平台独立二进制，当前通过 HTTP 与控制面通信，并在远程桌面场景下直接加入 LiveKit 房间。
+3. **device-agent**（`dmsx-agent` / `android-agent`）：桌面/服务器侧使用 Rust 独立二进制，当前通过 HTTP 与控制面通信，并在远程桌面场景下直接加入 LiveKit 房间；Android 手机侧提供可安装 APK Agent，用前台服务完成 enrollment 认领、心跳、reported shadow 与安全命令回执。
 4. **device-service** / **policy-service** / **command-service** / **app-repo-service** / **compliance-service** / **network-service**：逻辑可先共库，按 bounded context 分模块，流量上来再独立进程 + gRPC 内部调用。
 
 ## 技术栈

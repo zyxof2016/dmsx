@@ -183,7 +183,9 @@ cd web && npm install && npm run dev  # http://localhost:3000
 | `crates/dmsx-ai` | AI 智慧管控引擎（异常检测、策略推荐、LLM 助手、预测维护） |
 | `crates/dmsx-api` | 控制面 ApiGateway（Axum）— 会话管理、REST API、AI API、LiveKit token 签发 |
 | `crates/dmsx-device-gw` | 数据面 DeviceGateway（Tonic gRPC + Health）— 当前为后续长连接数据面的演进骨架 |
-| `crates/dmsx-agent` | 跨平台设备代理（Windows / Linux / Android）— 遥测 + 命令 + 远程桌面 |
+| `crates/dmsx-agent` | 跨平台设备代理（Windows / Linux / Android/Termux）— 遥测 + 命令 + 远程桌面 |
+| `android-agent/` | 可安装 Android APK Agent — enrollment token 认领、前台服务、心跳/影子上报、基础命令回执 |
+| `docs/WINDOWS_AGENT.md` | Windows Agent 前台运行、服务化安装与卸载说明 |
 | `web/` | 管理台前端（React + TypeScript + Ant Design + TanStack Router） |
 | `proto/` | gRPC Proto 定义（Agent + Health） |
 | `migrations/` | Postgres 迁移 SQL（由 **`dmsx-api` 启动时 sqlx 执行**；compose 内 Postgres **不再**挂载到 initdb，避免与 sqlx 重复建表） |

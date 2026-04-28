@@ -16,6 +16,13 @@
 /web/tsconfig.tsbuildinfo
 /web/src/**/*.js
 
+# Android build artifacts
+/android-agent/.gradle/
+/android-agent/build/
+/android-agent/app/build/
+/android-agent/local.properties
+*.apk
+
 # Logs
 *.log
 npm-debug.log*

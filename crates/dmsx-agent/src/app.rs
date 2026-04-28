@@ -1,15 +1,31 @@
-use reqwest::Client;
-use tracing::{error, info, warn};
+use std::future::Future;
+
 use dmsx_agent::config::AgentConfig;
 use dmsx_agent::device::{find_or_register_device, heartbeat, mark_offline};
 use dmsx_agent::platform::{detect_platform, hostname};
 use dmsx_agent::rustdesk::{configure_rustdesk_server, detect_rustdesk};
+use reqwest::Client;
+use tracing::{error, info, warn};
 
 use crate::command_runner::poll_and_execute;
 use crate::desktop::DesktopSession;
 
 pub(crate) async fn run() {
     let cfg = AgentConfig::from_env();
+    run_with_config(cfg).await;
+}
+
+pub(crate) async fn run_with_config(cfg: AgentConfig) {
+    run_with_shutdown(cfg, async {
+        let _ = tokio::signal::ctrl_c().await;
+    })
+    .await;
+}
+
+pub(crate) async fn run_with_shutdown<F>(cfg: AgentConfig, shutdown: F)
+where
+    F: Future<Output = ()>,
+{
     info!(
         api = %cfg.api_base,
         tenant = %cfg.tenant_id,
@@ -59,6 +75,8 @@ pub(crate) async fn run() {
         warn!("initial heartbeat failed: {e}");
     }
 
+    tokio::pin!(shutdown);
+
     loop {
         tokio::select! {
             _ = heartbeat_tick.tick() => {
@@ -71,7 +89,7 @@ pub(crate) async fn run() {
                     warn!("command poll error: {e}");
                 }
             }
-            _ = tokio::signal::ctrl_c() => {
+            _ = &mut shutdown => {
                 info!("shutting down agent...");
                 if let Some(session) = desktop_session.take() {
                     session.stop().await;

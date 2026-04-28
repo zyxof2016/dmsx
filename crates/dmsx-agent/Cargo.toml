@@ -26,5 +26,8 @@ libwebrtc = "0.3"
 scrap = "0.5"
 enigo = { version = "0.2", features = ["serde"] }
 
+[target.'cfg(windows)'.dependencies]
+windows-service = "0.7"
+
 [dev-dependencies]
 wiremock = "0.6.5"
