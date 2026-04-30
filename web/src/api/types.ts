@@ -394,6 +394,21 @@ export interface PlatformQuota {
   unit: string;
 }
 
+export interface PlatformQuotaSettings {
+  tenants?: number;
+  devices?: number;
+  commands?: number;
+  artifacts?: number;
+}
+
+export interface PlatformRbacPolicy {
+  platform_admin_enabled?: boolean;
+  platform_viewer_enabled?: boolean;
+  require_scope_selection?: boolean;
+  default_scope?: "platform" | "tenant";
+  notes?: string;
+}
+
 export interface PlatformHealth {
   status: string;
   tenant_count: number;

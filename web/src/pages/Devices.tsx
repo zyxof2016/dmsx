@@ -325,7 +325,8 @@ export const DevicesPage: React.FC = () => {
         const token = tokenMap.get(device.id)?.token ?? "";
         return [
           `# ${device.hostname ?? device.registration_code}`,
-          `adb shell \"DMSX_API_URL=${agentApiUrl} DMSX_TENANT_ID=${device.tenant_id} DMSX_DEVICE_ENROLLMENT_TOKEN=${token} /data/local/tmp/dmsx-agent\"`,
+          `.\\scripts\\package-android-agent.ps1 -ApiUrl "${agentApiUrl}" -TenantId "${device.tenant_id}" -EnrollmentToken "${token}" -OutputPath ".\\target\\packages\\DMSX-Agent-Android-${device.registration_code}.apk"`,
+          `adb install -r ".\\target\\packages\\DMSX-Agent-Android-${device.registration_code}.apk"`,
           "",
         ].join("\n");
       })

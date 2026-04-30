@@ -21,11 +21,11 @@ info:
     - 回执入库：网关将命令执行结果发布到 `dmsx.command.result.{tenant_id}.{device_id}`；控制面以 durable pull consumer 消费（默认 `DMSX_NATS_RESULT_CONSUMER=dmsx-api-result-ingest`）并与 `POST /v1/tenants/{tid}/commands/{cid}/result` 语义对齐写库。
     - 证据上传：`UploadEvidence` 当前写入 S3 / MinIO 兼容对象存储；对象 key 由网关生成并通过 `ReportResult.evidence_object_key` 回传控制面。
 
-    **认证**：根级 `security: [bearerAuth]`；`/health` 与 `/ready` 使用 `security: []`。`/v1/auth/login` 与 `/v1/auth/login/select` 是账号密码登录的公开 BFF 接口，其中 select 步骤必须携带第一步返回的短期 `login_transaction_token`。HTTP Agent 写回路径可使用 `X-DMSX-Device-Token` 携带 enrollment token，控制面会校验其绑定的 `tenant_id + device_id + registration_code`。JWT 可选 **`allowed_tenant_ids`**（路径租户白名单）与可选 **`tenant_roles`**（按租户覆盖 RBAC，见 `components.securitySchemes.bearerAuth`）。开发环境可将 `DMSX_API_AUTH_MODE=disabled` 关闭校验。
+    **认证**：根级 `security: [bearerAuth]`；`/health` 与 `/ready` 使用 `security: []`。`/v1/auth/login` 与 `/v1/auth/login/select` 是账号密码登录的公开 BFF 接口，其中 select 步骤必须携带第一步返回的短期 `login_transaction_token`。HTTP Agent 写回路径可使用 `X-DMSX-Device-Token` 携带 enrollment token，控制面会校验其绑定的 `tenant_id + device_id + registration_code`。JWT 可选 **`allowed_tenant_ids`**（路径租户白名单）与可选 **`tenant_roles`**（按租户覆盖 RBAC，平台角色不会在租户路径生效，见 `components.securitySchemes.bearerAuth`）。开发环境可将 `DMSX_API_AUTH_MODE=disabled` 关闭校验。
 
     **错误**：多数操作声明 `401` / `403`；资源不存在声明 `404`。带请求体的写操作声明 **`400`**（`DmsxError::Validation` → HTTP 400，Problem Details 的 title 为 **Bad Request**；**当前实现不使用 422**）。部分创建类 POST 另声明 **`409`**（`DmsxError::Conflict`）。**`500`**（`DmsxError::Internal` 等未预期故障）在各操作声明。上述响应均复用 `ProblemDetails` schema。
 
-    平台只读接口（`GET /v1/config/...`）可由 **PlatformAdmin** 或 **PlatformViewer** 访问；平台写接口（如 `POST /v1/tenants`、`PUT /v1/config/settings/{key}`）仅 **PlatformAdmin** 可写。其余层级创建路径需 **TenantAdmin**（或更高）且路径 `{tenant_id}` 在 JWT 许可集合内。
+    平台只读接口（`GET /v1/config/...`）可由 **PlatformAdmin** 或 **PlatformViewer** 访问；平台写接口（如 `POST /v1/tenants`、`PUT /v1/config/settings/{key}`）仅 **PlatformAdmin** 可写。平台权限策略与配额维护复用全局设置：`platform.rbac.policy` 保存平台角色启用、默认进入范围和是否强制选择 scope，`platform.quotas` 保存租户/设备/命令/制品平台上限。其余层级创建路径需 **TenantAdmin**（或更高）且路径 `{tenant_id}` 在 JWT 许可集合内。
 servers:
 - url: https://api.example.com
 security:
@@ -1340,6 +1340,8 @@ paths:
     get:
       summary: Get system setting (global)
       operationId: getSystemSetting
+      description: |
+        获取平台全局设置。当前前端会使用 `platform.rbac.policy` 维护平台权限策略，使用 `platform.quotas` 维护平台配额上限。
       parameters:
       - name: key
         in: path
@@ -1364,6 +1366,8 @@ paths:
     put:
       summary: Upsert system setting (global)
       operationId: putSystemSetting
+      description: |
+        写入平台全局设置，仅 PlatformAdmin 可用。`platform.rbac.policy` 的 value 可包含 `platform_admin_enabled`、`platform_viewer_enabled`、`require_scope_selection`、`default_scope`、`notes`；`platform.quotas` 的 value 可包含 `tenants`、`devices`、`commands`、`artifacts` 四个正整数上限。
       parameters:
       - name: key
         in: path
@@ -1487,6 +1491,8 @@ paths:
     get:
       summary: List platform quotas
       operationId: listPlatformQuotas
+      description: |
+        返回平台租户、设备、命令、制品配额使用量。`used` 来自数据库真实计数；`limit` 优先读取全局设置 `platform.quotas` 中的 `tenants`、`devices`、`commands`、`artifacts`，未配置时回退到 `DMSX_API_PLATFORM_*_LIMIT` 环境变量默认值。
       responses:
         '200':
           description: OK
@@ -1562,7 +1568,7 @@ components:
       description: |
         请求头 `Authorization: Bearer <JWT>`。路径 `/v1/tenants/{tenant_id}/...` 中的 `{tenant_id}` 必须属于该 JWT 允许的租户集合：声明 **`tenant_id`**（UUID，默认/主租户）与可选数组 **`allowed_tenant_ids`**（UUID）；有效集合为 **`tenant_id` ∪ `allowed_tenant_ids`**。若省略或 `allowed_tenant_ids` 为空，则仅允许 **`tenant_id`**（与旧版「单租户」令牌一致）。切换租户时由客户端改用新的 `{tenant_id}` 路径前缀；签发方（IdP/BFF）负责在成员关系变化时更新 `allowed_tenant_ids`。
 
-        **按租户角色**：可选对象 **`tenant_roles`**（JSON 中键为租户 UUID 字符串，值为角色名字符串数组）。对每次请求取**活动租户**（有路径租户时为路径 `{tenant_id}`，否则为 JWT 的 `tenant_id`）：若 `tenant_roles` 含该租户键则仅用该数组做 RBAC（空数组表示该租户无角色）；若无键则回退到令牌级 **`roles`**。
+        **按租户角色**：可选对象 **`tenant_roles`**（JSON 中键为租户 UUID 字符串，值为角色名字符串数组）。对每次请求取**活动租户**（有路径租户时为路径 `{tenant_id}`，否则为 JWT 的 `tenant_id`）：若 `tenant_roles` 含该租户键则仅用该数组做 RBAC（空数组表示该租户无角色）；若无键则仅为兼容旧联调 token 回退使用令牌级 **`roles`** 中的非平台角色，`PlatformAdmin` / `PlatformViewer` 不会在租户路径生效。
 
         平台只读接口 `GET /v1/config/livekit`、`GET /v1/config/rbac/roles`、`GET /v1/config/settings/{key}`、`GET /v1/config/tenants`、`GET /v1/config/audit-logs`、`GET /v1/config/platform-health`、`GET /v1/config/quotas` 可由 **PlatformAdmin** 或 **PlatformViewer** 访问；平台写接口如 `PUT /v1/config/settings/{key}`、`POST /v1/tenants` 仅 **PlatformAdmin** 可写。
 

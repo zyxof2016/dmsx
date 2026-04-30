@@ -167,6 +167,13 @@ cargo run -p dmsx-agent
 
 Agent 会自动：注册设备 → 定期发送心跳（含系统遥测）→ 轮询并执行命令 → 收到 `start_desktop` 命令后加入 LiveKit 房间、发布屏幕轨并通过 Data Channel 接收输入事件。
 
+Windows 本地开发调试 Agent 远程桌面时，`libwebrtc` 依赖需要静态 CRT 链接；直接 `cargo run -p dmsx-agent` 可能遇到 MSVC `RuntimeLibrary` 不匹配。推荐使用仓库脚本启动：
+
+```powershell
+$env:DMSX_DEVICE_ENROLLMENT_TOKEN="YOUR_DEVICE_ENROLLMENT_TOKEN"
+.\scripts\run-windows-agent-dev.ps1 -ApiUrl "http://127.0.0.1:8080" -TenantId "00000000-0000-0000-0000-000000000001"
+```
+
 ### 前端
 
 ```bash

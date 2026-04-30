@@ -204,9 +204,9 @@
 - [x] 认证中间件骨架（`auth` 模块 + Bearer/JWT 解析 + `/health` 放行 + 可配置 `DMSX_API_AUTH_MODE`）
 - [x] 监听地址可配置（`DMSX_API_BIND` 环境变量）
 - [x] `TraceLayer` 日志追踪
-- [~] JWT / OIDC 认证实现（JWT `issuer` / `audience` 校验已支持；可选 **`allowed_tenant_ids`** 与 **`tenant_id`** 并集作为路径租户白名单；可选 **`tenant_roles`** 按活动租户覆盖 RBAC（无键回退 **`roles`**）；OIDC discovery -> `jwks_uri` 加载、JWKS 校验、后台 TTL 刷新、未知 `kid` 强制刷新、刷新失败 stale fallback、最大陈旧窗口、启动首刷失败可配置策略已接入；`/ready` 已暴露认证/JWKS 就绪状态；外部 IdP 实机联调与告警/指标后端集成待补）
+- [~] JWT / OIDC 认证实现（JWT `issuer` / `audience` 校验已支持；可选 **`allowed_tenant_ids`** 与 **`tenant_id`** 并集作为路径租户白名单；可选 **`tenant_roles`** 按活动租户覆盖 RBAC（无键仅兼容令牌级 `roles` 中的非平台角色，`PlatformAdmin` / `PlatformViewer` 不会在租户路径生效）；OIDC discovery -> `jwks_uri` 加载、JWKS 校验、后台 TTL 刷新、未知 `kid` 强制刷新、刷新失败 stale fallback、最大陈旧窗口、启动首刷失败可配置策略已接入；`/ready` 已暴露认证/JWKS 就绪状态；外部 IdP 实机联调与告警/指标后端集成待补）
 - [x] RBAC 权限校验（已细化到资源级：全局配置 / devices / policies / commands / shadow / artifacts / compliance / desktop / AI；平台路由支持 `PlatformAdmin` / `PlatformViewer` 读写分层，租户路由继续按 `tenant_roles` 覆盖）
-- [x] 路径 `{tenant_id}` 与 JWT 许可集合及 RBAC（`tenant_id` ∪ `allowed_tenant_ids`；`tenant_roles` 按活动租户覆盖 `roles`；见 [`API.md`](API.md)）
+- [x] 路径 `{tenant_id}` 与 JWT 许可集合及 RBAC（`tenant_id` ∪ `allowed_tenant_ids`；`tenant_roles` 按活动租户覆盖，平台角色不穿透租户路径；见 [`API.md`](API.md)）
 - [x] 速率限制（per-tenant：可通过 `DMSX_API_RATE_LIMIT_ENABLED` / `DMSX_API_RATE_LIMIT_PER_SECOND` / `DMSX_API_RATE_LIMIT_BURST` 配置，超限返回 429 ProblemDetails）
 - [x] 请求体大小限制（`DMSX_API_REQUEST_BODY_LIMIT_BYTES`，超限返回 413 ProblemDetails）
 - [x] CORS 生产配置（按 `DMSX_API_CORS_ALLOWED_ORIGINS`/`DMSX_API_CORS_ALLOW_ALL` 配置 `tower-http CorsLayer`；非 `dev` 且未配置来源将拒绝跨域）
@@ -298,6 +298,19 @@
 
 ## 8. 前端管理台（`web/`）
 
+### IoT 平台信息架构
+
+- [x] IoT 平台最佳实践对齐文档（[`docs/IOT_PLATFORM_BEST_PRACTICES.md`](IOT_PLATFORM_BEST_PRACTICES.md)：明确平台面 / 租户面职责、权限对象拆页、Fleet / Job / OTA 后续顺序）
+- [x] 管理台 v2 重设计方案（[`docs/plans/2026-04-30-management-console-v2-redesign.md`](plans/2026-04-30-management-console-v2-redesign.md)：允许重做前端组织方式，保留后端业务资产）
+- [x] 前端产品导航模型抽离（`web/src/navigation.tsx`：菜单分组、路径、模式、图标、角色可见性的单一来源）
+- [x] 登录后按账号权限选择平台管理或租户管理，平台权限与租户权限分离
+- [x] 左侧菜单按模块分组：平台工作台 / 权限中心 / 运营治理 / 平台运维，租户工作台 / 设备运营 / 策略安全 / 交付配置
+- [x] 平台权限中心按对象拆页：权限总览、角色、用户、菜单、权限策略，采用单列表 + 抽屉模式
+- [ ] 平台权限后端 CRUD：平台用户目录、平台角色绑定、菜单权限映射、权限策略持久化 API
+- [ ] Fleet 管理基础：设备组 / 标签 / profile 主界面、动态筛选、批量选择和聚合统计
+- [ ] Job / OTA 模型：批量升级、批量脚本、重启、证书轮换等从普通 command 升级为带 rollout / abort / retry / timeout / 聚合状态的 Job
+- [ ] 租户 profile / device profile：租户内默认配置、速率、设备类型和传输策略集中维护
+
 ### 基础
 
 - [x] Vite 6 + React 19 + TypeScript 构建
@@ -373,7 +386,7 @@
 - [x] 审计不可篡改设计（PG + CH + 对象存储）
 - [x] 制品签名设计（cosign / sigstore）
 - [~] 认证实现（JWT `issuer` / `audience` 校验已支持；OIDC discovery -> `jwks_uri` 加载、JWKS 校验、后台 TTL 刷新与未知 `kid` 强制刷新已接入；外部 IdP 实机联调与更完整轮转/失效策略待补）
-- [x] RBAC 中间件实现（租户路径按活动租户解析 **`roles`**：`tenant_roles` 有键则用该数组，否则用令牌级 `roles`；平台路径仅用令牌级 `roles`，不套用租户绑定/自定义角色；资源级路由权限；缺失角色、越权写策略、越权访问全局配置均返回 `403`）
+- [x] RBAC 中间件实现（租户路径按活动租户解析 **有效角色**：`tenant_roles` 有键则用该数组，否则仅兼容令牌级 `roles` 中的非平台角色；平台路径仅用令牌级 `roles`，不套用租户绑定/自定义角色；资源级路由权限；缺失角色、越权写策略、越权访问全局配置均返回 `403`）
 - [x] RLS 强化（租户域表 `FORCE ROW LEVEL SECURITY`；关键父子关系补 `(tenant_id, id)` 复合外键）
 - [~] HTTP Agent 设备写回认证（`X-DMSX-Device-Token` 校验 enrollment token 绑定的租户/设备/注册码；长期仍待设备会话 token 或 mTLS/gRPC 数据面）
 - [ ] 设备证书签发（CA 集成）

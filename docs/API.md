@@ -22,9 +22,9 @@
 
 **多租户 JWT（单用户多租户）**：JWT 声明中含 **`tenant_id`**（UUID，默认/主租户，无 `allowed_tenant_ids` 时即唯一允许租户）与可选数组 **`allowed_tenant_ids`**（UUID）。有效租户集合为 **`tenant_id` ∪ `allowed_tenant_ids`**。对 `/v1/tenants/{tenant_id}/...` 的请求，路径中的 `{tenant_id}` 必须属于该集合，否则 **403**。`AuthContext` 中的活动租户与路径一致，便于前端**切换租户**：更换 URL 中的 `{tenant_id}` 即可；签发方应在成员关系变化时更新 **`allowed_tenant_ids`**。
 
-**按租户 RBAC（`tenant_roles`）**：可选对象 **`tenant_roles`**，键为租户 UUID 字符串、值为该租户下角色字符串数组（如 `TenantAdmin`、`ReadOnly`）。对某次**租户路径请求**，活动租户为路径中的 `{tenant_id}`：若 **`tenant_roles` 中存在该活动租户的键**（含空数组 `[]`），则本请求 **仅使用该键对应数组** 做 RBAC；若 **无该键**，则回退使用令牌级 **`roles`**。对**平台路径请求**（`/v1/config/...`、`/v1/tenants`），仅使用令牌级 **`roles`**，不会套用 `tenant_roles`、租户绑定或租户自定义角色。空数组表示该租户下显式无角色，受保护租户路由将 **403**。
+**按租户 RBAC（`tenant_roles`）**：可选对象 **`tenant_roles`**，键为租户 UUID 字符串、值为该租户下角色字符串数组（如 `TenantAdmin`、`ReadOnly`）。对某次**租户路径请求**，活动租户为路径中的 `{tenant_id}`：若 **`tenant_roles` 中存在该活动租户的键**（含空数组 `[]`），则本请求 **仅使用该键对应数组** 做 RBAC；若 **无该键**，仅为兼容旧联调 token 回退使用令牌级 `roles` 中的非平台角色，`PlatformAdmin` / `PlatformViewer` 不会在租户路径生效。对**平台路径请求**（`/v1/config/...`、`/v1/tenants`），仅使用令牌级 **`roles`**，不会套用 `tenant_roles`、租户绑定或租户自定义角色。空数组表示该租户下显式无角色，受保护租户路由将 **403**。
 
-**账号密码登录（开发内置 BFF）**：`jwt` 模式下新增公开接口 `POST /v1/auth/login` 与 `POST /v1/auth/login/select`。第一步使用账号密码认证并返回“进入平台 / 进入租户 / 选择平台或租户 / 选择租户”的决策信息，以及短期 `login_transaction_token`。第二步必须携带该选择凭证提交最终进入范围；控制面验证凭证与账号匹配后签发 Bearer JWT，并把活动租户写回该账号的 `last_tenant_id`，用于下次登录默认选中上次退出时的租户。
+**账号密码登录（开发内置 BFF）**：`jwt` 模式下新增公开接口 `POST /v1/auth/login` 与 `POST /v1/auth/login/select`。第一步只完成账号密码认证并返回“进入平台 / 进入租户 / 选择平台或租户 / 选择租户”的决策信息，以及短期 `login_transaction_token`。第二步必须携带该选择凭证提交最终进入范围；控制面验证凭证与账号匹配后签发 Bearer JWT，并把活动租户写回该账号的 `last_tenant_id`，用于下次登录默认选中上次退出时的租户。前端必须先登录，再基于 `available_scopes` 与租户选项让用户进入平台工作台或租户工作台。
 
 **设备写回认证（HTTP Agent 过渡方案）**：Agent 首次安装仍使用 `POST /v1/tenants/{tid}/devices/claim-with-enrollment-token` 携带 enrollment token 完成认领。认领后的 HTTP Agent 写回路径（设备 PATCH、reported shadow、设备命令拉取、命令状态/结果写回）可携带 `X-DMSX-Device-Token: <enrollment_token>`；控制面会校验该 token 绑定的 `tenant_id + device_id + registration_code`，并仅允许写回对应设备/命令。该机制是当前 HTTP Agent 主链路的收口，后续仍应升级为独立设备会话 token 或 mTLS/gRPC 数据面。
 
@@ -36,14 +36,15 @@
 
 ```json
 "tenant_id": "11111111-1111-1111-1111-111111111111",
-"roles": ["TenantAdmin"],
+"roles": ["PlatformViewer"],
 "allowed_tenant_ids": ["22222222-2222-2222-2222-222222222222"],
 "tenant_roles": {
+  "11111111-1111-1111-1111-111111111111": ["TenantAdmin"],
   "22222222-2222-2222-2222-222222222222": ["ReadOnly"]
 }
 ```
 
-上例中访问 `/v1/tenants/11111111-.../devices` 时使用 **`TenantAdmin`**；访问 `/v1/tenants/22222222-.../devices` 时使用 **`ReadOnly`**。
+上例中平台路径使用 **`PlatformViewer`**；访问 `/v1/tenants/11111111-.../devices` 时使用 **`TenantAdmin`**；访问 `/v1/tenants/22222222-.../devices` 时使用 **`ReadOnly`**。
 
 机器可读 OpenAPI 见文末；**`paths` 与当前 `crates/dmsx-api` 已注册路由对齐**；未实现的 HTTP 路由不会出现在 OpenAPI 中（见下方「租户与组织结构」说明）。
 
@@ -177,7 +178,9 @@
 | GET | `/v1/config/tenants` | 平台租户目录汇总（分页；支持 `search` 搜索租户名称或 UUID，并返回跨租户设备数 / 策略数 / 命令数；`PlatformAdmin` / `PlatformViewer` 可读） |
 | GET | `/v1/config/audit-logs` | 平台全局审计日志（分页；支持 `action` / `resource_type` 筛选；`PlatformAdmin` / `PlatformViewer` 可读） |
 | GET | `/v1/config/platform-health` | 平台健康摘要（租户 / 设备 / 策略 / 命令 / 制品 / 审计数量，以及 LiveKit / Redis / Command Bus 开关状态；`PlatformAdmin` / `PlatformViewer` 可读） |
-| GET | `/v1/config/quotas` | 平台配额列表（返回真实已用量；上限可由 `DMSX_API_PLATFORM_*_LIMIT` 环境变量配置；`PlatformAdmin` / `PlatformViewer` 可读） |
+| GET | `/v1/config/quotas` | 平台配额列表（返回真实已用量；上限优先读取全局设置 `platform.quotas`，否则回退 `DMSX_API_PLATFORM_*_LIMIT` 环境变量；`PlatformAdmin` / `PlatformViewer` 可读） |
+
+平台权限与配额维护复用全局设置接口：`PUT /v1/config/settings/platform.rbac.policy` 保存平台权限策略（如是否启用 `PlatformAdmin` / `PlatformViewer`、默认进入平台或租户、是否登录后强制选择 scope）；`PUT /v1/config/settings/platform.quotas` 保存配额上限，value 示例为 `{"tenants":1000,"devices":10000,"commands":100000,"artifacts":10000}`。这两个写接口均要求 **PlatformAdmin**。
 
 ### AI 智慧管控
 
@@ -206,7 +209,7 @@ Content-Type: application/json
 响应（**201 Created**）：
 ```json
 {
-  "room": "desktop-{device_id}-1776239309",
+  "room": "desktop-{device_id}-{session_id}",
   "token": "<LiveKit JWT>",
   "livekit_url": "ws://127.0.0.1:7880",
   "session_id": "<uuid>"

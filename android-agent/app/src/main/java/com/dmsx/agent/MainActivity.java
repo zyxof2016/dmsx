@@ -26,8 +26,12 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         maybeRequestNotificationPermission();
+        boolean loadedBundledSetup = AgentConfig.applyBundledSetupIfNeeded(this);
         setContentView(buildContentView());
         loadConfig();
+        if (loadedBundledSetup || (AgentConfig.hasBundledSetup() && AgentConfig.isConfigured(this))) {
+            startAgentService();
+        }
         refreshStatus();
     }
 
@@ -51,7 +55,7 @@ public class MainActivity extends Activity {
         root.addView(title);
 
         TextView subtitle = new TextView(this);
-        subtitle.setText("配置控制面地址和 enrollment token 后启动前台服务。Agent 会认领设备、定期上报心跳和 reported shadow。\n");
+        subtitle.setText("安装包可内置注册配置；首次打开后会自动启动前台服务。也可以手动填写 API URL、Tenant ID 和 enrollment token。\n");
         subtitle.setTextColor(0xFF4B5563);
         root.addView(subtitle);
 

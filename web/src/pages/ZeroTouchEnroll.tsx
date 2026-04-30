@@ -7,6 +7,11 @@ import { useArtifacts } from "../api/hooks";
 import type { Artifact } from "../api/types";
 import { TerminalBlock } from "../components/TerminalBlock";
 import { artifactMatchesPlatform, chooseArtifactCommand, inferInstallerKind, selectRecommendedArtifact } from "../artifactMeta";
+import {
+  buildWindowsOneClickInstallerScript,
+  downloadTextFile,
+  readArtifactDownloadUrl,
+} from "../enrollmentInstall";
 
 const { Title, Text } = Typography;
 
@@ -66,10 +71,20 @@ function buildDefaultUpgradeCommand(downloadUrl: string, installerKind: string |
 
 function defaultInstallCommand(platform: Platform, apiUrl: string, tenantId: string, enrollmentToken: string): string {
   return platform === "windows"
-    ? `set DMSX_API_URL=${apiUrl} && set DMSX_TENANT_ID=${tenantId} && set DMSX_DEVICE_ENROLLMENT_TOKEN=${enrollmentToken} && cargo run -p dmsx-agent`
+    ? `powershell -ExecutionPolicy Bypass -File .\\Install-DMSX-Agent.ps1`
     : platform === "android"
-      ? `adb shell \"DMSX_API_URL=${apiUrl} DMSX_TENANT_ID=${tenantId} DMSX_DEVICE_ENROLLMENT_TOKEN=${enrollmentToken} /data/local/tmp/dmsx-agent\"`
+      ? "adb install -r DMSX-Agent-Android.apk && adb shell monkey -p com.dmsx.agent 1"
       : `DMSX_API_URL=${apiUrl} DMSX_TENANT_ID=${tenantId} DMSX_DEVICE_ENROLLMENT_TOKEN='${enrollmentToken}' cargo run -p dmsx-agent`;
+}
+
+function androidApkPackageCommand(apiUrl: string, tenantId: string, enrollmentToken: string): string {
+  return [
+    ".\\scripts\\package-android-agent.ps1 `",
+    `  -ApiUrl "${apiUrl}" \``,
+    `  -TenantId "${tenantId}" \``,
+    `  -EnrollmentToken "${enrollmentToken}" \``,
+    '  -OutputPath ".\\target\\packages\\DMSX-Agent-Android.apk"',
+  ].join("\n");
 }
 
 function resolveInstallCommand(
@@ -144,6 +159,18 @@ export const ZeroTouchEnrollPage: React.FC = () => {
   const primaryArtifact = recommendedArtifacts[0] ?? null;
   const installCommand = resolveInstallCommand(primaryArtifact, platform, apiUrl, tenantId, enrollmentToken);
   const upgradeCommand = resolveUpgradeCommand(primaryArtifact, platform);
+  const androidPackageCommand = androidApkPackageCommand(apiUrl, tenantId, enrollmentToken);
+  const agentDownloadUrl = readArtifactDownloadUrl(primaryArtifact);
+  const windowsInstallerScript = React.useMemo(
+    () =>
+      buildWindowsOneClickInstallerScript({
+        apiUrl,
+        tenantId,
+        enrollmentToken,
+        agentDownloadUrl,
+      }),
+    [agentDownloadUrl, apiUrl, enrollmentToken, tenantId],
+  );
 
   return (
     <Space direction="vertical" style={{ width: "100%" }}>
@@ -189,6 +216,36 @@ export const ZeroTouchEnrollPage: React.FC = () => {
           <Descriptions.Item label="推荐首装命令">
             <TerminalBlock code={installCommand} />
           </Descriptions.Item>
+          {platform === "android" ? (
+            <Descriptions.Item label="生成专属 APK">
+              <Space direction="vertical" style={{ width: "100%" }}>
+                <TerminalBlock code={androidPackageCommand} />
+                <Text type="secondary">
+                  生成的 APK 会内置 API URL、Tenant ID 和 enrollment token。用户安装后首次打开 App，会自动启动前台服务并完成设备认领。
+                </Text>
+              </Space>
+            </Descriptions.Item>
+          ) : null}
+          {platform === "windows" ? (
+            <Descriptions.Item label="Windows 一键安装脚本">
+              <Space direction="vertical" style={{ width: "100%" }}>
+                <Button
+                  type="primary"
+                  disabled={!apiUrl || !tenantId || !enrollmentToken}
+                  onClick={() => {
+                    downloadTextFile("Install-DMSX-Agent.ps1", windowsInstallerScript);
+                  }}
+                >
+                  下载安装脚本
+                </Button>
+                <Text type={agentDownloadUrl ? "secondary" : "warning"}>
+                  {agentDownloadUrl
+                    ? "脚本会自动下载 Agent、写入 enrollment 配置并注册 Windows 服务。"
+                    : "当前没有可下载的 Agent 制品；请将 dmsx-agent.exe 与脚本放在同一目录后运行。"}
+                </Text>
+              </Space>
+            </Descriptions.Item>
+          ) : null}
           {primaryArtifact ? (
             <Descriptions.Item label="推荐 Agent 制品">
               <Space wrap>
@@ -265,6 +322,14 @@ export const ZeroTouchEnrollPage: React.FC = () => {
             }}
           >
             复制首装命令
+          </Button>
+          <Button
+            onClick={() => {
+              downloadTextFile("Install-DMSX-Agent.ps1", windowsInstallerScript);
+            }}
+            disabled={platform !== "windows" || !apiUrl || !tenantId || !enrollmentToken}
+          >
+            下载 Windows 脚本
           </Button>
           <Button
             onClick={async () => {

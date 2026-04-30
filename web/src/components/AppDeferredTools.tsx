@@ -3,6 +3,7 @@ import {
   App,
   Avatar,
   Badge,
+  Button,
   Dropdown,
   FloatButton,
   Input,
@@ -93,8 +94,8 @@ export const AppDeferredTools: React.FC<Props> = ({
     <>
       {showTenantShortcut && (
         <Tag
+          className="dmsx-tenant-chip"
           color="blue"
-          style={{ cursor: "pointer", marginInlineEnd: 0 }}
           onClick={() => {
             setTenantDraft(tenantId);
             setTenantModalOpen(true);
@@ -104,12 +105,12 @@ export const AppDeferredTools: React.FC<Props> = ({
         </Tag>
       )}
       <Badge count={0} size="small">
-        <BellOutlined style={{ fontSize: 18, cursor: "pointer" }} />
+        <Button className="dmsx-tool-button" type="text" icon={<BellOutlined />} />
       </Badge>
       <Dropdown menu={userMenu}>
-        <Space style={{ cursor: "pointer" }}>
-          <Avatar size="small" icon={<UserOutlined />} />
-          {userLabel}
+        <Space className="dmsx-user-trigger">
+          <Avatar size={24} icon={<UserOutlined />} />
+          <Typography.Text className="dmsx-user-name">{userLabel}</Typography.Text>
         </Space>
       </Dropdown>
 

@@ -25,6 +25,31 @@ const PlatformTenantsPage = React.lazy(async () => {
   return { default: mod.PlatformTenantsPage };
 });
 
+const PlatformPermissionsPage = React.lazy(async () => {
+  const mod = await import("./pages/PlatformPermissions");
+  return { default: mod.PlatformPermissionsPage };
+});
+
+const PlatformPermissionRolesPage = React.lazy(async () => {
+  const mod = await import("./pages/PlatformPermissionRoles");
+  return { default: mod.PlatformPermissionRolesPage };
+});
+
+const PlatformPermissionUsersPage = React.lazy(async () => {
+  const mod = await import("./pages/PlatformPermissionUsers");
+  return { default: mod.PlatformPermissionUsersPage };
+});
+
+const PlatformPermissionMenusPage = React.lazy(async () => {
+  const mod = await import("./pages/PlatformPermissionMenus");
+  return { default: mod.PlatformPermissionMenusPage };
+});
+
+const PlatformPermissionPolicyPage = React.lazy(async () => {
+  const mod = await import("./pages/PlatformPermissionPolicy");
+  return { default: mod.PlatformPermissionPolicyPage };
+});
+
 const PlatformQuotasPage = React.lazy(async () => {
   const mod = await import("./pages/PlatformQuotas");
   return { default: mod.PlatformQuotasPage };
@@ -167,6 +192,36 @@ const platformTenantsRoute = createRoute({
   component: withLazyBoundary(PlatformTenantsPage),
 });
 
+const platformPermissionsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/platform/permissions",
+  component: withLazyBoundary(PlatformPermissionsPage),
+});
+
+const platformPermissionRolesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/platform/permissions/roles",
+  component: withLazyBoundary(PlatformPermissionRolesPage),
+});
+
+const platformPermissionUsersRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/platform/permissions/users",
+  component: withLazyBoundary(PlatformPermissionUsersPage),
+});
+
+const platformPermissionMenusRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/platform/permissions/menus",
+  component: withLazyBoundary(PlatformPermissionMenusPage),
+});
+
+const platformPermissionPolicyRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/platform/permissions/policy",
+  component: withLazyBoundary(PlatformPermissionPolicyPage),
+});
+
 const platformQuotasRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/platform/quotas",
@@ -297,6 +352,11 @@ const loginRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   indexRoute,
   platformRoute,
+  platformPermissionsRoute,
+  platformPermissionRolesRoute,
+  platformPermissionUsersRoute,
+  platformPermissionMenusRoute,
+  platformPermissionPolicyRoute,
   platformTenantsRoute,
   platformQuotasRoute,
   platformAuditLogsRoute,

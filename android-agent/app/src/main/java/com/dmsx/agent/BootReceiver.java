@@ -9,6 +9,7 @@ public class BootReceiver extends BroadcastReceiver {
     @Override
     public void onReceive(Context context, Intent intent) {
         if (!Intent.ACTION_BOOT_COMPLETED.equals(intent.getAction())) return;
+        AgentConfig.applyBundledSetupIfNeeded(context);
         if (!AgentConfig.startOnBoot(context) || !AgentConfig.isConfigured(context)) return;
 
         Intent service = new Intent(context, AgentService.class).setAction(AgentService.ACTION_START);

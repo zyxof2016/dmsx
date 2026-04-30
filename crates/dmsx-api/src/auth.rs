@@ -346,7 +346,12 @@ fn effective_roles_for_tenant(claims: &JwtClaims, active_tenant: Uuid) -> Vec<St
     if let Some(roles) = claims.tenant_roles.get(&active_tenant) {
         return roles.clone();
     }
-    claims.roles.clone()
+    claims
+        .roles
+        .iter()
+        .filter(|role| !matches!(role.as_str(), "PlatformAdmin" | "PlatformViewer"))
+        .cloned()
+        .collect()
 }
 
 fn effective_roles_for_request(claims: &JwtClaims, path_tenant_id: Option<Uuid>) -> Vec<String> {

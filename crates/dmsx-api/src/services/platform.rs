@@ -1,10 +1,12 @@
 use crate::auth::AuthContext;
 use crate::dto::{AuditLog, AuditLogListParams, ListResponse, PlatformHealth, PlatformQuota, PlatformTenantListParams, PlatformTenantSummary};
 use crate::error::map_db_error;
-use crate::repo::platform;
+use crate::repo::{platform, system_settings as settings_repo};
 use crate::repo::platform::PlatformUsageCounts;
 use crate::services::ServiceResult;
 use crate::state::AppState;
+
+const PLATFORM_QUOTAS_KEY: &str = "platform.quotas";
 
 fn quota_limit_from_env(name: &str, default: i64) -> i64 {
     std::env::var(name)
@@ -14,29 +16,60 @@ fn quota_limit_from_env(name: &str, default: i64) -> i64 {
         .unwrap_or(default)
 }
 
-fn build_platform_quotas(counts: PlatformUsageCounts) -> ListResponse<PlatformQuota> {
+fn quota_limit_from_settings(value: Option<&serde_json::Value>, key: &str, env_name: &str, default: i64) -> i64 {
+    value
+        .and_then(|value| value.get(key))
+        .and_then(|value| value.as_i64())
+        .filter(|value| *value > 0)
+        .unwrap_or_else(|| quota_limit_from_env(env_name, default))
+}
+
+fn build_platform_quotas(
+    counts: PlatformUsageCounts,
+    quota_settings: Option<&serde_json::Value>,
+) -> ListResponse<PlatformQuota> {
     let items = vec![
         PlatformQuota {
             key: "tenants".into(),
-            limit: quota_limit_from_env("DMSX_API_PLATFORM_TENANT_LIMIT", 1_000),
+            limit: quota_limit_from_settings(
+                quota_settings,
+                "tenants",
+                "DMSX_API_PLATFORM_TENANT_LIMIT",
+                1_000,
+            ),
             used: counts.tenant_count,
             unit: "count".into(),
         },
         PlatformQuota {
             key: "devices".into(),
-            limit: quota_limit_from_env("DMSX_API_PLATFORM_DEVICE_LIMIT", 10_000),
+            limit: quota_limit_from_settings(
+                quota_settings,
+                "devices",
+                "DMSX_API_PLATFORM_DEVICE_LIMIT",
+                10_000,
+            ),
             used: counts.device_count,
             unit: "count".into(),
         },
         PlatformQuota {
             key: "commands".into(),
-            limit: quota_limit_from_env("DMSX_API_PLATFORM_COMMAND_LIMIT", 100_000),
+            limit: quota_limit_from_settings(
+                quota_settings,
+                "commands",
+                "DMSX_API_PLATFORM_COMMAND_LIMIT",
+                100_000,
+            ),
             used: counts.command_count,
             unit: "count".into(),
         },
         PlatformQuota {
             key: "artifacts".into(),
-            limit: quota_limit_from_env("DMSX_API_PLATFORM_ARTIFACT_LIMIT", 10_000),
+            limit: quota_limit_from_settings(
+                quota_settings,
+                "artifacts",
+                "DMSX_API_PLATFORM_ARTIFACT_LIMIT",
+                10_000,
+            ),
             used: counts.artifact_count,
             unit: "count".into(),
         },
@@ -106,7 +139,11 @@ pub async fn platform_quotas(
 ) -> ServiceResult<ListResponse<PlatformQuota>> {
     let mut conn = st.db.acquire().await.map_err(map_db_error)?;
     let counts = platform::usage_counts(&mut conn).await.map_err(map_db_error)?;
-    Ok(build_platform_quotas(counts))
+    let quota_settings = settings_repo::get_global_setting(&mut conn, PLATFORM_QUOTAS_KEY)
+        .await
+        .map_err(map_db_error)?
+        .map(|setting| setting.value);
+    Ok(build_platform_quotas(counts, quota_settings.as_ref()))
 }
 
 #[cfg(test)]
@@ -148,7 +185,7 @@ mod tests {
             command_count: 34,
             artifact_count: 5,
             audit_log_count: 9,
-        });
+        }, None);
 
         assert_eq!(response.total, 4);
         assert_eq!(response.items[0].key, "tenants");
@@ -159,5 +196,30 @@ mod tests {
         assert_eq!(response.items[2].used, 34);
         assert_eq!(response.items[3].key, "artifacts");
         assert_eq!(response.items[3].used, 5);
+    }
+
+    #[test]
+    fn build_platform_quotas_prefers_persisted_limits() {
+        let response = build_platform_quotas(
+            PlatformUsageCounts {
+                tenant_count: 1,
+                device_count: 2,
+                policy_count: 0,
+                command_count: 3,
+                artifact_count: 4,
+                audit_log_count: 0,
+            },
+            Some(&serde_json::json!({
+                "tenants": 11,
+                "devices": 22,
+                "commands": 33,
+                "artifacts": 44
+            })),
+        );
+
+        assert_eq!(response.items[0].limit, 11);
+        assert_eq!(response.items[1].limit, 22);
+        assert_eq!(response.items[2].limit, 33);
+        assert_eq!(response.items[3].limit, 44);
     }
 }

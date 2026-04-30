@@ -1,85 +1,83 @@
 import React from "react";
-import { Alert, Card, Col, Form, Input, List, Row, Space, Spin, Statistic, Tag, Typography, message } from "antd";
+import { Button, Card, Col, Progress, Row, Space, Statistic, Tag, Typography } from "antd";
 import {
+  AuditOutlined,
   ClusterOutlined,
-  PlusOutlined,
+  DashboardOutlined,
+  DatabaseOutlined,
   SafetyOutlined,
   SettingOutlined,
-  TeamOutlined,
 } from "@ant-design/icons";
+import { useNavigate } from "@tanstack/react-router";
+import { usePlatformHealth, usePlatformQuotas, useRbacRoles } from "../api/hooks";
 import { useAppSession } from "../appProviders";
-import { useCreateTenant, useLivekitConfig, useRbacRoles, useSystemSetting } from "../api/hooks";
-import { GuardedButton } from "../components/GuardedButton";
-import { formatApiError } from "../api/errors";
-import { ReadonlyBanner } from "../components/ReadonlyBanner";
-import { useResourceAccess } from "../authz";
 
 const { Title, Text } = Typography;
-const RECENT_TENANTS_KEY = "dmsx.platform.recent_tenants";
 
-type RecentTenant = {
-  id: string;
-  name: string;
-  createdAt: string;
+type PlatformModule = {
+  title: string;
+  description: string;
+  path: string;
+  icon: React.ReactNode;
+  tag: string;
 };
 
-function getRecentTenants(): RecentTenant[] {
-  try {
-    const raw = localStorage.getItem(RECENT_TENANTS_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw) as RecentTenant[];
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveRecentTenants(items: RecentTenant[]) {
-  localStorage.setItem(RECENT_TENANTS_KEY, JSON.stringify(items.slice(0, 8)));
-}
+const MODULES: PlatformModule[] = [
+  {
+    title: "权限管理",
+    description: "集中维护平台角色、平台权限策略、登录后进入平台或租户的选择规则。",
+    path: "/platform/permissions",
+    icon: <SafetyOutlined />,
+    tag: "RBAC",
+  },
+  {
+    title: "租户管理",
+    description: "查看跨租户目录、创建租户，并快速切换到某个租户继续排查资源。",
+    path: "/platform/tenants",
+    icon: <ClusterOutlined />,
+    tag: "Tenant",
+  },
+  {
+    title: "配额治理",
+    description: "维护租户、设备、命令、制品的平台级容量上限和使用率。",
+    path: "/platform/quotas",
+    icon: <DatabaseOutlined />,
+    tag: "Quota",
+  },
+  {
+    title: "全局审计",
+    description: "按动作和资源类型检索跨租户审计日志。",
+    path: "/platform/audit",
+    icon: <AuditOutlined />,
+    tag: "Audit",
+  },
+  {
+    title: "运行健康",
+    description: "查看平台组件、LiveKit、Redis、Command Bus 和核心资源计数。",
+    path: "/platform/health",
+    icon: <DashboardOutlined />,
+    tag: "Health",
+  },
+  {
+    title: "系统设置",
+    description: "维护全局系统设置，并查看当前 JWT / RBAC 调试信息。",
+    path: "/settings",
+    icon: <SettingOutlined />,
+    tag: "Config",
+  },
+];
 
 export const PlatformOverviewPage: React.FC = () => {
-  const {
-    subject,
-    primaryTenantId,
-    permittedTenantIds,
-    globalRoles,
-    tenantRoles,
-    canUsePlatformMode,
-  } = useAppSession();
-  const { canWrite } = useResourceAccess("platformWrite");
-  const [tenantForm] = Form.useForm<{ name: string }>();
-  const { data: roles, isLoading: rolesLoading, error: rolesError } = useRbacRoles();
-  const {
-    data: livekit,
-    isLoading: livekitLoading,
-    error: livekitError,
-  } = useLivekitConfig();
-  const {
-    data: metricsBearer,
-    isLoading: metricsLoading,
-    error: metricsError,
-  } = useSystemSetting("metrics.bearer.enabled");
-  const createTenant = useCreateTenant();
-  const [recentTenants, setRecentTenants] = React.useState<RecentTenant[]>(() =>
-    getRecentTenants(),
-  );
-
-  const handleCreateTenant = async (values: { name: string }) => {
-    try {
-      const tenant = await createTenant.mutateAsync(values);
-      const next = [
-        { id: tenant.id, name: tenant.name, createdAt: new Date().toISOString() },
-        ...recentTenants.filter((item) => item.id !== tenant.id),
-      ];
-      setRecentTenants(next);
-      saveRecentTenants(next);
-      message.success("租户创建成功");
-      tenantForm.resetFields();
-    } catch (error) {
-      message.error(formatApiError(error));
-    }
-  };
+  const navigate = useNavigate();
+  const { subject, globalRoles, permittedTenantIds, tenantRoles, canUsePlatformMode } = useAppSession();
+  const healthQuery = usePlatformHealth();
+  const quotasQuery = usePlatformQuotas();
+  const rolesQuery = useRbacRoles();
+  const quotas = quotasQuery.data?.items ?? [];
+  const maxQuotaUsage = quotas.reduce((max, item) => {
+    if (item.limit <= 0) return max;
+    return Math.max(max, Math.round((item.used / item.limit) * 100));
+  }, 0);
 
   return (
     <Space direction="vertical" style={{ width: "100%" }} size="large">
@@ -88,199 +86,79 @@ export const PlatformOverviewPage: React.FC = () => {
           平台总览
         </Title>
         <Text type="secondary">
-          面向平台运营方的全局入口。这里优先展示跨租户配置、角色模型和令牌覆盖范围，而不是单租户资源明细。
+          平台模式按职责拆分为独立模块。这里作为全局入口，只展示关键摘要和模块导航。
         </Text>
       </div>
 
-      <Alert
-        type="info"
-        showIcon
-        message="平台模式已具备独立首页"
-        description="当前版本先承载平台级会话摘要、授权覆盖面与后续能力挂点。后续如果接入租户目录、配额、全局审计和平台健康页，可以继续往这里扩展。"
-      />
-
-      <ReadonlyBanner visible={!canWrite} resourceLabel="平台配置与租户目录" />
-
       <Row gutter={[16, 16]}>
         <Col xs={24} sm={12} lg={6}>
           <Card>
-            <Statistic
-              title="允许租户数"
-              value={permittedTenantIds.length}
-              prefix={<ClusterOutlined />}
-            />
+            <Statistic title="租户总数" value={healthQuery.data?.tenant_count ?? permittedTenantIds.length} />
           </Card>
         </Col>
         <Col xs={24} sm={12} lg={6}>
           <Card>
-            <Statistic
-              title="平台角色模板"
-              value={roles?.length ?? globalRoles.length}
-              prefix={<SafetyOutlined />}
-            />
+            <Statistic title="设备总数" value={healthQuery.data?.device_count ?? 0} />
           </Card>
         </Col>
         <Col xs={24} sm={12} lg={6}>
           <Card>
-            <Statistic
-              title="租户角色覆盖"
-              value={Object.keys(tenantRoles).length}
-              prefix={<TeamOutlined />}
-            />
+            <Statistic title="平台角色" value={rolesQuery.data?.filter((role) => role.scope === "platform").length ?? 0} />
           </Card>
         </Col>
         <Col xs={24} sm={12} lg={6}>
           <Card>
-            <Statistic
-              title="平台模式"
-              value={canUsePlatformMode ? "已启用" : "未授权"}
-              prefix={<SettingOutlined />}
-            />
+            <Space direction="vertical" style={{ width: "100%" }}>
+              <Statistic title="最高配额使用率" value={maxQuotaUsage} suffix="%" />
+              <Progress percent={maxQuotaUsage} size="small" status={maxQuotaUsage >= 90 ? "exception" : "normal"} />
+            </Space>
           </Card>
         </Col>
       </Row>
 
-      <Card title="当前会话摘要">
+      <Row gutter={[16, 16]}>
+        {MODULES.map((item) => (
+          <Col key={item.path} xs={24} md={12} xl={8}>
+            <Card
+              hoverable
+              onClick={() => navigate({ to: item.path })}
+              style={{ height: "100%" }}
+              styles={{ body: { height: "100%" } }}
+            >
+              <Space direction="vertical" style={{ width: "100%", height: "100%" }} size="middle">
+                <Space align="start" style={{ justifyContent: "space-between", width: "100%" }}>
+                  <Space>
+                    <span style={{ color: "#2563eb", fontSize: 22 }}>{item.icon}</span>
+                    <Title level={5} style={{ margin: 0 }}>
+                      {item.title}
+                    </Title>
+                  </Space>
+                  <Tag>{item.tag}</Tag>
+                </Space>
+                <Text type="secondary">{item.description}</Text>
+                <div style={{ flex: 1 }} />
+                <Button type="link" style={{ padding: 0 }}>
+                  进入模块
+                </Button>
+              </Space>
+            </Card>
+          </Col>
+        ))}
+      </Row>
+
+      <Card title="当前平台会话">
         <Space direction="vertical" style={{ width: "100%" }} size="middle">
-          <div>
-            <Text type="secondary">Subject</Text>
-            <div>{subject ?? "未提供"}</div>
-          </div>
-          <div>
-            <Text type="secondary">主租户</Text>
-            <div>{primaryTenantId ?? "未声明"}</div>
-          </div>
-          <div>
-            <Text type="secondary">全局角色</Text>
-            <div style={{ marginTop: 8 }}>
-              <Space wrap>
-                {globalRoles.length ? globalRoles.map((role) => <Tag key={role}>{role}</Tag>) : <Tag>无</Tag>}
-              </Space>
-            </div>
-          </div>
-          <div>
-            <Text type="secondary">允许访问的租户</Text>
-            <div style={{ marginTop: 8 }}>
-              <Space wrap>
-                {permittedTenantIds.map((tenantId) => (
-                  <Tag key={tenantId}>{tenantId}</Tag>
-                ))}
-              </Space>
-            </div>
-          </div>
+          <Space wrap>
+            <Tag color={canUsePlatformMode ? "green" : "default"}>
+              {canUsePlatformMode ? "平台模式已授权" : "平台模式未授权"}
+            </Tag>
+            {globalRoles.length ? globalRoles.map((role) => <Tag key={role}>{role}</Tag>) : <Tag>无全局角色</Tag>}
+          </Space>
+          <Text type="secondary">Subject: {subject ?? "未提供"}</Text>
+          <Text type="secondary">允许租户数: {permittedTenantIds.length}</Text>
+          <Text type="secondary">存在租户角色覆盖: {Object.keys(tenantRoles).length}</Text>
         </Space>
       </Card>
-
-      <Row gutter={[16, 16]}>
-        <Col xs={24} lg={8}>
-          <Card title="租户目录（当前能力）" size="small">
-            <Form form={tenantForm} layout="vertical" onFinish={handleCreateTenant}>
-              <Form.Item
-                name="name"
-                label="新租户名称"
-                rules={[
-                  { required: true, message: "请输入租户名称" },
-                  { max: 200, message: "最长 200 字符" },
-                ]}
-              >
-                <Input placeholder="例如：华南大区 / partner-a / customer-prod" />
-              </Form.Item>
-              <GuardedButton
-                type="primary"
-                icon={<PlusOutlined />}
-                htmlType="submit"
-                loading={createTenant.isPending}
-                allowed={canWrite}
-              >
-                创建租户
-              </GuardedButton>
-            </Form>
-            <List
-              style={{ marginTop: 16 }}
-              size="small"
-              dataSource={[
-                `主租户: ${primaryTenantId ?? "未声明"}`,
-                `允许租户数: ${permittedTenantIds.length}`,
-                "当前后端仅开放创建租户，租户列表接口仍未提供",
-              ]}
-              renderItem={(item) => <List.Item>{item}</List.Item>}
-            />
-            {createTenant.error && (
-              <Alert
-                style={{ marginTop: 12 }}
-                type="error"
-                showIcon
-                message="创建租户失败"
-                description={formatApiError(createTenant.error)}
-              />
-            )}
-            {createTenant.data && (
-              <Alert
-                style={{ marginTop: 12 }}
-                type="success"
-                showIcon
-                message="已创建租户"
-                description={`${createTenant.data.name} (${createTenant.data.id})`}
-              />
-            )}
-            {recentTenants.length > 0 && (
-              <List
-                style={{ marginTop: 16 }}
-                size="small"
-                header="最近创建（本浏览器会话记录）"
-                dataSource={recentTenants}
-                renderItem={(item) => (
-                  <List.Item>
-                    <Space direction="vertical" size={0}>
-                      <Text strong>{item.name}</Text>
-                      <Text type="secondary" style={{ fontSize: 12 }}>
-                        {item.id} · {new Date(item.createdAt).toLocaleString()}
-                      </Text>
-                    </Space>
-                  </List.Item>
-                )}
-              />
-            )}
-          </Card>
-        </Col>
-        <Col xs={24} lg={8}>
-          <Card title="平台配置（真实接口）" size="small">
-            <Spin spinning={rolesLoading || livekitLoading || metricsLoading}>
-              <List
-                size="small"
-                dataSource={[
-                  `RBAC 角色模板: ${roles?.map((role) => role.name).join(", ") || "暂无"}`,
-                  `LiveKit: ${livekit?.enabled ? `已启用 (${livekit.url})` : "未启用"}`,
-                  `Metrics Bearer: ${String((metricsBearer?.value?.enabled as boolean | undefined) ?? false)}`,
-                ]}
-                renderItem={(item) => <List.Item>{item}</List.Item>}
-              />
-            </Spin>
-            {(rolesError || livekitError || metricsError) && (
-              <Alert
-                style={{ marginTop: 12 }}
-                type="warning"
-                showIcon
-                message="部分平台配置读取失败"
-                description={formatApiError(rolesError ?? livekitError ?? metricsError)}
-              />
-            )}
-          </Card>
-        </Col>
-        <Col xs={24} lg={8}>
-          <Card title="容量与配额（规划入口）" size="small">
-            <List
-              size="small"
-              dataSource={[
-                "设备数配额",
-                "制品存储额度",
-                "命令并发 / 会话并发",
-              ]}
-              renderItem={(item) => <List.Item>{item}</List.Item>}
-            />
-          </Card>
-        </Col>
-      </Row>
     </Space>
   );
 };

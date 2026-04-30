@@ -2,6 +2,11 @@ plugins {
     id "com.android.application"
 }
 
+def configString = { String propertyName, String envName ->
+    def value = providers.gradleProperty(propertyName).orElse(providers.environmentVariable(envName)).orElse("").get()
+    return groovy.json.JsonOutput.toJson(value)
+}
+
 android {
     namespace "com.dmsx.agent"
     compileSdk 35
@@ -12,6 +17,11 @@ android {
         targetSdk 35
         versionCode 1
         versionName "0.1.0"
+
+        buildConfigField "String", "DMSX_DEFAULT_API_URL", configString("dmsxApiUrl", "DMSX_API_URL")
+        buildConfigField "String", "DMSX_DEFAULT_TENANT_ID", configString("dmsxTenantId", "DMSX_TENANT_ID")
+        buildConfigField "String", "DMSX_DEFAULT_ENROLLMENT_TOKEN", configString("dmsxEnrollmentToken", "DMSX_DEVICE_ENROLLMENT_TOKEN")
+        buildConfigField "boolean", "DMSX_DEFAULT_START_ON_BOOT", providers.gradleProperty("dmsxStartOnBoot").orElse("true").get()
     }
 
     buildFeatures {

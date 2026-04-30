@@ -181,7 +181,7 @@ pub async fn select_login_scope(
         )
     };
 
-    let (active_tenant_id, active_tenant_roles) = selected_tenant;
+    let (active_tenant_id, _active_tenant_roles) = selected_tenant;
     let allowed_tenant_ids = tenant_roles_map
         .keys()
         .copied()
@@ -216,11 +216,7 @@ pub async fn select_login_scope(
         account_id: account.id,
         username: account.username,
         display_name: account.display_name,
-        platform_roles: if req.scope == "tenant" {
-            active_tenant_roles
-        } else {
-            platform_roles
-        },
+        platform_roles,
         available_scopes,
         decision: LoginDecision {
             kind: if req.scope == "platform" {

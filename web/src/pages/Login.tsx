@@ -16,10 +16,18 @@ type PendingLogin = {
   username: string;
   loginTransactionToken: string;
   displayName: string;
-  kind: Extract<LoginDecisionKind, "choose_scope" | "choose_tenant">;
+  kind: LoginDecisionKind;
   tenantOptions: LoginTenantOption[];
   preferredTenantId?: string | null;
 };
+
+function pathMatchesScope(path: string, scope?: "platform" | "tenant") {
+  if (!scope) return false;
+  const isPlatformPath = path === "/platform" || path.startsWith("/platform/") || path === "/settings";
+  const isPublicPath = path === "/login" || path === "/zero-touch-enroll";
+  if (isPublicPath) return false;
+  return scope === "platform" ? isPlatformPath : !isPlatformPath;
+}
 
 export const LoginPage: React.FC = () => {
   const { message } = App.useApp();
@@ -52,7 +60,7 @@ export const LoginPage: React.FC = () => {
       available_scopes?: Array<"platform" | "tenant">;
     }) => {
       const fallbackPath = resp.active_scope === "platform" ? "/platform" : "/";
-      const target = !redirect || redirect === "/" || redirect === "/login"
+      const target = !redirect || redirect === "/" || !pathMatchesScope(redirect, resp.active_scope)
         ? fallbackPath
         : redirect;
       if (resp.token) setJwt(resp.token);
@@ -213,29 +221,8 @@ export const LoginPage: React.FC = () => {
                 try {
                   const resp = await loginMut.mutateAsync(values);
 
-                  if (resp.decision.kind === "platform_only") {
-                    if (!resp.login_transaction_token) throw new Error("登录选择凭证缺失，请重新登录");
-                    await selectScopeAndEnter(
-                      resp.username,
-                      resp.login_transaction_token,
-                      "platform",
-                      chooseInitialTenant(resp.decision.tenant_options, resp.decision.preferred_tenant_id),
-                    );
-                    return;
-                  }
-
-                  if (resp.decision.kind === "tenant_only") {
-                    if (!resp.login_transaction_token) throw new Error("登录选择凭证缺失，请重新登录");
-                    await selectScopeAndEnter(
-                      resp.username,
-                      resp.login_transaction_token,
-                      "tenant",
-                      chooseInitialTenant(resp.decision.tenant_options, resp.decision.preferred_tenant_id),
-                    );
-                    return;
-                  }
-
                   if (!resp.login_transaction_token) throw new Error("登录选择凭证缺失，请重新登录");
+                  const initialScope = resp.decision.kind === "platform_only" ? "platform" : "tenant";
                   setPendingLogin({
                     username: resp.username,
                     loginTransactionToken: resp.login_transaction_token,
@@ -244,7 +231,7 @@ export const LoginPage: React.FC = () => {
                     tenantOptions: resp.decision.tenant_options,
                     preferredTenantId: resp.decision.preferred_tenant_id,
                   });
-                  setScope(resp.decision.kind === "choose_scope" ? "tenant" : "tenant");
+                  setScope(initialScope);
                   setSelectedTenantId(
                     chooseInitialTenant(resp.decision.tenant_options, resp.decision.preferred_tenant_id),
                   );

@@ -230,10 +230,10 @@ spec:
 | `DMSX_API_REQUEST_TIMEOUT_SECONDS` | `30` | 全局请求超时（秒）；用于防止下游卡死导致资源耗尽 |
 | `DMSX_API_CONCURRENCY_LIMIT_ENABLED` | `false` | 是否启用全局并发上限（建议在公网/大流量入口开启） |
 | `DMSX_API_CONCURRENCY_LIMIT` | `1024` | 全局并发上限（启用时生效；下限 1） |
-| `DMSX_API_PLATFORM_TENANT_LIMIT` | `1000` | `/v1/config/quotas` 中平台租户数配额上限 |
-| `DMSX_API_PLATFORM_DEVICE_LIMIT` | `10000` | `/v1/config/quotas` 中平台设备数配额上限 |
-| `DMSX_API_PLATFORM_COMMAND_LIMIT` | `100000` | `/v1/config/quotas` 中平台命令数配额上限 |
-| `DMSX_API_PLATFORM_ARTIFACT_LIMIT` | `10000` | `/v1/config/quotas` 中平台制品数配额上限 |
+| `DMSX_API_PLATFORM_TENANT_LIMIT` | `1000` | `/v1/config/quotas` 中平台租户数配额默认上限；可被全局设置 `platform.quotas.tenants` 覆盖 |
+| `DMSX_API_PLATFORM_DEVICE_LIMIT` | `10000` | `/v1/config/quotas` 中平台设备数配额默认上限；可被全局设置 `platform.quotas.devices` 覆盖 |
+| `DMSX_API_PLATFORM_COMMAND_LIMIT` | `100000` | `/v1/config/quotas` 中平台命令数配额默认上限；可被全局设置 `platform.quotas.commands` 覆盖 |
+| `DMSX_API_PLATFORM_ARTIFACT_LIMIT` | `10000` | `/v1/config/quotas` 中平台制品数配额默认上限；可被全局设置 `platform.quotas.artifacts` 覆盖 |
 | `DMSX_API_CORS_ALLOWED_ORIGINS` | （未设置） | 允许的 CORS 来源（逗号分隔，完整 scheme+host+port，如 `https://admin.example.com,http://localhost:3000`）。未设置且非 `dev` 环境将拒绝所有跨域请求（浏览器侧阻断）。 |
 | `DMSX_API_CORS_ALLOW_ALL` | `false` | 是否放开所有 CORS 来源（dev-like）；设置为 `1/true/yes` 时 `DMSX_API_CORS_ALLOWED_ORIGINS` 将被忽略。 |
 | `DMSX_API_UPLOAD_TOKEN_HMAC_SECRET` | （未设置） | 控制面签发 `UploadEvidence` token 的 HMAC secret；应与网关 `DMSX_GW_UPLOAD_TOKEN_HMAC_SECRET` 保持一致。若未设置，`POST /v1/tenants/{tid}/commands/{cid}/evidence-upload-token` 返回 **500** |
@@ -299,7 +299,7 @@ spec:
 | `DMSX_DEVICE_REGISTRATION_CODE` | （未设置） | Agent 首次绑定时使用的人可见设备注册码；设置后会优先按该码复用已预注册设备 |
 | `DMSX_DEVICE_ENROLLMENT_TOKEN` | （未设置） | Agent 首次绑定时使用的 enrollment token；设置后会优先走 token 认领流程 |
 
-批量部署建议：平台侧批量预注册并导入/导出 CSV，每行可包含 `registration_code`、`hostname`、`platform`；前端提供 CSV 模板下载、表头自动识别、列级校验提示与最近批次历史回填。结果中导出 `enrollment_token`、`enrollment_uri` 与启动命令模板，并支持独立零接触安装页。前端还支持本地配置 Agent API URL，并直接复制 Linux/macOS、Windows、Android ADB 三种脚本。设备侧可由脚本、MDM、工厂预置或扫码流程直接注入 `DMSX_DEVICE_ENROLLMENT_TOKEN` 启动 Agent，实现零接触注册。首装完成后，建议将 Agent 二进制纳入制品渠道做 OTA 升级。
+批量部署建议：平台侧批量预注册并导入/导出 CSV，每行可包含 `registration_code`、`hostname`、`platform`；前端提供 CSV 模板下载、表头自动识别、列级校验提示与最近批次历史回填。结果中导出 `enrollment_token`、`enrollment_uri` 与启动命令模板，并支持独立零接触安装页。前端还支持本地配置 Agent API URL，并直接复制 Linux/macOS 脚本、Windows 一键安装脚本、Android 专属 APK 打包命令。设备侧可由脚本、MDM、工厂预置、专属 APK 或扫码流程直接注入 `DMSX_DEVICE_ENROLLMENT_TOKEN` 启动 Agent，实现零接触注册。首装完成后，建议将 Agent 二进制纳入制品渠道做 OTA 升级。
 | `DMSX_HEARTBEAT_SECS` | `30` | 心跳间隔（秒） |
 | `DMSX_POLL_SECS` | `10` | 命令轮询间隔（秒） |
 | `DMSX_RUSTDESK_RELAY` | （可选）| RustDesk 自建中继服务器地址 |
@@ -361,6 +361,8 @@ docker compose up -d
 | rustdesk-hbbr | 21117, 21119 | RustDesk 中继服务器 |
 | livekit | 7880, 7881, 7882 | LiveKit WebRTC 服务器 |
 | otel-collector | 4317 | OpenTelemetry 收集器 |
+
+本地 Docker / WSL compose 下，LiveKit 使用 `deploy/livekit.yaml` 中的单 UDP 端口 `rtc.udp_port: 7882` 与 `rtc.node_ip: 127.0.0.1`。不要同时配置 `port_range_start` / `port_range_end`，也不要在 compose command 中启用 `--dev`，否则浏览器可能收到 Docker 内网或公网 STUN 候选地址，导致 `could not establish pc connection`。
 
 ## 构建依赖
 

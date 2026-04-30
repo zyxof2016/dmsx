@@ -24,6 +24,11 @@ import { TerminalBlock } from "./TerminalBlock";
 import { formatApiError } from "../api/errors";
 import { useResourceAccess } from "../authz";
 import { normalizeDevicePlatform, selectRecommendedArtifact } from "../artifactMeta";
+import {
+  buildWindowsOneClickInstallerScript,
+  downloadTextFile,
+  readArtifactDownloadUrl,
+} from "../enrollmentInstall";
 
 const RemoteDesktopPanel = React.lazy(async () => {
   const mod = await import("./RemoteDesktop");
@@ -96,6 +101,19 @@ export const DeviceDetailDrawer: React.FC = () => {
     () => device ? selectRecommendedArtifact(artifactsQuery.data?.items ?? [], normalizeDevicePlatform(device.platform)) : null,
     [artifactsQuery.data?.items, device],
   );
+  const agentDownloadUrl = React.useMemo(
+    () => readArtifactDownloadUrl(recommendedArtifact),
+    [recommendedArtifact],
+  );
+  const windowsInstallerScript = React.useMemo(() => {
+    if (!device || !enrollmentToken) return null;
+    return buildWindowsOneClickInstallerScript({
+      apiUrl: agentApiUrl,
+      tenantId: device.tenant_id,
+      enrollmentToken,
+      agentDownloadUrl,
+    });
+  }, [agentApiUrl, agentDownloadUrl, device, enrollmentToken]);
 
   return (
     <Drawer
@@ -279,12 +297,31 @@ export const DeviceDetailDrawer: React.FC = () => {
                                 打开零接触安装页
                               </Button>
                             ) : null}
+                            {windowsInstallerScript ? (
+                              <Button
+                                type="primary"
+                                size="small"
+                                onClick={() => {
+                                  downloadTextFile(
+                                    `Install-DMSX-Agent-${device.registration_code}.ps1`,
+                                    windowsInstallerScript,
+                                  );
+                                }}
+                              >
+                                下载 Windows 一键安装脚本
+                              </Button>
+                            ) : null}
                             <Divider style={{ margin: "12px 0" }} />
                             <Text strong>Agent 启动命令 (开发测试用)</Text>
                             <TerminalBlock 
                               code={`DMSX_API_URL=${agentApiUrl} DMSX_TENANT_ID=${device.tenant_id} DMSX_DEVICE_ENROLLMENT_TOKEN='${enrollmentToken}' cargo run -p dmsx-agent`}
                               style={{ width: "100%" }}
                             />
+                            <Text type={agentDownloadUrl ? "secondary" : "warning"}>
+                              {agentDownloadUrl
+                                ? `安装脚本将下载推荐制品：${recommendedArtifact?.name ?? agentDownloadUrl}`
+                                : "当前没有带 download_url 的 Agent 制品；下载脚本会要求 dmsx-agent.exe 与脚本放在同一目录。"}
+                            </Text>
                           </>
                         ) : (
                           <Text type="secondary">生成后可复制 token 或 enrollment URI 给设备侧 Agent 首次绑定使用。</Text>

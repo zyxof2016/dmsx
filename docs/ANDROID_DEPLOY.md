@@ -101,7 +101,7 @@ adb shell "DMSX_API_URL=http://<PC_IP>:8080 DMSX_DEVICE_ENROLLMENT_TOKEN=<token>
 
 ### 已实现能力
 
-- 配置页：输入 `API URL`、`Tenant ID`、`Enrollment Token`，可启动/停止 Agent。
+- 配置页：可手动输入 `API URL`、`Tenant ID`、`Enrollment Token`，也可读取 APK 构建时内置的注册配置并自动启动 Agent。
 - 前台服务：常驻通知 + wake lock，降低后台被杀概率。
 - 开机自启：可在配置页启用，收到 `BOOT_COMPLETED` 后自动启动。
 - Enrollment claim：调用 `POST /v1/tenants/{tid}/devices/claim-with-enrollment-token` 认领预注册设备。
@@ -124,6 +124,26 @@ gradle assembleDebug
 android-agent/app/build/outputs/apk/debug/app-debug.apk
 ```
 
+生成单设备专属 APK：
+
+```powershell
+.\scripts\package-android-agent.ps1 `
+  -ApiUrl "http://<server-ip>:8080" `
+  -TenantId "00000000-0000-0000-0000-000000000001" `
+  -EnrollmentToken "<token>" `
+  -OutputPath ".\target\packages\DMSX-Agent-Android.apk"
+```
+
+该脚本会通过 Gradle 属性把 `api_url`、`tenant_id`、`enrollment_token` 写入 `BuildConfig`，再复制出可交付的 APK。直接使用 Gradle 时也可传同名属性：
+
+```bash
+cd android-agent
+gradle assembleDebug \
+  -PdmsxApiUrl="http://<server-ip>:8080" \
+  -PdmsxTenantId="00000000-0000-0000-0000-000000000001" \
+  -PdmsxEnrollmentToken="<token>"
+```
+
 当前仓库没有提交 Gradle Wrapper；如果希望 CI 或无全局 Gradle 的机器直接构建，可在已安装 Gradle 的环境中执行：
 
 ```bash
@@ -140,15 +160,16 @@ adb install -r android-agent/app/build/outputs/apk/debug/app-debug.apk
 ### 使用步骤
 
 1. 在控制台预注册一台 `platform=android` 的设备并签发 enrollment token。
-2. 打开手机上的 **DMSX Agent**。
-3. 填入 `API URL`，例如 `http://192.168.1.10:8080`。
-4. 填入 `Tenant ID` 和 `Enrollment Token`。
-5. 点击“保存配置”，再点击“启动 Agent”。
-6. 控制台应看到设备被认领、在线状态更新、reported shadow 有 Android 遥测。
+2. 用 `scripts/package-android-agent.ps1` 生成专属 APK。
+3. 安装 APK 后打开 **DMSX Agent**。
+4. App 会自动载入内置配置、启动前台服务并认领设备。
+5. 控制台应看到设备被认领、在线状态更新、reported shadow 有 Android 遥测。
+
+未内置配置的开发 APK 仍可手动填入 `API URL`、`Tenant ID`、`Enrollment Token`，再点击“保存配置”和“启动 Agent”。
 
 ### 限制
 
-- 当前 APK Agent 不执行任意脚本，不做静默安装、不锁屏、不擦除设备；这些能力需要 Device Owner / Android Enterprise 管理模式。
+- 当前 APK Agent 不执行任意脚本，不做静默安装、不锁屏、不擦除设备；普通侧载安装后仍需要用户首次打开 App，完全无用户动作的静默安装和自动拉起需要 Device Owner / Android Enterprise 管理模式。
 - 当前命令集只包含 `smoke_noop` 与 `collect_logs`，用于安全验证链路。
 - 当前使用 HTTP polling；生产数据面后续仍建议走 mTLS/gRPC 或 FCM 唤醒。
 - 为方便本地联调，Manifest 允许 cleartext HTTP；生产应改用 HTTPS 并限制网络安全配置。

@@ -32,6 +32,34 @@ final class AgentConfig {
         return prefs(context).getString("registration_code", "");
     }
 
+    static boolean hasBundledSetup() {
+        return !BuildConfig.DMSX_DEFAULT_API_URL.trim().isEmpty()
+                && !BuildConfig.DMSX_DEFAULT_TENANT_ID.trim().isEmpty()
+                && !BuildConfig.DMSX_DEFAULT_ENROLLMENT_TOKEN.trim().isEmpty();
+    }
+
+    static boolean applyBundledSetupIfNeeded(Context context) {
+        if (!hasBundledSetup() || !deviceId(context).isEmpty()) {
+            return false;
+        }
+        String bundledApiBase = trimTrailingSlash(BuildConfig.DMSX_DEFAULT_API_URL);
+        String bundledTenantId = BuildConfig.DMSX_DEFAULT_TENANT_ID.trim();
+        String bundledToken = BuildConfig.DMSX_DEFAULT_ENROLLMENT_TOKEN.trim();
+        if (apiBase(context).equals(bundledApiBase)
+                && tenantId(context).equals(bundledTenantId)
+                && enrollmentToken(context).equals(bundledToken)) {
+            return false;
+        }
+        saveSetup(
+                context,
+                bundledApiBase,
+                bundledTenantId,
+                bundledToken,
+                BuildConfig.DMSX_DEFAULT_START_ON_BOOT);
+        saveLastStatus(context, "已载入 APK 内置注册配置，等待启动");
+        return true;
+    }
+
     static boolean startOnBoot(Context context) {
         return prefs(context).getBoolean("start_on_boot", true);
     }

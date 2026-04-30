@@ -26,12 +26,37 @@ gradle assembleDebug
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
+## 单 APK 自动注册
+
+运维侧可以把控制面地址、租户和 enrollment token 直接打进 APK：
+
+```powershell
+.\scripts\package-android-agent.ps1 `
+  -ApiUrl "http://<server-ip>:8080" `
+  -TenantId "00000000-0000-0000-0000-000000000001" `
+  -EnrollmentToken "<token>" `
+  -OutputPath ".\target\packages\DMSX-Agent-Android.apk"
+```
+
+生成的 APK 安装后首次打开会自动载入内置配置、启动前台服务并认领设备。普通 Android 侧载安装后，系统不会允许应用在用户完全未打开的情况下自行启动后台服务；Android Enterprise / Device Owner 或 ADB 场景可在安装后由管理端拉起应用。
+
+也可以直接用 Gradle 属性构建：
+
+```bash
+cd android-agent
+gradle assembleDebug \
+  -PdmsxApiUrl="http://<server-ip>:8080" \
+  -PdmsxTenantId="00000000-0000-0000-0000-000000000001" \
+  -PdmsxEnrollmentToken="<token>"
+```
+
 ## 使用
 
 1. 在控制台预注册 `platform=android` 设备并签发 enrollment token。
-2. 打开手机上的 DMSX Agent。
-3. 填入 `API URL`、`Tenant ID`、`Enrollment Token`。
-4. 点击“保存配置”和“启动 Agent”。
+2. 生成并安装专属 APK。
+3. 打开手机上的 DMSX Agent，应用会自动启动注册流程。
+
+未内置配置的开发 APK 仍可手动填入 `API URL`、`Tenant ID`、`Enrollment Token` 后点击“保存配置”和“启动 Agent”。
 
 ## 限制
 

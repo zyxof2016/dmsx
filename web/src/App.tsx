@@ -7,24 +7,24 @@ import {
   Segmented,
   Space,
   Select,
-  Switch,
+  Button,
+  Dropdown,
+  Tag,
+  Tooltip,
+  Typography,
   ConfigProvider,
   theme as antdTheme,
 } from "antd";
 import zhCN from "antd/locale/zh_CN";
 import enUS from "antd/locale/en_US";
 import {
-  DashboardOutlined,
-  DesktopOutlined,
-  SafetyOutlined,
-  SettingOutlined,
-  AppstoreOutlined,
-  ClusterOutlined,
-  CloudServerOutlined,
-  AuditOutlined,
-  RobotOutlined,
-  UserOutlined,
-  GlobalOutlined,
+  MenuFoldOutlined,
+  MenuUnfoldOutlined,
+  ReloadOutlined,
+  SearchOutlined,
+  TranslationOutlined,
+  BulbOutlined,
+  MoonOutlined,
 } from "@ant-design/icons";
 import {
   Outlet,
@@ -41,6 +41,15 @@ import {
 } from "./appProviders";
 import { AccessGate } from "./components/AccessGate";
 import { useResourceAccess } from "./authz";
+import {
+  NAV_ITEMS,
+  buildGroupedMenuItems,
+  evaluateItemAccess,
+  itemIsVisible,
+  matchNavItem,
+  navItemLabel,
+  type NavItem,
+} from "./navigation";
 
 const AppDeferredTools = React.lazy(async () => {
   const mod = await import("./components/AppDeferredTools");
@@ -48,186 +57,7 @@ const AppDeferredTools = React.lazy(async () => {
 });
 
 const { Header, Sider, Content } = Layout;
-
-type NavItem = {
-  key: string;
-  path: string;
-  labelKey: string;
-  icon: React.ReactNode;
-  mode: AppMode;
-  platformOnly?: boolean;
-  requiredRoles?: string[];
-};
-
-type AccessResult = {
-  allowed: boolean;
-  reason: "mode" | "role" | "platform" | "unknown";
-};
-
-const NAV_ITEMS: NavItem[] = [
-  {
-    key: "platformOverview",
-    path: "/platform",
-    labelKey: "mode.platform",
-    icon: <SettingOutlined />,
-    mode: "platform",
-    platformOnly: true,
-  },
-  {
-    key: "platformTenants",
-    path: "/platform/tenants",
-    labelKey: "nav.platformTenants",
-    icon: <ClusterOutlined />,
-    mode: "platform",
-    platformOnly: true,
-  },
-  {
-    key: "platformQuotas",
-    path: "/platform/quotas",
-    labelKey: "nav.platformQuotas",
-    icon: <AppstoreOutlined />,
-    mode: "platform",
-    platformOnly: true,
-  },
-  {
-    key: "platformAudit",
-    path: "/platform/audit",
-    labelKey: "nav.platformAudit",
-    icon: <AuditOutlined />,
-    mode: "platform",
-    platformOnly: true,
-  },
-  {
-    key: "platformHealth",
-    path: "/platform/health",
-    labelKey: "nav.platformHealth",
-    icon: <DashboardOutlined />,
-    mode: "platform",
-    platformOnly: true,
-  },
-  {
-    key: "dashboard",
-    path: "/",
-    labelKey: "nav.dashboard",
-    icon: <DashboardOutlined />,
-    mode: "tenant",
-  },
-  {
-    key: "devices",
-    path: "/devices",
-    labelKey: "nav.devices",
-    icon: <DesktopOutlined />,
-    mode: "tenant",
-  },
-  {
-    key: "policies",
-    path: "/policies",
-    labelKey: "nav.policies",
-    icon: <SafetyOutlined />,
-    mode: "tenant",
-  },
-  {
-    key: "commands",
-    path: "/commands",
-    labelKey: "nav.commands",
-    icon: <CloudServerOutlined />,
-    mode: "tenant",
-  },
-  {
-    key: "artifacts",
-    path: "/artifacts",
-    labelKey: "nav.artifacts",
-    icon: <AppstoreOutlined />,
-    mode: "tenant",
-  },
-  {
-    key: "compliance",
-    path: "/compliance",
-    labelKey: "nav.compliance",
-    icon: <AuditOutlined />,
-    mode: "tenant",
-  },
-  {
-    key: "network",
-    path: "/network",
-    labelKey: "nav.network",
-    icon: <GlobalOutlined />,
-    mode: "tenant",
-  },
-  {
-    key: "ai",
-    path: "/ai",
-    labelKey: "nav.ai",
-    icon: <RobotOutlined />,
-    mode: "tenant",
-    requiredRoles: ["PlatformAdmin", "TenantAdmin", "SiteAdmin", "Operator"],
-  },
-  {
-    key: "policyEditor",
-    path: "/policy-editor",
-    labelKey: "nav.policyEditor",
-    icon: <SafetyOutlined />,
-    mode: "tenant",
-    requiredRoles: ["PlatformAdmin", "TenantAdmin"],
-  },
-  {
-    key: "auditLogs",
-    path: "/audit-logs",
-    labelKey: "nav.auditLogs",
-    icon: <AuditOutlined />,
-    mode: "tenant",
-  },
-  {
-    key: "settings",
-    path: "/settings",
-    labelKey: "nav.settings",
-    icon: <SafetyOutlined />,
-    mode: "platform",
-    platformOnly: true,
-  },
-  {
-    key: "usersRoles",
-    path: "/users",
-    labelKey: "nav.usersRoles",
-    icon: <UserOutlined />,
-    mode: "tenant",
-  },
-];
-
-function itemIsVisible(
-  item: NavItem,
-  appMode: AppMode,
-  effectiveRoles: string[],
-  canUsePlatformMode: boolean,
-) {
-  return evaluateItemAccess(item, appMode, effectiveRoles, canUsePlatformMode).allowed;
-}
-
-function evaluateItemAccess(
-  item: NavItem | undefined,
-  appMode: AppMode,
-  effectiveRoles: string[],
-  canUsePlatformMode: boolean,
-): AccessResult {
-  if (!item) return { allowed: true, reason: "unknown" };
-  if (item.mode !== appMode) return { allowed: false, reason: "mode" };
-  if (item.platformOnly && !canUsePlatformMode) {
-    return { allowed: false, reason: "platform" };
-  }
-  if (!item.requiredRoles?.length) return { allowed: true, reason: "unknown" };
-  return item.requiredRoles.some((role) => effectiveRoles.includes(role))
-    ? { allowed: true, reason: "unknown" }
-    : { allowed: false, reason: "role" };
-}
-
-function matchNavItem(pathname: string): NavItem | undefined {
-  return [...NAV_ITEMS]
-    .sort((a, b) => b.path.length - a.path.length)
-    .find((item) => {
-      if (item.path === "/") return pathname === "/";
-      return pathname === item.path || pathname.startsWith(`${item.path}/`);
-    });
-}
+const { Text } = Typography;
 
 export const AppLayout: React.FC = () => {
   const { lang } = useAppI18n();
@@ -242,10 +72,12 @@ export const AppLayout: React.FC = () => {
       theme={{
         algorithm,
         token: {
-          colorPrimary: "#1677ff",
+          colorPrimary: "#2563eb",
           borderRadius: 6,
-          colorBgContainer: themeMode === "dark" ? "#141414" : "#ffffff",
-          colorBgElevated: themeMode === "dark" ? "#1f1f1f" : "#ffffff",
+          colorBgContainer: themeMode === "dark" ? "#15171d" : "#ffffff",
+          colorBgElevated: themeMode === "dark" ? "#1b1e26" : "#ffffff",
+          colorBgLayout: themeMode === "dark" ? "#0f1117" : "#f3f6fb",
+          colorBorderSecondary: themeMode === "dark" ? "#2a2f3b" : "#e5e7eb",
         },
         components: {
           Card: {
@@ -253,6 +85,10 @@ export const AppLayout: React.FC = () => {
           },
           Modal: {
             borderRadiusLG: 8,
+          },
+          Menu: {
+            itemBorderRadius: 6,
+            itemMarginInline: 10,
           },
         },
       }}
@@ -266,6 +102,7 @@ export const AppLayout: React.FC = () => {
 
 const AppShell: React.FC = () => {
   const [collapsed, setCollapsed] = React.useState(false);
+  const [visitedKeys, setVisitedKeys] = React.useState<string[]>([]);
   const navigate = useNavigate();
   const pathname = useRouterState({
     select: (s) => s.location.pathname,
@@ -304,7 +141,7 @@ const AppShell: React.FC = () => {
       ),
     [appMode, canUsePlatformMode, effectiveRoles],
   );
-  const breadcrumbLabel = selectedNavItem ? t(selectedNavItem.labelKey) : t("nav.dashboard");
+  const breadcrumbLabel = navItemLabel(selectedNavItem, t);
   const modeLabel = t(`mode.${appMode}`);
   const defaultModePath = visibleNavItems[0]?.path ?? "/";
   const selectedAccess = evaluateItemAccess(
@@ -317,6 +154,26 @@ const AppShell: React.FC = () => {
   const hasAccess =
     selectedAccess.allowed && (appMode !== "platform" || platformReadAccess.canRead);
   const showModeSwitcher = availableScopes.includes("platform") && availableScopes.includes("tenant");
+  const showPageTitle = appMode !== "platform";
+  const visitedNavItems = React.useMemo(
+    () =>
+      visitedKeys
+        .map((key) => visibleNavItems.find((item) => item.key === key))
+        .filter((item): item is NavItem => Boolean(item)),
+    [visibleNavItems, visitedKeys],
+  );
+  const quickNavOptions = React.useMemo(
+    () =>
+      visibleNavItems.map((item) => ({
+        value: item.key,
+        label: `${t(item.groupKey)} / ${t(item.labelKey)}`,
+      })),
+    [t, visibleNavItems],
+  );
+  const groupedMenuItems = React.useMemo(
+    () => buildGroupedMenuItems(visibleNavItems, t),
+    [t, visibleNavItems],
+  );
 
   const accessDescription =
     selectedAccess.reason === "mode"
@@ -338,6 +195,20 @@ const AppShell: React.FC = () => {
   }, [defaultModePath, navigate, pathname, selectedKey, selectedNavItem, visibleNavItems]);
 
   React.useEffect(() => {
+    if (!selectedNavItem) return;
+    setVisitedKeys((prev) => {
+      const next = [selectedNavItem.key, ...prev.filter((key) => key !== selectedNavItem.key)];
+      return next.slice(0, 8);
+    });
+  }, [selectedNavItem]);
+
+  React.useEffect(() => {
+    if (pathname === "/" && appMode === "platform" && defaultModePath !== "/") {
+      navigate({ to: defaultModePath, replace: true });
+    }
+  }, [appMode, defaultModePath, navigate, pathname]);
+
+  React.useEffect(() => {
     if (pathname === "/login" || pathname === "/zero-touch-enroll") return;
     if (authMode === "jwt" && !isAuthenticated) {
       navigate({ to: "/login", search: { redirect: pathname }, replace: true });
@@ -353,50 +224,31 @@ const AppShell: React.FC = () => {
   }
 
   return (
-    <Layout style={{ minHeight: "100vh" }}>
+    <Layout className={`dmsx-shell dmsx-shell-${themeMode}`}>
       <Sider
+        className="dmsx-sider"
         collapsible
         collapsed={collapsed}
         onCollapse={setCollapsed}
         theme={themeMode === "dark" ? "dark" : "light"}
-        width={220}
+        trigger={null}
+        width={232}
       >
-        <div
-          style={{
-            height: 48,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            color: token.colorText,
-            fontWeight: 700,
-            fontSize: collapsed ? 16 : 20,
-            letterSpacing: 2,
-            margin: "8px 0",
-          }}
-        >
-          {collapsed ? "DX" : t("brand.full")}
+        <div className="dmsx-brand">
+          <div className="dmsx-brand-mark">DX</div>
+          {!collapsed && (
+            <div className="dmsx-brand-copy">
+              <Text strong>{t("brand.full")}</Text>
+              <span>{modeLabel}</span>
+            </div>
+          )}
         </div>
-        {!collapsed && (
-          <div
-            style={{
-              margin: "0 16px 12px",
-              color: token.colorTextSecondary,
-              fontSize: 12,
-              textAlign: "center",
-            }}
-          >
-            {modeLabel}
-          </div>
-        )}
         <Menu
+          className="dmsx-menu"
           theme={themeMode === "dark" ? "dark" : "light"}
           mode="inline"
           selectedKeys={[selectedKey]}
-          items={visibleNavItems.map((item) => ({
-            key: item.key,
-            icon: item.icon,
-            label: t(item.labelKey),
-          }))}
+          items={groupedMenuItems}
           onClick={({ key }) => {
             const target = visibleNavItems.find((item) => item.key === key)?.path;
             if (target) navigate({ to: target });
@@ -404,18 +256,19 @@ const AppShell: React.FC = () => {
         />
       </Sider>
 
-      <Layout>
+      <Layout className="dmsx-main">
         <Header
-          style={{
-            background: token.colorBgElevated,
-            padding: "0 24px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            borderBottom: `1px solid ${token.colorBorderSecondary}`,
-          }}
+          className="dmsx-header"
+          style={{ background: token.colorBgElevated, borderBottom: `1px solid ${token.colorBorderSecondary}` }}
         >
-          <Space size="middle">
+          <Space size="middle" className="dmsx-header-left">
+            <Tooltip title={collapsed ? "展开菜单" : "收起菜单"}>
+              <Button
+                type="text"
+                icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+                onClick={() => setCollapsed((value) => !value)}
+              />
+            </Tooltip>
             <Breadcrumb
               items={[
                 { title: t("brand") },
@@ -423,8 +276,24 @@ const AppShell: React.FC = () => {
                 { title: breadcrumbLabel },
               ]}
             />
+            <Select
+              className="dmsx-quick-nav"
+              size="small"
+              showSearch
+              allowClear
+              placeholder="搜索菜单"
+              suffixIcon={<SearchOutlined />}
+              value={undefined}
+              options={quickNavOptions}
+              optionFilterProp="label"
+              onChange={(key) => {
+                const target = visibleNavItems.find((item) => item.key === key)?.path;
+                if (target) navigate({ to: target });
+              }}
+            />
             {showModeSwitcher && (
               <Segmented
+                className="dmsx-mode-switch"
                 size="small"
                 value={appMode}
                 options={[
@@ -448,24 +317,38 @@ const AppShell: React.FC = () => {
               />
             )}
           </Space>
-          <Space size="large">
-            <Select
-              size="small"
-              value={lang}
-              onChange={(v) => setLang(v as Lang)}
-              options={[
-                { value: "zh", label: "中文" },
-                { value: "en", label: "English" },
-              ]}
-              style={{ width: 120 }}
-            />
-            <Switch
-              size="small"
-              checked={themeMode === "dark"}
-              onChange={(checked) => setThemeMode(checked ? "dark" : "light")}
-              checkedChildren={t("theme.dark")}
-              unCheckedChildren={t("theme.light")}
-            />
+          <Space size={8} className="dmsx-header-right">
+            <Tooltip title="刷新当前页">
+              <Button
+                className="dmsx-tool-button"
+                type="text"
+                icon={<ReloadOutlined />}
+                onClick={() => window.location.reload()}
+              />
+            </Tooltip>
+            <Dropdown
+              menu={{
+                selectedKeys: [lang],
+                items: [
+                  { key: "zh", label: "中文" },
+                  { key: "en", label: "English" },
+                ],
+                onClick: ({ key }) => setLang(key as Lang),
+              }}
+              trigger={["click"]}
+            >
+              <Tooltip title="语言">
+                <Button className="dmsx-tool-button" type="text" icon={<TranslationOutlined />} />
+              </Tooltip>
+            </Dropdown>
+            <Tooltip title={themeMode === "dark" ? "切换到亮色" : "切换到暗色"}>
+              <Button
+                className="dmsx-tool-button"
+                type="text"
+                icon={themeMode === "dark" ? <BulbOutlined /> : <MoonOutlined />}
+                onClick={() => setThemeMode(themeMode === "dark" ? "light" : "dark")}
+              />
+            </Tooltip>
             <React.Suspense fallback={null}>
               <AppDeferredTools
                 tenantId={tenantId}
@@ -486,13 +369,51 @@ const AppShell: React.FC = () => {
           </Space>
         </Header>
 
-        <Content style={{ margin: 16 }}>
+        <div className="dmsx-tabsbar" style={{ background: token.colorBgElevated, borderBottom: `1px solid ${token.colorBorderSecondary}` }}>
+          {visitedNavItems.map((item) => (
+            <Tag
+              key={item.key}
+              closable={visitedNavItems.length > 1}
+              color={item.key === selectedKey ? "blue" : "default"}
+              onClick={() => navigate({ to: item.path })}
+              onClose={(event) => {
+                event.preventDefault();
+                setVisitedKeys((prev) => {
+                  const next = prev.filter((key) => key !== item.key);
+                  if (item.key === selectedKey) {
+                    const fallback = next
+                      .map((key) => visibleNavItems.find((candidate) => candidate.key === key))
+                      .find(Boolean);
+                    navigate({ to: fallback?.path ?? defaultModePath });
+                  }
+                  return next;
+                });
+              }}
+            >
+              {t(item.labelKey)}
+            </Tag>
+          ))}
+        </div>
+
+        <Content className="dmsx-content">
+          {showPageTitle && (
+            <div className="dmsx-page-title">
+              <div>
+                <Text type="secondary">{modeLabel}</Text>
+                <Typography.Title level={4}>{breadcrumbLabel}</Typography.Title>
+              </div>
+              <Space wrap size={6}>
+                {activeRoles.slice(0, 4).map((role) => (
+                  <Tag key={role}>{role}</Tag>
+                ))}
+              </Space>
+            </div>
+          )}
           <div
+            className="dmsx-page-surface"
             style={{
-              padding: 24,
               background: token.colorBgContainer,
-              borderRadius: 8,
-              minHeight: 600,
+              borderColor: token.colorBorderSecondary,
             }}
           >
             {!hasAccess ? (

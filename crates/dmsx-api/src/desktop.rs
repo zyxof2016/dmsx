@@ -163,8 +163,8 @@ pub async fn session_create(
     Path((tid, did)): Path<(Uuid, Uuid)>,
     Json(req): Json<SessionCreateReq>,
 ) -> Result<impl IntoResponse, DmsxError> {
-    let room_name = format!("desktop-{did}-{}", chrono::Utc::now().timestamp());
     let session_id = Uuid::new_v4().to_string();
+    let room_name = format!("desktop-{did}-{session_id}");
     let stale_session_id = st.device_sessions.write().await.insert(did, session_id.clone());
 
     if let Some(old_session_id) = &stale_session_id {

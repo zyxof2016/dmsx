@@ -45,6 +45,8 @@ import type {
   PlatformTenantSummary,
   PlatformQuota,
   PlatformHealth,
+  PlatformQuotaSettings,
+  PlatformRbacPolicy,
   DeviceEnrollmentToken,
   IssueDeviceEnrollmentTokenReq,
   BatchCreateDevicesReq,
@@ -638,6 +640,46 @@ export function usePlatformQuotas() {
     queryKey: ["platformQuotas"],
     queryFn: () => api.get<ListResponse<PlatformQuota>>("/v1/config/quotas"),
     retry: false,
+  });
+}
+
+export function usePlatformQuotaSettings() {
+  return useQuery({
+    queryKey: ["systemSetting", "platform.quotas"],
+    queryFn: () => api.get<SystemSetting>("/v1/config/settings/platform.quotas"),
+    retry: false,
+  });
+}
+
+export function useUpsertPlatformQuotaSettings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (value: PlatformQuotaSettings) =>
+      api.put<SystemSetting>("/v1/config/settings/platform.quotas", { value }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["platformQuotas"] });
+      qc.invalidateQueries({ queryKey: ["systemSetting", "platform.quotas"] });
+      qc.invalidateQueries({ queryKey: ["platformHealth"] });
+    },
+  });
+}
+
+export function usePlatformRbacPolicy() {
+  return useQuery({
+    queryKey: ["systemSetting", "platform.rbac.policy"],
+    queryFn: () => api.get<SystemSetting>("/v1/config/settings/platform.rbac.policy"),
+    retry: false,
+  });
+}
+
+export function useUpsertPlatformRbacPolicy() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (value: PlatformRbacPolicy) =>
+      api.put<SystemSetting>("/v1/config/settings/platform.rbac.policy", { value }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["systemSetting", "platform.rbac.policy"] });
+    },
   });
 }
 
